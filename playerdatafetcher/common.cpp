@@ -215,18 +215,12 @@ static void applyCurlNetworkOpts(CURL* curl) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,    15L);
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE,         CURL_IPRESOLVE_V4);
     curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, 60L);
-
-    // Gzip-сжатие: OpenDota отдаёт ~6KB JSON в plain text,
-    // с gzip это 800-1200 байт — скорость всегда выше порога LOW_SPEED_LIMIT
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING,   "gzip, deflate");
 
-    // TCP keepalive: держит соединение живым при медленных ответах
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE,     1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE,      30L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL,     10L);
 
-    // Прерывать только если скорость < 100 байт/с в течение 90 сек
-    // (было 30 — слишком мало для медленных ответов OpenDota)
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT,   100L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME,    90L);
 
@@ -339,4 +333,4 @@ std::string httpGet(const std::string& url) {
         return response;
     }
     throw std::runtime_error("HTTP GET: исчерпаны все попытки");
-}
+}}
