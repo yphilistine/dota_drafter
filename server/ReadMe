@@ -1,1 +1,25 @@
-пока ничего
+Dota 2 server
+Минимальный HTTP-сервер. Выводит в консоль когда игра переходит в фазу
+Hero Selection или Strategy Time.
+Сборка
+server_build.bat
+Запуск
+build\liveplayerstatsfetcher.exe
+GSI-конфиг
+Создать файл gamestate_integration_draft.cfg в:
+C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration\
+Содержимое:
+"dota2-gsi"
+{
+    "uri"           "http://localhost:3000"
+    "timeout"       "5.0"
+    "heartbeat"     "30.0"
+    "data"
+    {
+        "map" "1"
+    }
+}
+Вывод
+[GSI] Listening on port 3000
+[14:21:03] >> HERO SELECTION
+[14:26:44] >> STRATEGY TIME
