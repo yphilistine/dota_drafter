@@ -95,15 +95,6 @@ inline HudLayout selectStrategyLayout(int w, int h) {
     else                     return STRATEGY_LAYOUT_21_9;
 }
 
-static constexpr HudLayout INGAME_LAYOUT = {
-     0.0052f,
-     0.9120f,
-     0.0365f,
-     0.0840f,
-     0.0010f,
-     0.6220f,
-};
-
 static constexpr HudLayout DEFAULT_LAYOUT = STRATEGY_LAYOUT_16_9;
 
 class GdiplusSession {
