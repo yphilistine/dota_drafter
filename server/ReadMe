@@ -16,7 +16,10 @@ C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\game\dota\cfg\gamestat
     "heartbeat"     "30.0"
     "data"
     {
-        "map" "1"
+        "map"       "1"
+        "player"    "1"
+        "hero"      "1"
+        "draft"     "1"
     }
 }
 Вывод
