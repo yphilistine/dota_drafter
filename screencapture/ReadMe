@@ -12,7 +12,7 @@ dota2_capture/
 ├── main.cpp               # Точка входа — интерактивный / --once / --loop режимы
 ├── dota2_capture.h        # Поиск окна, DPI-захват, таблицы HUD-координат
 ├── dota2_capture.cpp      # Реализация через GDI/GDI+
-├── dhash.h                # Распознаватель на Pearson 8×8 (header-only)
+├── dhash.h                # Распознаватель на Pearson 8×8 (header-only) косинус между 64х мерными векторами
 ├── hero_hashes.h          # Сгенерированная БД хэшей (подключается автоматически)
 ├── build_hero_db.cpp      # Утилита — генерирует hero_hashes.h из PNG-файлов
 ├── screencapture.bat      # Сборка dota2_portraits.exe
