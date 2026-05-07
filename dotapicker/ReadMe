@@ -1,1 +1,72 @@
-пока ничего
+dota_picker
+Консольный помощник для драфта Dota 2 в реальном времени.
+Читает текущий драфт из SQLite (livepicks), прогоняет CatBoost-модели и выводит топ-10 рекомендаций или вероятность победы.
+
+Зависимости
+КомпонентПуть по умолчаниюMSVC (Visual Studio Build Tools)—vcpkg static libsC:\vcpkg\installed\x64-windows-staticCatBoost C API (catboostmodel.lib, c_api.h)C:\catboostSQLite amalgamation (sqlite3.lib, sqlite3.h)рядом с исходником
+
+Сборка
+batbuild_picker.bat
+Результат: build\dota_picker.exe
+Если пути к vcpkg или CatBoost отличаются — отредактируй переменные в начале build_picker.bat:
+batset VCPKG=C:\vcpkg\installed\x64-windows-static
+set CATBOOST=C:\catboost
+
+Использование
+dota_picker.exe [model_base] [db_path]
+АргументПо умолчаниюОписаниеmodel_basedraft_helper_v3Базовый путь к моделям без суффиксаdb_pathplayerandlivestats.dbПуть к SQLite-базе
+Программа автоматически подставляет суффиксы _early.cbm, _mid.cbm, _late.cbm.
+Пример:
+dota_picker.exe draft_helper_v3 playerandlivestats.db
+
+Структура БД
+Программа читает следующие таблицы:
+livepicks — текущий драфт (обновляется внешним процессом):
+match_id, our_account_id, our_side, our_slot, updated_at,
+r1_hero, r1_pos, r2_hero, r2_pos, ..., r5_hero, r5_pos,
+d1_hero, d1_pos, d2_hero, d2_pos, ..., d5_hero, d5_pos
+
+our_side: 1 = Radiant, 0 = Dire
+our_slot: 1–5
+
+heroes — справочник героев: id, localized_name
+proherostats — про-статистика по позициям: hero_id, pos, games, wins, bans
+immortalherostats — immortal-статистика: hero_id, pos, games, wins
+Используется как фильтр пула (только герои с games >= 1000)
+playerheroes / playerheroesranked — статистика нашего игрока: account_id, hero_id, games, wins
+
+Логика работы
+Poll-цикл (каждые 500 мс)
+
+Читает последнюю строку из livepicks
+Если запись не изменилась — пропускает
+При смене our_account_id — перезагружает статистику игрока
+При смене нашей позиции — перезагружает immortalherostats
+Перерисовывает экран
+
+Выбор модели
+Запикнуто героевМодель0–4_early.cbm5–7_mid.cbm8–10_late.cbm
+Вектор признаков
+
+20 категориальных: 10 слотов × (имя героя + позиция)
+70 числовых: 10 слотов × 7 фичей на слот
+
+Числовые фичи на слот:
+ФичаОписаниеwr_allСглаженный WR игрока (все игры)games_allКол-во игр (все)wr_rankedСглаженный WR игрока (ранкед)games_rankedКол-во ранкед игрpro_wrСглаженный WR в проpro_gamesКол-во про игрpro_bansКол-во банов в про
+Сглаживание: (wins + prior × 0.5) / (games + prior), prior = 20 (игрок), 50 (про)
+Режимы отображения
+Слот занят — выводит P(radiant win) с цветом:
+
+🟢 ≥ 60% — зелёный
+🟡 50–60% — жёлтый
+🔴 < 50% — красный
+
+Слот пустой — батч-инференс по всем незапикнутым героям из пула, топ-10:
+
+Radiant: сортировка по убыванию P(radiant win)
+Dire: сортировка по возрастанию P(radiant win)
+
+Для каждой рекомендации отображается: P(rad_win), личная статистика игрока, про-игры, immortal WR.
+
+Константы (в коде)
+КонстантаЗначениеОписаниеTOP_N10Кол-во рекомендацийPOLL_INTERVAL_MS500Интервал опроса БД, мсMIN_IMMORTAL_GAMES1000Минимум игр для фильтра immortalPRIOR_PLAYER20Байесовский prior для игрокаPRIOR_PRO50Байесовский prior для про
