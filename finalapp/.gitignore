@@ -1,0 +1,12 @@
+build/
+logs/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.db
+*.db-shm
+*.db-wal
+cookies.txt
+allheroes/
+liveheroes/
