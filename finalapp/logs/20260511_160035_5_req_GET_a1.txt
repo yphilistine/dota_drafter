@@ -1,2 +1,0 @@
-GET https://api.opendota.com/api/players/1261660135/heroes?lobby_type=7
-Attempt: 1
