@@ -1,6 +1,6 @@
 #include "playerdatafetcher.h"
 
-// ---- OpenDota: герои ----
+// ---------------------- OpenDota: герои ----------------------
 std::string fetchHeroesList() {
     std::string url = "https://api.opendota.com/api/heroes";
     LOG_INFO("GET heroes: " << url);
@@ -26,7 +26,7 @@ std::vector<HeroInfo> parseHeroesList(const std::string& jsonStr) {
     return heroes;
 }
 
-// ---- OpenDota: статистика героев игрока ----
+// ---------------------- OpenDota: статистика героев игрока ----------------------
 std::string fetchPlayerHeroesStats(const std::string& accountId) {
     std::string url = "https://api.opendota.com/api/players/" + accountId + "/heroes";
     LOG_INFO("GET player heroes (all): " << url);
@@ -58,7 +58,7 @@ std::vector<HeroStats> parseHeroesStats(const std::string& jsonStr) {
     return heroes;
 }
 
-// ---- OpenDota: список матчей ----
+// ---------------------- OpenDota: список матчей ----------------------
 std::vector<long long> fetchRecentMatchIds(long long accountId) {
     std::string url = "https://api.opendota.com/api/players/"
                     + std::to_string(accountId)
@@ -80,7 +80,7 @@ std::vector<long long> fetchRecentMatchIds(long long accountId) {
     return ids;
 }
 
-// ---- STRATZ: батч-запрос ----
+// ---------------------- STRATZ: батч-запрос ----------------------
 std::string buildMatchesBatchQuery(const std::vector<long long>& matchIds) {
     std::ostringstream q;
     q.imbue(std::locale::classic());
@@ -111,7 +111,7 @@ std::string sendStratzMatchesBatch(const std::string& authToken,
     }
 }
 
-// ---- Вспомогательная функция ----
+// ---------------------- Вспомогательная функция ----------------------
 static int positionToInt(const std::string& pos) {
     if (pos == "POSITION_1") return 1;
     if (pos == "POSITION_2") return 2;
@@ -121,7 +121,7 @@ static int positionToInt(const std::string& pos) {
     return 0;
 }
 
-// ---- SQLite: создание таблиц ----
+// ---------------------- SQLite: создание таблиц ----------------------
 void createHeroTableIfNotExists(sqlite3* db) {
     const char* sql = R"(
         CREATE TABLE IF NOT EXISTS heroes (
@@ -233,7 +233,7 @@ void createIndexesIfNotExist(sqlite3* db) {
     if (rc != SQLITE_OK) { std::string e = errMsg; sqlite3_free(errMsg); LOG_WARN("Ошибка создания индексов: " << e); }
 }
 
-// ---- SQLite: запись данных ----
+// ---------------------- SQLite: запись данных ----------------------
 void storeHeroTable(sqlite3* db, const std::vector<HeroInfo>& heroes) {
     const char* sql = "INSERT OR IGNORE INTO heroes (id, name, localized_name) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt;
@@ -386,7 +386,7 @@ void storePlayerHeroWithHeroByPos(sqlite3* db, long long accountId,
     sqlite3_finalize(stmt);
 }
 
-// ---- Парсинг батча STRATZ и запись в БД ----
+// ---------------------- Парсинг батча STRATZ и запись в БД ----------------------
 void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::string& response) {
     if (response.size() >= 2 &&
         static_cast<unsigned char>(response[0]) == 0x1F &&
@@ -524,7 +524,7 @@ void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::stri
     } catch (...) { throw; }
 }
 
-// ---- Главная функция загрузки данных игрока ----
+// ---------------------- Главная функция загрузки данных игрока ----------------------
 void fetchAndStorePlayerRecentData(sqlite3* db, const std::string& authToken, long long accountId) {
     try {
         std::vector<long long> matchIds = fetchRecentMatchIds(accountId);

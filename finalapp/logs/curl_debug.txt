@@ -1,0 +1,282 @@
+* Host api.opendota.com:443 was resolved.
+* IPv6: (none)
+* IPv4: 172.67.155.85, 104.21.48.178
+*   Trying 172.67.155.85:443...
+* schannel: disabled automatic use of client certificate
+* ALPN: curl offers http/1.1
+* ALPN: server accepted http/1.1
+* Established connection to api.opendota.com (172.67.155.85 port 443) from 192.168.1.82 port 52649 
+* using HTTP/1.x
+-> GET /api/heroes HTTP/1.1
+Host: api.opendota.com
+Accept: application/json, text/plain, */*
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+Connection: keep-alive
+
+* Request completely sent off
+<- HTTP/1.1 200 OK
+<- Date: Mon, 11 May 2026 13:00:37 GMT
+<- Content-Type: application/json; charset=utf-8
+<- Transfer-Encoding: chunked
+<- Connection: keep-alive
+<- X-Powered-By: Express
+<- Vary: Origin, Accept-Encoding
+<- Access-Control-Allow-Credentials: true
+<- X-Rate-Limit-Remaining-Minute: 59
+<- X-IP-Address: 46.242.115.61
+<- X-Rate-Limit-Remaining-Day: 2995
+<- ETag: W/"552c-LkWVtFceShdQ9/w7HXxDFWqFqhY"
+<- Set-Cookie: session=e30=; path=/; expires=Mon, 10 May 2027 13:00:37 GMT; domain=.opendota.com; secure; httponly
+<- Set-Cookie: session.sig=9A3MANd7pSadSYrfALkOJK-1IPc; path=/; expires=Mon, 10 May 2027 13:00:37 GMT; domain=.opendota.com; secure; httponly
+<- Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=9pnO0SsCyWSCmPJVaeJz1igy3xPeLhJW%2BJDSJ7h1fsYZ%2BzV6IycdeU6EwT4YTGbPjCvA91t9Rc0gcql6m377P9AaXctJwjdG2j8r4H4tsmZ2ZTwWa1DTnIkcseajC1UErHC1"}]}
+<- Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+<- cf-cache-status: DYNAMIC
+<- Content-Encoding: gzip
+<- Server: cloudflare
+<- CF-RAY: 9fa15e1b3a2c0d92-ARN
+<- alt-svc: h3=":443"; ma=86400
+<- 
+* Connection #0 to host api.opendota.com:443 left intact
+* Host api.opendota.com:443 was resolved.
+* Host api.opendota.com:443 was resolved.
+* IPv6: (none)
+* IPv6: (none)
+* IPv4: 172.67.155.85, 104.21.48.178
+* IPv4: 172.67.155.85, 104.21.48.178
+*   Trying 172.67.155.85:443...
+*   Trying 172.67.155.85:443...
+* Host api.opendota.com:443 was resolved.
+* IPv6: (none)
+* IPv4: 172.67.155.85, 104.21.48.178
+*   Trying 172.67.155.85:443...
+* schannel: disabled automatic use of client certificate
+* ALPN: curl offers http/1.1
+* schannel: disabled automatic use of client certificate
+* ALPN: curl offers http/1.1
+* schannel: disabled automatic use of client certificate
+* ALPN: curl offers http/1.1
+* ALPN: server accepted http/1.1
+* Established connection to api.opendota.com (172.67.155.85 port 443) from 192.168.1.82 port 52657 
+* using HTTP/1.x
+-> GET /api/players/1261660135/heroes HTTP/1.1
+Host: api.opendota.com
+Accept: application/json, text/plain, */*
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+Connection: keep-alive
+
+* Request completely sent off
+* ALPN: server accepted http/1.1
+* Established connection to api.opendota.com (172.67.155.85 port 443) from 192.168.1.82 port 52656 
+* using HTTP/1.x
+-> GET /api/players/1261660135/matches?lobby_type=7&date=90 HTTP/1.1
+Host: api.opendota.com
+Accept: application/json, text/plain, */*
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+Connection: keep-alive
+
+* Request completely sent off
+* ALPN: server accepted http/1.1
+* Established connection to api.opendota.com (172.67.155.85 port 443) from 192.168.1.82 port 52658 
+* using HTTP/1.x
+-> GET /api/players/1261660135/heroes?lobby_type=7 HTTP/1.1
+Host: api.opendota.com
+Accept: application/json, text/plain, */*
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+Connection: keep-alive
+
+* Request completely sent off
+<- HTTP/1.1 200 OK
+<- Date: Mon, 11 May 2026 13:00:38 GMT
+<- Content-Type: application/json; charset=utf-8
+<- Transfer-Encoding: chunked
+<- Connection: keep-alive
+<- X-Powered-By: Express
+<- Vary: Origin, Accept-Encoding
+<- Access-Control-Allow-Credentials: true
+<- X-Rate-Limit-Remaining-Minute: 57
+<- X-IP-Address: 46.242.115.61
+<- X-Rate-Limit-Remaining-Day: 2993
+<- ETag: W/"74fe-JcqBRpWL5v1WqJmIxbkZIMj/enM"
+<- Set-Cookie: session=e30=; path=/; expires=Mon, 10 May 2027 13:00:38 GMT; domain=.opendota.com; secure; httponly
+<- Set-Cookie: session.sig=9A3MANd7pSadSYrfALkOJK-1IPc; path=/; expires=Mon, 10 May 2027 13:00:38 GMT; domain=.opendota.com; secure; httponly
+<- Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=dh4S5NptFw28QjkpC8TnksP%2BwV%2Bm%2FenPsq6ThALveJvJ6jOJ6IIM7IcKv8kFiDMYgP5tMKnL%2F92ddI71qTSCuK0gktZUgDH7zdvmyvy60dKYSfad2kcj4upjOizNjsAwbRJC"}]}
+<- Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+<- cf-cache-status: DYNAMIC
+<- Content-Encoding: gzip
+<- Server: cloudflare
+<- CF-RAY: 9fa15e1daaf730b4-ARN
+<- alt-svc: h3=":443"; ma=86400
+<- 
+* Connection #0 to host api.opendota.com:443 left intact
+<- HTTP/1.1 200 OK
+<- Date: Mon, 11 May 2026 13:00:38 GMT
+<- Content-Type: application/json; charset=utf-8
+<- Transfer-Encoding: chunked
+<- Connection: keep-alive
+<- X-Powered-By: Express
+<- Vary: Origin, Accept-Encoding
+<- Access-Control-Allow-Credentials: true
+<- X-Rate-Limit-Remaining-Minute: 58
+<- X-IP-Address: 46.242.115.61
+<- X-Rate-Limit-Remaining-Day: 2994
+<- ETag: W/"3eb1-BF+2fDxIKbWHODPfOiQJ82Dq42k"
+<- Set-Cookie: session=e30=; path=/; expires=Mon, 10 May 2027 13:00:38 GMT; domain=.opendota.com; secure; httponly
+<- Set-Cookie: session.sig=9A3MANd7pSadSYrfALkOJK-1IPc; path=/; expires=Mon, 10 May 2027 13:00:38 GMT; domain=.opendota.com; secure; httponly
+<- Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=oSHtq8NvmF5miF1JQruq5Zxax8VE%2FafqNgerTGvmMaPg0SaYrga9XkrsP1%2BIspMmxNdOjqlDRNRiQYX52TmdGkUDf9d4LC70P0QUfkYH8u5rWR9wu5826X%2Fwn3xl3A8eEBSO"}]}
+<- Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+<- cf-cache-status: DYNAMIC
+<- Content-Encoding: gzip
+<- Server: cloudflare
+<- CF-RAY: 9fa15e1d9ec1e0de-ARN
+<- alt-svc: h3=":443"; ma=86400
+<- 
+* Connection #0 to host api.opendota.com:443 left intact
+<- HTTP/1.1 200 OK
+<- Date: Mon, 11 May 2026 13:00:38 GMT
+<- Content-Type: application/json; charset=utf-8
+<- Transfer-Encoding: chunked
+<- Connection: keep-alive
+<- X-Powered-By: Express
+<- Vary: Origin, Accept-Encoding
+<- Access-Control-Allow-Credentials: true
+<- X-Rate-Limit-Remaining-Minute: 56
+<- X-IP-Address: 46.242.115.61
+<- X-Rate-Limit-Remaining-Day: 2992
+<- ETag: W/"3d50-PVEJYVtqqgJINgyDSCnEVagkquA"
+<- Set-Cookie: session=e30=; path=/; expires=Mon, 10 May 2027 13:00:38 GMT; domain=.opendota.com; secure; httponly
+<- Set-Cookie: session.sig=9A3MANd7pSadSYrfALkOJK-1IPc; path=/; expires=Mon, 10 May 2027 13:00:38 GMT; domain=.opendota.com; secure; httponly
+<- Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=M9u6WvxEYP%2F4nxQ%2FCreCbgKmWgXQD5cG1ASIKj6P7a2XXTR4bQyxnistkeCm5ItYHuWvoVh%2FkI3VBRtrBq0y7NdIlN7UtECDD9HlofHkUQ8gSFFnbuCFzCQtB4BYJpiFXtBP"}]}
+<- Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+<- cf-cache-status: DYNAMIC
+<- Content-Encoding: gzip
+<- Server: cloudflare
+<- CF-RAY: 9fa15e1dbeb19900-ARN
+<- alt-svc: h3=":443"; ma=86400
+<- 
+* Connection #0 to host api.opendota.com:443 left intact
+* Host api.stratz.com:443 was resolved.
+* IPv6: (none)
+* IPv4: 8.47.69.0, 8.6.112.0
+* Host api.stratz.com:443 was resolved.
+* IPv6: (none)
+* IPv4: 8.47.69.0, 8.6.112.0
+*   Trying 8.47.69.0:443...
+*   Trying 8.47.69.0:443...
+* schannel: disabled automatic use of client certificate
+* ALPN: curl offers http/1.1
+* schannel: disabled automatic use of client certificate
+* ALPN: curl offers http/1.1
+* ALPN: server accepted http/1.1
+* Established connection to api.stratz.com (8.47.69.0 port 443) from 192.168.1.82 port 52664 
+* using HTTP/1.x
+-> POST /graphql HTTP/1.1
+Host: api.stratz.com
+Content-Type: application/json
+Accept: application/json, text/plain, */*
+Accept-Encoding: gzip, deflate
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+Accept-Language: en-US,en;q=0.9
+Origin: https://stratz.com
+Referer: https://stratz.com/
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-site
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTdWJqZWN0IjoiNjhjODAzMjItMzQyYS00NWYwLWFlOWYtNjlhZjA3NzllMTMxIiwiU3RlYW1JZCI6IjEyNjE2NjAxMzUiLCJBUElVc2VyIjoidHJ1ZSIsIm5iZiI6MTc1MzEyNzU2NiwiZXhwIjoxNzg0NjYzNTY2LCJpYXQiOjE3NTMxMjc1NjYsImlzcyI6Imh0dHBzOi8vYXBpLnN0cmF0ei5jb20ifQ.UrC1HTdn6dDNf76buspQd3jSQNvhSqOtgAL-2kURGnE
+Content-Length: 3862
+Connection: keep-alive
+
+* upload completely sent off: 3862 bytes
+* ALPN: server accepted http/1.1
+* Established connection to api.stratz.com (8.47.69.0 port 443) from 192.168.1.82 port 52663 
+* using HTTP/1.x
+-> POST /graphql HTTP/1.1
+Host: api.stratz.com
+Content-Type: application/json
+Accept: application/json, text/plain, */*
+Accept-Encoding: gzip, deflate
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
+Accept-Language: en-US,en;q=0.9
+Origin: https://stratz.com
+Referer: https://stratz.com/
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-site
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTdWJqZWN0IjoiNjhjODAzMjItMzQyYS00NWYwLWFlOWYtNjlhZjA3NzllMTMxIiwiU3RlYW1JZCI6IjEyNjE2NjAxMzUiLCJBUElVc2VyIjoidHJ1ZSIsIm5iZiI6MTc1MzEyNzU2NiwiZXhwIjoxNzg0NjYzNTY2LCJpYXQiOjE3NTMxMjc1NjYsImlzcyI6Imh0dHBzOi8vYXBpLnN0cmF0ei5jb20ifQ.UrC1HTdn6dDNf76buspQd3jSQNvhSqOtgAL-2kURGnE
+Content-Length: 25537
+Connection: keep-alive
+
+* upload completely sent off: 25537 bytes
+<- HTTP/1.1 200 OK
+<- Date: Mon, 11 May 2026 13:00:38 GMT
+<- Content-Type: application/json; charset=utf-8
+<- Transfer-Encoding: chunked
+<- Connection: keep-alive
+<- x-steamid: 1261660135
+<- x-steamid-ok: false
+<- x-ratelimit-limit-second: 8
+<- x-ratelimit-limit-minute: 150
+<- x-ratelimit-limit-hour: 1500
+<- x-ratelimit-limit-day: 15000
+<- x-ratelimit-remaining-second: 7
+<- x-ratelimit-remaining-minute: 149
+<- x-ratelimit-remaining-hour: 1499
+<- x-ratelimit-remaining-day: 14989
+<- ratelimit-reset: 1
+<- ratelimit-remaining: 7
+<- ratelimit-limit: 8
+<- Content-Encoding: gzip
+<- vary: Accept-Encoding
+<- Server: cloudflare
+<- x-powered-by: ASP.NET
+<- access-control-allow-origin: *
+<- access-control-expose-headers: Location,Tus-Resumable,Tus-Version,Tus-Extension,Tus-Max-Size,Tus-Checksum-Algorithm,Upload-Length,Upload-Offset,Upload-Metadata,Upload-Checksum,Upload-Concat,Upload-Expires,x-ratelimit-limit-hour,x-ratelimit-limit-minute,x-ratelimit-limit-second,x-ratelimit-remaining-hour,x-ratelimit-remaining-minute,x-ratelimit-remaining-second,x-ratelimit-remaining-day,x-ratelimit-limit-day
+<- x-kong-upstream-latency: 31
+<- x-kong-proxy-latency: 1
+<- via: kong/2.8.3
+<- cf-cache-status: DYNAMIC
+<- Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+<- Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=u9aUUNGYCCDTleweN4%2B2SUYqmPhLs%2FdhvsZW%2BSZA6jwrCf9i1WodLvUUQ5R2v8XMx8%2FqFjD4WP%2F9wpdSUmQVLa8oQTZKW85X1FYxQmBrSEqiQsyYJ1d2QNYLgRFd44sC"}]}
+<- CF-RAY: 9fa15e25fb2ef3ae-DME
+<- 
+* Connection #0 to host api.stratz.com:443 left intact
+<- HTTP/1.1 200 OK
+<- Date: Mon, 11 May 2026 13:00:39 GMT
+<- Content-Type: application/json; charset=utf-8
+<- Transfer-Encoding: chunked
+<- Connection: keep-alive
+<- x-steamid: 1261660135
+<- x-steamid-ok: false
+<- x-ratelimit-limit-second: 8
+<- x-ratelimit-limit-minute: 150
+<- x-ratelimit-limit-hour: 1500
+<- x-ratelimit-limit-day: 15000
+<- x-ratelimit-remaining-second: 6
+<- x-ratelimit-remaining-minute: 148
+<- x-ratelimit-remaining-hour: 1498
+<- x-ratelimit-remaining-day: 14988
+<- ratelimit-reset: 1
+<- ratelimit-remaining: 6
+<- ratelimit-limit: 8
+<- Content-Encoding: gzip
+<- vary: Accept-Encoding
+<- Server: cloudflare
+<- x-powered-by: ASP.NET
+<- access-control-allow-origin: *
+<- access-control-expose-headers: Location,Tus-Resumable,Tus-Version,Tus-Extension,Tus-Max-Size,Tus-Checksum-Algorithm,Upload-Length,Upload-Offset,Upload-Metadata,Upload-Checksum,Upload-Concat,Upload-Expires,x-ratelimit-limit-hour,x-ratelimit-limit-minute,x-ratelimit-limit-second,x-ratelimit-remaining-hour,x-ratelimit-remaining-minute,x-ratelimit-remaining-second,x-ratelimit-remaining-day,x-ratelimit-limit-day
+<- x-kong-upstream-latency: 314
+<- x-kong-proxy-latency: 23
+<- via: kong/2.8.3
+<- cf-cache-status: DYNAMIC
+<- Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+<- Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=1T%2Bv0RIEj13bspNqBqem%2FVRpqlcLJTDOoWZCrGHZSgEQyATbo5DwuPdyOzldsJyacgyLOqNSTSMVoJVZ0rR%2BbhSJ4X%2B60bdUCINFrxpTHJksTkiyEFQ7u4rxIZ54Zhsc"}]}
+<- CF-RAY: 9fa15e264f34e959-DME
+<- 
+* Connection #0 to host api.stratz.com:443 left intact

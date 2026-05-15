@@ -46,7 +46,7 @@ for %%V in (
     "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
     "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat"
     "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-) do ( if exist %%V ( set "VCVARS=%%~V" & goto :found_vcvars ) )
+) do ( if exist "%%~V" ( set "VCVARS=%%~V" & goto :found_vcvars ) )
 echo [ERROR] vcvarsall.bat не найден.
 exit /b 1
 

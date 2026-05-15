@@ -8,7 +8,6 @@
  *   - убран SetConsoleOutputCP (выполнено в main_unified)
  */
 
-#define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
