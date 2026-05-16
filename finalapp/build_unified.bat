@@ -110,25 +110,23 @@ cl.exe ^
     /MACHINE:X64
 
 if %ERRORLEVEL% neq 0 (
-    echo.
+    echo(
     echo [FAIL] Сборка не удалась.
     exit /b 1
 )
 
-echo.
+echo(
 echo [OK] %OUT_DIR%\%TARGET%.exe
-echo.
-echo ╔═══════════════════════════════════════════════════════╗
-echo ║  Запуск:                                              ║
-echo ║    build\dota_assistant.exe ^<account_id^>              ║
-echo ║    build\dota_assistant.exe ^<id^> ^<steam_key^> ^<token^> ║
-echo ║                                                       ║
-echo ║  Фазы:                                                ║
-echo ║    [1] DataFetcher  — загрузка данных игрока          ║
-echo ║    [2] GSI-сервер   — мониторинг фазы игры на :3000   ║
-echo ║    [3] DRAFT:       — одновременно:                   ║
-echo ║          Portrait   — захват портретов → livepicks    ║
-echo ║          Picker     — CatBoost рекомендации           ║
-echo ╚═══════════════════════════════════════════════════════╝
+echo(
+echo Usage:
+echo   %OUT_DIR%\%TARGET%.exe ^<account_id^>
+echo   %OUT_DIR%\%TARGET%.exe ^<account_id^> ^<steam_key^> ^<stratz_token^>
+echo(
+echo Phases:
+echo   1) DataFetcher - download player data
+echo   2) GSI server - monitor game phase on :3000
+echo   3) DRAFT - simultaneously:
+echo        Portrait - capture portraits to livepicks
+echo        Picker   - CatBoost recommendations
 
 endlocal
