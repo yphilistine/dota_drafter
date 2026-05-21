@@ -1,1 +1,194 @@
-описание
+================================================================================
+  DOTA 2 DRAFT ASSISTANT
+  Автоматический помощник драфта с распознаванием портретов и ML-рекомендациями
+================================================================================
+
+ОПИСАНИЕ
+--------
+Программа анализирует текущий матч в реальном времени и выдаёт рекомендации
+по выбору героев на основе трёх источников данных:
+  - статистика конкретного игрока (OpenDota / STRATZ)
+  - про-статистика героев (OpenDota ProMatches)
+  - immortal-статистика (STRATZ, последние 8 дней)
+
+Распознавание героев на экране происходит через захват HUD и сравнение
+изображений по алгоритму Pearson-корреляции 8×8 матриц (без OCR).
+CatBoost ML-модель предсказывает P(radiant_win) для каждого возможного пика.
+
+
+СТРУКТУРА ФАЙЛОВ
+----------------
+  dota_assistant.exe       -- главный исполняемый файл
+  catboostmodel.dll        -- CatBoost runtime (должен быть в PATH)
+  draft_helper_v3_early.cbm  -- модель для начала драфта (0-4 героя)
+  draft_helper_v3_mid.cbm    -- модель для середины драфта (5-7 героев)
+  draft_helper_v3_late.cbm   -- модель для конца драфта (8-10 героев)
+  hero_hashes.h / hero_hashes.db  -- база хешей портретов героев
+  playerandlivestats.db    -- SQLite база данных (создаётся автоматически)
+
+  Конфигурация GSI (скопировать один раз):
+  gamestate_integration_dota2.cfg
+    → C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\
+      game\dota\cfg\gamestate_integration\
+
+
+ЗАВИСИМОСТИ
+-----------
+  catboostmodel.dll  -- добавить папку с DLL в системный PATH:
+                        setx PATH "%PATH%;C:\catboost"
+  PostgreSQL         -- опционально, для immortal/pro статистики
+                        set PG_CONN_STR=postgresql://user:pass@host:5432/dota2
+
+
+УСТАНОВКА
+---------
+1. Добавить catboostmodel.dll в PATH:
+     setx PATH "%PATH%;C:\catboost"
+   (перезапустить cmd после этого)
+
+2. Скопировать gamestate_integration_dota2.cfg в папку GSI Dota 2
+   (путь указан выше в разделе "Структура файлов")
+
+3. Положить модели рядом с exe:
+     draft_helper_v3_early.cbm
+     draft_helper_v3_mid.cbm
+     draft_helper_v3_late.cbm
+
+4. Опционально — задать переменные окружения:
+     set PG_CONN_STR=postgresql://user:pass@localhost:5432/dota2
+     set STRATZ_API_KEY=eyJ...
+     set STEAM_API_KEY=XXXX
+
+
+ЗАПУСК
+------
+  build\dota_assistant.exe <account_id>
+  build\dota_assistant.exe <account_id> <steam_api_key>
+  build\dota_assistant.exe <account_id> <steam_api_key> <stratz_token>
+
+  account_id -- 32-битный Steam ID (не 64-битный SteamID64)
+                Найти: https://www.steamidfinder.com → "Steam ID 3" без [U:1:]
+                Пример: 1261660135
+
+  Если запустить без аргументов -- программа спросит account_id в консоли.
+
+  Прокси (если OpenDota недоступен без VPN):
+    set DOTA_PROXY=socks5://127.0.0.1:7890
+    set DOTA_PROXY=http://127.0.0.1:8080
+
+
+ФАЗЫ РАБОТЫ
+-----------
+  [Фаза 1] DataFetcher (~30-90 сек)
+    Загружает данные из OpenDota и STRATZ:
+      - справочник героев
+      - статистика игрока по героям (все режимы + ranked)
+      - история матчей за 90 дней
+      - pro-статистика (если задан PG_CONN_STR)
+    По завершении данные сохраняются в playerandlivestats.db
+
+  [Фаза 2] Ожидание матча
+    GSI-сервер слушает порт 3000.
+    Ждёт подключения Dota 2 и начала игры.
+
+  [HERO_SELECTION]
+    Portrait Capture запускается:
+      - захватывает портреты HUD каждые 500 мс
+      - распознаёт героев (score >= 0.5 = уверенное совпадение)
+      - "NULL" в базе хешей = пустой слот, игнорируется
+      - записывает распознанных героев в таблицу livepicks
+    Продолжает работать ещё 30 сек после окончания HERO_SELECTION.
+
+  [STRATEGY_TIME / вся игра]
+    Picker запускается и работает до конца матча:
+      - читает livepicks каждые 500 мс
+      - если наш слот пустой -- показывает топ-10 рекомендаций
+      - если наш герой выбран -- показывает P(radiant_win)
+      - перерисовка только при изменении данных
+
+  Кнопка "▶ Bring picker" видна поверх Dota 2 всё время пока открыта игра.
+  Клик -- выводит консоль с пикером на передний план.
+
+
+ТАБЛИЦА livepicks (SQLite)
+--------------------------
+  Единственная строка, обновляется при каждом новом пике:
+    match_id, our_account_id, our_side (1=radiant/0=dire), our_slot (1-5)
+    r1_hero..r5_hero  -- hero_id radiant слотов
+    r1_pos..r5_pos    -- позиция (1-5, 0=неизвестно)
+    d1_hero..d5_hero  -- hero_id dire слотов
+    updated_at        -- Unix timestamp мс (picker проверяет изменения)
+
+  При каждой новой игре таблица очищается автоматически.
+
+
+ПРЕДУПРЕЖДЕНИЕ ПРИ ЗАПУСКЕ
+---------------------------
+  "There are invalid params and some of them will be ignored.
+   Parameter {feature_weights...} is ignored, because it cannot be parsed."
+
+  Это НЕ ошибка. Модели обучены с feature_weights, но версия catboostmodel.dll
+  не поддерживает этот параметр. На качество предсказаний не влияет.
+  Появляется 3 раза (по одному для каждой модели).
+
+
+СБОРКА ИЗ ИСХОДНИКОВ
+---------------------
+  Требования:
+    Visual Studio 2019/2022 или BuildTools
+    vcpkg с пакетами: libcurl sqlite3 libpq openssl lz4 zlib nlohmann-json
+    CatBoost C API: catboostmodel.dll + catboostmodel.lib в C:\catboost
+
+  Сборка:
+    build_unified.bat
+
+  Исходные файлы:
+    main_unified.cpp        -- оркестратор (фазы 1-3, управление потоками)
+    shared_types.h          -- общие типы (GameInfo, SharedPortraitState)
+    datafetcher.cpp         -- загрузка данных (runDataFetcher)
+    livestatsfetcher.cpp    -- GSI HTTP-сервер (runGsiServer)
+    portrait_runner.cpp     -- захват портретов (runPortraitCapture)
+    portrait_runner.h
+    dota_picker.cpp         -- ML-пикер (runPicker)
+    dota2_capture.cpp       -- захват окна Dota 2 (PrintWindow + GDI)
+    dota2_capture.h
+    dhash.h                 -- Pearson-корреляция 8x8 для распознавания
+    hero_hashes.h           -- база хешей портретов (генерируется build_hero_db.exe)
+    common.cpp              -- логирование, HTTP (curl), SQLite RAII
+    common.h
+    playerdatafetcher.cpp   -- OpenDota/STRATZ запросы
+    playerdatafetcher.h
+    clouddatafetcher.cpp    -- PostgreSQL -> SQLite синхронизация
+    clouddatafetcher.h
+
+
+ГЕНЕРАЦИЯ БАЗЫ ХЕШЕЙ ПОРТРЕТОВ (hero_hashes.h)
+-----------------------------------------------
+  1. Запустить Dota 2, начать любую тренировочную игру
+  2. Запустить build_hero_db.exe -- он захватит все портреты из HUD
+  3. Переименовать сохранённые PNG по имени героя (localized_name из БД)
+  4. Запустить build_hero_db.exe --build -- создаст hero_hashes.h
+  5. Пересобрать проект (build_unified.bat)
+
+  В hero_hashes.h добавить запись "NULL" для пустых слотов --
+  при score > 0.7 для NULL слот не записывается в livepicks.
+
+
+ПОДДЕРЖИВАЕМЫЕ РАЗРЕШЕНИЯ
+--------------------------
+  Layouts HUD откалиброваны для:
+    16:9  (1280x720, 1920x1080, 2560x1440, 3840x2160)
+    16:10 (1920x1200, 2560x1600)
+    21:9  (2560x1080, 3440x1440)
+    4:3   (1024x768, 1280x960)
+
+  DPI-масштабирование (125%, 150%, 200%) поддерживается автоматически.
+
+
+ЛОГИ
+----
+  logs\console.log    -- весь вывод программы
+  logs\curl_debug.txt -- HTTP заголовки и трафик (для диагностики)
+
+
+================================================================================
