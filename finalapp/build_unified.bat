@@ -115,6 +115,9 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+if exist "%CATBOOST%\catboostmodel.dll" copy /Y "%CATBOOST%\catboostmodel.dll" "%OUT_DIR%\" >nul
+if exist "%CATBOOST%\catboostmodel-windows-x86_64-1.2.10.dll" copy /Y "%CATBOOST%\catboostmodel-windows-x86_64-1.2.10.dll" "%OUT_DIR%\" >nul
+
 echo(
 echo [OK] %OUT_DIR%\%TARGET%.exe
 echo(
