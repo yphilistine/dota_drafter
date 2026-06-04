@@ -1,17 +1,18 @@
 #pragma once
 /*
  * portrait_runner.h
- *
- * Функция захвата портретов героев без сохранения PNG.
- * Каждые 500 мс: PrintWindow → crop → hash → recognize.
- * Если score >= 0.5: записывает hero_id в livepicks и обновляет SharedPortraitState.
  */
 
 #include "shared_types.h"
 #include <string>
 #include <atomic>
 
-// Запускает цикл захвата. Блокирует поток пока running == true.
+// Запускает прозрачную кнопку [D] поверх Dota 2.
+// Вызывать один раз при старте приложения (из orchestratorMain).
+// Кнопка видна всегда, пока окно Dota 2 открыто.
+void startDotaOverlay();
+
+// Запускает цикл захвата портретов. Блокирует поток пока running == true.
 void runPortraitCapture(GameInfo&           gameInfo,
                         const std::string&  dbPath,
                         std::atomic<bool>&  running,

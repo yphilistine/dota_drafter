@@ -1,11 +1,6 @@
 /*
- * dota_picker.cpp
- *
- * Изменения:
- *   - main() → runPicker(model, db, running, portraitState)
- *   - while(true) → while(running)
- *   - render() получает SharedPortraitState* и показывает секцию portrait
- *   - убран SetConsoleOutputCP (выполнено в main_unified)
+ * dota_picker.cpp — GUI-режим пикера.
+ * Экспортирует runPickerGui() → пишет результат в GuiPickerState.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -13,15 +8,12 @@
 
 #include "shared_types.h"
 
-#include <iostream>
-#include <iomanip>
 #include <string>
 #include <vector>
 #include <map>
 #include <set>
 #include <algorithm>
 #include <cmath>
-#include <sstream>
 #include <stdexcept>
 #include <cstring>
 #include <chrono>
@@ -182,7 +174,6 @@ static std::map<int,std::string> loadHeroes(sqlite3* db) {
 }
 static std::map<std::pair<int,int>,ProStats> loadProStats(sqlite3* db) {
     std::map<std::pair<int,int>,ProStats> m;
-    // Таблица может отсутствовать если PostgreSQL не настроен
     try {
         Stmt st(db,"SELECT hero_id,pos,games,wins,bans FROM proherostats");
         while (st.row()) {
@@ -271,225 +262,198 @@ static ModelCalcerHandle* selectModel(const StageModels& m,const LivePick& lp) {
     if (known<=7) return m.mid;
     return m.late;
 }
-static const char* stageName(const LivePick& lp) {
-    int known=0;
-    for (int i=0;i<5;++i){ if (lp.r[i].hero_id) ++known; if (lp.d[i].hero_id) ++known; }
-    if (known<=4) return "early";
-    if (known<=7) return "mid";
-    return "late";
-}
+// =============================================================================
+//  GUI режим: renderToGui + runPickerGui
+//  Вместо вывода в консоль — пишет в GuiPickerState (читает GUI-поток)
+// =============================================================================
 
-// ─── render ───────────────────────────────────────────────────────────────────
-
-static void render(
-    const LivePick& lp,
-    const std::map<int,std::string>& hero_map,
+static void renderToGui(
+    GuiPickerState*                              state,
+    const LivePick&                              lp,
+    const std::map<int,std::string>&             hero_map,
     const std::map<std::pair<int,int>,ProStats>& pro_map,
-    const std::map<int,PlayerStats>& our_stats,
-    const std::map<int,ImmortalHeroStats>& immortal_map,
-    const StageModels& models,
-    SharedPortraitState* ps)           // ← новый параметр
+    const std::map<int,PlayerStats>&             our_stats,
+    const std::map<int,ImmortalHeroStats>&       immortal_map,
+    const StageModels&                           models)
 {
-    ModelCalcerHandle* model=selectModel(models,lp);
-    HANDLE hOut=GetStdHandle(STD_OUTPUT_HANDLE);
-    COORD home={0,0}; DWORD written;
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(hOut,&csbi);
-    DWORD sz=csbi.dwSize.X*csbi.dwSize.Y;
-    FillConsoleOutputCharacterA(hOut,' ',sz,home,&written);
-    FillConsoleOutputAttribute(hOut,csbi.wAttributes,sz,home,&written);
-    SetConsoleCursorPosition(hOut,home);
+    if (!state) return;
 
-    auto hname=[&](int hid)->std::string {
-        if (!hid) return "?";
-        auto it=hero_map.find(hid); return it!=hero_map.end()?it->second:"unknown";
+    auto hname = [&](int hid) -> std::string {
+        if (!hid) return "";
+        auto it = hero_map.find(hid);
+        return it != hero_map.end() ? it->second : "";
     };
-    int our_r=(lp.our_side==1)?(lp.our_slot-1):-1;
-    int our_d=(lp.our_side==0)?(lp.our_slot-1):-1;
 
-    // ── Заголовок ──
-    std::cout<<"╔══════════════════════════════════════════════════╗\n";
-    std::cout<<"║           DOTA 2 DRAFT HELPER                   ║\n";
-    std::cout<<"╚══════════════════════════════════════════════════╝\n";
-    std::cout<<"  Match: "<<lp.match_id
-             <<"   Side: "<<(lp.our_side?"Radiant":"Dire")
-             <<"   Slot: "<<lp.our_slot
-             <<"   Stage: "<<stageName(lp)<<"\n\n";
-
-    // ── Текущий драфт ──
-    std::cout<<"  ┌─────────────────────────────────────────────┐\n";
-    std::cout<<"  │  RADIANT                                     │\n";
-    for (int i=0;i<5;++i) {
-        bool is_our=(i==our_r);
-        std::string h=hname(lp.r[i].hero_id);
-        std::string pos=lp.r[i].position>0?"pos "+std::to_string(lp.r[i].position):"pos ?";
-        std::cout<<"  │  R"<<(i+1)<<" ["<<pos<<"]  ";
-        std::cout<<std::left<<std::setw(22)<<h;
-        if (is_our&&lp.r[i].hero_id==0) std::cout<<" ← PICK HERE";
-        else if (is_our)                 std::cout<<" ← OUR HERO";
-        std::cout<<"\n";
-    }
-    std::cout<<"  ├─────────────────────────────────────────────┤\n";
-    std::cout<<"  │  DIRE                                        │\n";
-    for (int i=0;i<5;++i) {
-        bool is_our=(i==our_d);
-        std::string h=hname(lp.d[i].hero_id);
-        std::string pos=lp.d[i].position>0?"pos "+std::to_string(lp.d[i].position):"pos ?";
-        std::cout<<"  │  D"<<(i+1)<<" ["<<pos<<"]  ";
-        std::cout<<std::left<<std::setw(22)<<h;
-        if (is_our&&lp.d[i].hero_id==0) std::cout<<" ← PICK HERE";
-        else if (is_our)                 std::cout<<" ← OUR HERO";
-        std::cout<<"\n";
-    }
-    std::cout<<"  └─────────────────────────────────────────────┘\n\n";
-
-    // ── Секция Portrait Capture ── (новое)
-    if (ps) {
-        std::lock_guard<std::mutex> lk(ps->mtx);
-        if (ps->active) {
-            std::cout<<"  ┌─────────────────────────────────────────────┐\n";
-            std::cout<<"  │  PORTRAIT CAPTURE  [● live]                 │\n";
-            bool anyValid = false;
-            for (int i=0;i<10;++i) {
-                auto& r=ps->slots[i];
-                if (r.score <= 0.0f) continue;
-                anyValid = true;
-                const char* team=(i<5)?"R":"D";
-                int idx=(i<5)?i+1:i-4;
-                std::printf("  │  %s%d  %-22s  score=%.2f%s\n",
-                    team, idx,
-                    r.heroName.empty()?"?":r.heroName.c_str(),
-                    r.score,
-                    r.score>=0.5f?" ✓":" (low)");
-            }
-            if (!anyValid)
-                std::cout<<"  │  (ожидание портретов...)                   │\n";
-            std::cout<<"  └─────────────────────────────────────────────┘\n\n";
-        }
+    // our_slot хранится как 1-based (от GSI team_slot+1).
+    // our_side: 1=Radiant, 0=Dire.
+    // our_r/our_d: 0-based индекс в массиве radiant[]/dire[].
+    int our_r = -1, our_d = -1;
+    if (lp.our_slot >= 1 && lp.our_slot <= 5) {
+        int idx = lp.our_slot - 1;           // 0-4
+        if (lp.our_side == 1) our_r = idx;   // Radiant
+        else                   our_d = idx;   // Dire
     }
 
-    // ── Герой нашего слота ──
-    int our_hero=(our_r>=0)?lp.r[our_r].hero_id:0;
-    if (our_d>=0) our_hero=lp.d[our_d].hero_id;
+    ModelCalcerHandle* model = selectModel(models, lp);
 
-    if (our_hero!=0) {
-        // Режим 1: показываем P(win)
+    std::lock_guard<std::mutex> lk(state->mtx);
+
+    state->isRadiant = (lp.our_side == 1);
+    state->ourSlot   = lp.our_slot;
+
+    // ── Hero slots ────────────────────────────────────────────────────────────
+    for (int i = 0; i < 5; i++) {
+        HeroSlotGui& s = state->radiant[i];
+        s.heroId = lp.r[i].hero_id;
+        s.pos    = lp.r[i].position;
+        s.filled = (lp.r[i].hero_id != 0);
+        s.isYou  = (i == our_r);
+        auto n   = hname(lp.r[i].hero_id);
+        std::snprintf(s.name, sizeof(s.name), "%s", n.c_str());
+    }
+    for (int i = 0; i < 5; i++) {
+        HeroSlotGui& s = state->dire[i];
+        s.heroId = lp.d[i].hero_id;
+        s.pos    = lp.d[i].position;
+        s.filled = (lp.d[i].hero_id != 0);
+        s.isYou  = (i == our_d);
+        auto n   = hname(lp.d[i].hero_id);
+        std::snprintf(s.name, sizeof(s.name), "%s", n.c_str());
+    }
+
+    // ── Our hero & position ───────────────────────────────────────────────────
+    int our_hero = (our_r >= 0 && our_r < 5) ? lp.r[our_r].hero_id : 0;
+    if (our_d >= 0 && our_d < 5) our_hero = lp.d[our_d].hero_id;
+
+    state->ourHeroPicked = (our_hero != 0);
+    state->ourPosition   = 0;
+    if (our_r >= 0 && our_r < 5) state->ourPosition = lp.r[our_r].position;
+    if (our_d >= 0 && our_d < 5) state->ourPosition = lp.d[our_d].position;
+
+    // ── Win probability OR top-10 recs ───────────────────────────────────────
+    if (our_hero != 0) {
+        // Mode 1: show P(win) for current draft
         FeatureVector v;
-        buildVector(v,lp,hero_map,pro_map,our_stats,0);
-        std::vector<FeatureVector> batch={v};
-        auto probs=runBatch(model,batch);
-        double p=probs[0];
-        std::cout<<"  ┌─────────────────────────────────────────────┐\n";
-        std::cout<<"  │  P(RADIANT WIN)                              │\n";
-        std::string col=(p>=0.60)?"\033[32m":(p>=0.50?"\033[33m":"\033[31m");
-        std::printf("  │    %s%.1f%%\033[0m  radiant win\n", col.c_str(), p*100.0);
-        std::printf("  │    our hero: %s\n", hname(our_hero).c_str());
-        std::cout<<"  └─────────────────────────────────────────────┘\n";
+        buildVector(v, lp, hero_map, pro_map, our_stats, 0);
+        std::vector<FeatureVector> batch = {v};
+        auto probs = runBatch(model, batch);
+        state->winProb  = (float)probs[0];
+        auto on = hname(our_hero);
+        std::snprintf(state->ourHeroName, sizeof(state->ourHeroName), "%s", on.c_str());
+        state->recCount = 0;
 
     } else {
-        // Режим 2: топ-10 рекомендаций
+        // Mode 2: рекомендации top-10
+        // Сначала считаем P(win) для текущего частичного драфта (без нашего героя)
+        {
+            FeatureVector v0;
+            buildVector(v0, lp, hero_map, pro_map, our_stats, 0);
+            std::vector<FeatureVector> b0 = {v0};
+            auto p0 = runBatch(model, b0);
+            state->winProb = (float)p0[0];
+        }
         std::set<int> picked;
-        for (int i=0;i<5;++i){ if (lp.r[i].hero_id) picked.insert(lp.r[i].hero_id); if (lp.d[i].hero_id) picked.insert(lp.d[i].hero_id); }
-        bool use_immortal=!immortal_map.empty();
+        for (int i = 0; i < 5; i++) {
+            if (lp.r[i].hero_id) picked.insert(lp.r[i].hero_id);
+            if (lp.d[i].hero_id) picked.insert(lp.d[i].hero_id);
+        }
+        bool use_immortal = !immortal_map.empty();
         std::vector<int> pool;
-        for (auto& [hid,_]:hero_map) {
+        for (auto& [hid, _] : hero_map) {
             if (picked.count(hid)) continue;
-            if (use_immortal&&!immortal_map.count(hid)) continue;
+            if (use_immortal && !immortal_map.count(hid)) continue;
             pool.push_back(hid);
         }
-        if (pool.empty()) { std::cout<<"  (нет героев для рекомендаций)\n"; goto done; }
 
-        {
+        state->recCount = 0;
+        if (!pool.empty()) {
             std::vector<FeatureVector> batch(pool.size());
-            for (size_t i=0;i<pool.size();++i)
-                buildVector(batch[i],lp,hero_map,pro_map,our_stats,pool[i]);
-            auto probs=runBatch(model,batch);
+            for (size_t i = 0; i < pool.size(); i++)
+                buildVector(batch[i], lp, hero_map, pro_map, our_stats, pool[i]);
+            auto probs = runBatch(model, batch);
 
-            bool rad=(lp.our_side==1);
+            bool rad = (lp.our_side == 1);
             std::vector<std::pair<double,int>> ranked;
             ranked.reserve(pool.size());
-            for (size_t i=0;i<pool.size();++i) ranked.push_back({probs[i],pool[i]});
-            if (rad) std::sort(ranked.begin(),ranked.end(),[](auto&a,auto&b){return a.first>b.first;});
-            else     std::sort(ranked.begin(),ranked.end(),[](auto&a,auto&b){return a.first<b.first;});
+            for (size_t i = 0; i < pool.size(); i++)
+                ranked.push_back({probs[i], pool[i]});
+            if (rad)
+                std::sort(ranked.begin(), ranked.end(),
+                    [](auto& a, auto& b){ return a.first > b.first; });
+            else
+                std::sort(ranked.begin(), ranked.end(),
+                    [](auto& a, auto& b){ return a.first < b.first; });
 
-            std::cout<<"  ┌─────────────────────────────────────────────┐\n";
-            std::printf("  │  TOP %d  [%s]\n", TOP_N, rad?"radiant — high P(rad_win)":"dire — low P(rad_win)");
-            std::cout<<"  ├─────────────────────────────────────────────┤\n";
+            int n = (int)std::min(ranked.size(), (size_t)10);
+            state->recCount = n;
+            int our_pos = state->ourPosition;
 
-            int shown=0;
-            for (auto&[prob,hid]:ranked) {
-                if (shown>=TOP_N) break;
-                auto& h=hero_map.at(hid);
-                int our_pos=(our_r>=0)?lp.r[our_r].position:(our_d>=0?lp.d[our_d].position:0);
-                auto ps2=pro_map.count({hid,our_pos})?pro_map.at({hid,our_pos}):ProStats{};
-                auto pl=our_stats.count(hid)?our_stats.at(hid):PlayerStats{};
-                std::string col;
-                if (rad){ col=(prob>=0.60)?"\033[32m":(prob>=0.52?"\033[33m":"\033[0m"); }
-                else    { col=(prob<=0.40)?"\033[32m":(prob<=0.48?"\033[33m":"\033[0m"); }
-                std::printf("  │  #%2d  %s%-22s\033[0m  P=%5.1f%%",
-                    shown+1, col.c_str(), h.c_str(), prob*100.0);
-                if (pl.games_all>0)
-                    std::printf("  you:%dg %.0f%%", pl.games_all, 100.0*pl.wins_all/pl.games_all);
-                if (ps2.games>0)
-                    std::printf("  pro:%dg", ps2.games);
-                auto imm=immortal_map.find(hid);
-                if (imm!=immortal_map.end())
-                    std::printf("  imm:%dg %.0f%%", imm->second.games,
-                        imm->second.games>0?100.0*imm->second.wins/imm->second.games:0.0);
-                std::puts("");
-                ++shown;
+            for (int i = 0; i < n; i++) {
+                auto& [prob, hid] = ranked[i];
+                PickRowGui& r = state->recs[i];
+                r.rank    = i + 1;
+                r.heroId  = hid;
+                r.winProb = (float)prob;
+                auto hn   = hname(hid);
+                std::snprintf(r.name, sizeof(r.name), "%s", hn.c_str());
+
+                auto pl  = our_stats.count(hid)        ? our_stats.at(hid)            : PlayerStats{};
+                auto ps2 = pro_map.count({hid,our_pos}) ? pro_map.at({hid,our_pos})   : ProStats{};
+                auto imm = immortal_map.count(hid)      ? immortal_map.at(hid)         : ImmortalHeroStats{};
+
+                r.gamesPlayer = pl.games_all;
+                r.wrPlayer    = pl.games_all > 0 ? (float)pl.wins_all / pl.games_all : 0.f;
+                r.gamesPro    = ps2.games;
+                r.gamesImm    = imm.games;
+                r.wrImm       = imm.games > 0 ? (float)imm.wins / imm.games : 0.f;
             }
-            std::cout<<"  └─────────────────────────────────────────────┘\n";
         }
     }
-done:
-    std::cout<<"\n  [● watching livepicks | Ctrl+C = выход]\n";
-    std::cout.flush();
+
+    state->gameStarted = true;
 }
 
-// ─── runPicker (бывший main) ──────────────────────────────────────────────────
+// ─── runPickerGui ─────────────────────────────────────────────────────────────
 
-int runPicker(const char* model_path, const char* db_path,
-              std::atomic<bool>& running,
-              SharedPortraitState* portraitState)
+int runPickerGui(const char* model_path, const char* db_path,
+                 std::atomic<bool>& running,
+                 GuiPickerState* guiState,
+                 SharedPortraitState* /*portraitState*/)
 {
-    // Включаем ANSI-цвета
-    HANDLE hOut=GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD mode=0; GetConsoleMode(hOut,&mode);
-    SetConsoleMode(hOut,mode|ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-
     try {
         StageModels models;
-        auto loadModel=[](const std::string& path)->ModelCalcerHandle* {
-            ModelCalcerHandle* m=ModelCalcerCreate();
-            if (!LoadFullModelFromFile(m,path.c_str())) {
+        auto loadModel = [](const std::string& path) -> ModelCalcerHandle* {
+            ModelCalcerHandle* m = ModelCalcerCreate();
+            if (!LoadFullModelFromFile(m, path.c_str())) {
                 ModelCalcerDelete(m);
-                throw std::runtime_error("Cannot load model: "+path+" — "+GetErrorString());
+                throw std::runtime_error("Cannot load model: " + path
+                                         + " — " + GetErrorString());
             }
             return m;
         };
         std::string base(model_path);
-        models.early=loadModel(base+"_early.cbm");
-        models.mid  =loadModel(base+"_mid.cbm");
-        models.late =loadModel(base+"_late.cbm");
+        models.early = loadModel(base + "_early.cbm");
+        models.mid   = loadModel(base + "_mid.cbm");
+        models.late  = loadModel(base + "_late.cbm");
 
         DB db(db_path);
-        auto hero_map=loadHeroes(db.get());
-        auto pro_map =loadProStats(db.get());
+        auto hero_map = loadHeroes(db.get());
+        auto pro_map  = loadProStats(db.get());
 
-        std::printf("[picker] Models: %s_{early,mid,late}.cbm\n", model_path);
-        std::printf("[picker] Heroes:%zu  Pro stats:%zu\n",
-                    hero_map.size(), pro_map.size());
+        if (guiState) {
+            std::lock_guard<std::mutex> lk(guiState->mtx);
+            guiState->active = true;
+        }
 
-        LivePick last_lp; last_lp.match_id=-1;
-        std::map<int,PlayerStats>      our_stats;
-        std::map<int,ImmortalHeroStats> immortal_map;
-        int last_account_id=-1, last_our_pos=-1;
+        LivePick last_lp; last_lp.match_id = -1;
+        std::map<int, PlayerStats>       our_stats;
+        std::map<int, ImmortalHeroStats> immortal_map;
+        int last_account_id = -1, last_our_pos = -1;
 
         while (running.load()) {
             LivePick lp;
-            bool ok=false;
-            try { ok=loadLatestLivePick(db.get(),lp); }
+            bool ok = false;
+            try { ok = loadLatestLivePick(db.get(), lp); }
             catch (...) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
                 continue;
@@ -499,37 +463,45 @@ int runPicker(const char* model_path, const char* db_path,
                 continue;
             }
 
-            if (lp.our_account_id!=last_account_id) {
-                if (lp.our_account_id!=0)
-                    our_stats=loadPlayerStats(db.get(),lp.our_account_id);
-                else
-                    our_stats.clear();
-                last_account_id=lp.our_account_id;
+            if (lp.our_account_id != last_account_id) {
+                our_stats = (lp.our_account_id != 0)
+                    ? loadPlayerStats(db.get(), lp.our_account_id)
+                    : std::map<int,PlayerStats>{};
+                last_account_id = lp.our_account_id;
             }
 
-            int our_r=(lp.our_side==1)?(lp.our_slot-1):-1;
-            int our_d=(lp.our_side==0)?(lp.our_slot-1):-1;
-            int our_pos=0;
-            if (our_r>=0) our_pos=lp.r[our_r].position;
-            if (our_d>=0) our_pos=lp.d[our_d].position;
+            int our_r = (lp.our_side == 1) ? (lp.our_slot - 1) : -1;
+            int our_d = (lp.our_side == 0) ? (lp.our_slot - 1) : -1;
+            int our_pos = 0;
+            if (our_r >= 0 && our_r < 5) our_pos = lp.r[our_r].position;
+            if (our_d >= 0 && our_d < 5) our_pos = lp.d[our_d].position;
 
-            if (our_pos!=last_our_pos) {
-                immortal_map=loadImmortalHeroStats(db.get(),our_pos);
-                last_our_pos=our_pos;
+            if (our_pos != last_our_pos) {
+                immortal_map = loadImmortalHeroStats(db.get(), our_pos);
+                last_our_pos = our_pos;
             }
 
-            if (lp!=last_lp) {
-                last_lp=lp;
-                render(lp,hero_map,pro_map,our_stats,
-                       immortal_map,models,portraitState);
+            if (lp != last_lp) {
+                last_lp = lp;
+                renderToGui(guiState, lp, hero_map, pro_map,
+                            our_stats, immortal_map, models);
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
         }
 
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "\n[picker] Error: %s\n", e.what());
+        std::fprintf(stderr, "[picker_gui] Error: %s\n", e.what());
+        if (guiState) {
+            std::lock_guard<std::mutex> lk(guiState->mtx);
+            guiState->active = false;
+        }
         return 1;
+    }
+
+    if (guiState) {
+        std::lock_guard<std::mutex> lk(guiState->mtx);
+        guiState->active = false;
     }
     return 0;
 }
