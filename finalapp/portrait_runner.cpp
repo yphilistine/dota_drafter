@@ -71,10 +71,11 @@ static int lookupHeroId(const std::map<std::string, int>& nameMap, const char* r
     return it != nameMap.end() ? it->second : 0;
 }
 
-// Размер overlay-кнопки: 132×132 — весь квадрат кликабелен
-// Фон прозрачный (alpha≈0), текст [D] отображается через per-pixel alpha
-static constexpr int OVERLAY_BTN = 132;
-
+// Размер overlay-кнопки: прямоугольник 120×64 — весь прямоугольник кликабелен
+// Фон полностью прозрачный, текст [D] отображается через per-pixel alpha
+static constexpr int OVERLAY_BTN_W = 80;
+static constexpr int OVERLAY_BTN_H = 63;
+static constexpr int OVERLAY_BTN_Y_OFFSET = 30;static constexpr int OVERLAY_ICON_SHIFT_UP = 5;
 // ─────────────────────────────────────────────────────────────────────────────
 // livepicks
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,31 +142,31 @@ static void bringAppToFront() {
 
 static void updateOverlayPos(HWND overlay, Dota2Capture* cap) {
     if (!cap || !cap->isWindowFound()) {
-        SetWindowPos(overlay, HWND_TOPMOST, 10, 20,
-                     OVERLAY_BTN, OVERLAY_BTN, SWP_NOACTIVATE);
+        SetWindowPos(overlay, HWND_TOPMOST, 10, 20 + OVERLAY_BTN_Y_OFFSET,
+                     OVERLAY_BTN_W, OVERLAY_BTN_H, SWP_NOACTIVATE);
         return;
     }
     HWND game = cap->gameWindowHandle();
     RECT fr{};
     if (SUCCEEDED(DwmGetWindowAttribute(game, 9, &fr, sizeof(fr)))) {
         int frameH = fr.bottom - fr.top;
-        int gearH  = (frameH > 0) ? (std::max)(30, (int)(frameH * 0.04f)) : 44;
+        int gearH  = (frameH > 0) ? (std::max)(20, (int)(frameH * 0.03f)) : 32;
         SetWindowPos(overlay, HWND_TOPMOST,
-                     fr.left + 10, fr.top + gearH,
-                     OVERLAY_BTN, OVERLAY_BTN, SWP_NOACTIVATE);
+                     fr.left + 10, fr.top + gearH + OVERLAY_BTN_Y_OFFSET,
+                     OVERLAY_BTN_W, OVERLAY_BTN_H, SWP_NOACTIVATE);
     } else {
         RECT wr{};
         GetWindowRect(game, &wr);
         SetWindowPos(overlay, HWND_TOPMOST,
-                     wr.left + 10, wr.top + 20,
-                     OVERLAY_BTN, OVERLAY_BTN, SWP_NOACTIVATE);
+                     wr.left + 10, wr.top + 20 + OVERLAY_BTN_Y_OFFSET,
+                     OVERLAY_BTN_W, OVERLAY_BTN_H, SWP_NOACTIVATE);
     }
 }
 
 // ─── Per-pixel alpha rendering для transparent overlay ────────────────────────
 // Фон alpha=1 (кликабелен, визуально прозрачен), текст [D] alpha=brightness
 static void paintLayeredButton(HWND hwnd) {
-    const int W = OVERLAY_BTN, H = OVERLAY_BTN;
+    const int W = OVERLAY_BTN_W, H = OVERLAY_BTN_H;
     HDC screenDC = GetDC(nullptr);
     HDC memDC    = CreateCompatibleDC(screenDC);
 
@@ -189,18 +190,17 @@ static void paintLayeredButton(HWND hwnd) {
     // Рисуем [D] белым цветом через GDI
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(255, 255, 255));
-    int fs = (int)(H * 0.55f); if (fs < 8) fs = 8;
+    int fs = (int)(H * 1.2f); if (fs < 8) fs = 8;
     HFONT f = CreateFontW(fs, 0, 0, 0, FW_BOLD, 0, 0, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     HFONT of = (HFONT)SelectObject(memDC, f);
-    RECT r = {0, 0, W, H};
+    RECT r = {0, -OVERLAY_ICON_SHIFT_UP, W, H - OVERLAY_ICON_SHIFT_UP};
     DrawTextW(memDC, L"[D]", -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(memDC, of); DeleteObject(f);
 
-    // Исправляем alpha-канал (GDI не пишет alpha):
-    //   текстовые пиксели (яркие) → alpha = brightness (видимы)
-    //   фоновые пиксели (тёмные) → alpha = 1 (прозрачны, но кликабельны)
+    //   текстовые пиксели (яркие) → alpha = brightness, цвет = чёрный
+    //   фоновые пиксели (тёмные)  → alpha = 0 (прозрачный)
     for (int i = 0; i < W * H; i++) {
         uint8_t b = (pixels[i] >>  0) & 0xFF;
         uint8_t g = (pixels[i] >>  8) & 0xFF;
@@ -208,10 +208,7 @@ static void paintLayeredButton(HWND hwnd) {
         uint8_t brightness = (uint8_t)(((uint32_t)rv + g + b) / 3);
         uint8_t a = (brightness > 20) ? brightness : 1;
         // premultiplied BGRA для UpdateLayeredWindow / ULW_ALPHA
-        pixels[i] = ((uint32_t)a           << 24)
-                  | ((uint32_t)(rv * a / 255) << 16)
-                  | ((uint32_t)(g  * a / 255) <<  8)
-                  | ((uint32_t)(b  * a / 255));
+        pixels[i] = ((uint32_t)a << 24);
     }
 
     POINT       ptSrc = {0, 0};
@@ -314,7 +311,7 @@ static DWORD WINAPI overlayThread(LPVOID param) {
     HWND hw = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
         CLASS, L"[D]", WS_POPUP,
-        10, 20, OVERLAY_BTN, OVERLAY_BTN,
+        10, 20, OVERLAY_BTN_W, OVERLAY_BTN_H,
         nullptr, nullptr, hi, oc);
 
     if (!hw) return 1;
