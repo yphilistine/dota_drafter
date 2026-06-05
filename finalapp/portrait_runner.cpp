@@ -71,8 +71,9 @@ static int lookupHeroId(const std::map<std::string, int>& nameMap, const char* r
     return it != nameMap.end() ? it->second : 0;
 }
 
-// Размер overlay-кнопки — минимально под текст [D] с небольшим отступом
-static constexpr int OVERLAY_BTN = 78;
+// Размер overlay-кнопки: 132×132 — весь квадрат кликабелен
+// Фон прозрачный (alpha≈0), текст [D] отображается через per-pixel alpha
+static constexpr int OVERLAY_BTN = 132;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // livepicks
@@ -148,7 +149,7 @@ static void updateOverlayPos(HWND overlay, Dota2Capture* cap) {
     RECT fr{};
     if (SUCCEEDED(DwmGetWindowAttribute(game, 9, &fr, sizeof(fr)))) {
         int frameH = fr.bottom - fr.top;
-        int gearH  = (frameH > 0) ? (std::max)(5, (int)(frameH * 0.02f)) : 20;
+        int gearH  = (frameH > 0) ? (std::max)(30, (int)(frameH * 0.04f)) : 44;
         SetWindowPos(overlay, HWND_TOPMOST,
                      fr.left + 10, fr.top + gearH,
                      OVERLAY_BTN, OVERLAY_BTN, SWP_NOACTIVATE);
@@ -159,6 +160,82 @@ static void updateOverlayPos(HWND overlay, Dota2Capture* cap) {
                      wr.left + 10, wr.top + 20,
                      OVERLAY_BTN, OVERLAY_BTN, SWP_NOACTIVATE);
     }
+}
+
+// ─── Per-pixel alpha rendering для transparent overlay ────────────────────────
+// Фон alpha=1 (кликабелен, визуально прозрачен), текст [D] alpha=brightness
+static void paintLayeredButton(HWND hwnd) {
+    const int W = OVERLAY_BTN, H = OVERLAY_BTN;
+    HDC screenDC = GetDC(nullptr);
+    HDC memDC    = CreateCompatibleDC(screenDC);
+
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth       = W;
+    bmi.bmiHeader.biHeight      = -H;
+    bmi.bmiHeader.biPlanes      = 1;
+    bmi.bmiHeader.biBitCount    = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    uint32_t* pixels = nullptr;
+    HBITMAP hBmp = CreateDIBSection(memDC, &bmi, DIB_RGB_COLORS,
+                                    (void**)&pixels, nullptr, 0);
+    if (!hBmp) { DeleteDC(memDC); ReleaseDC(nullptr, screenDC); return; }
+    HBITMAP hOld = (HBITMAP)SelectObject(memDC, hBmp);
+
+    // Фон — чёрный (alpha=0 после GDI)
+    for (int i = 0; i < W * H; i++) pixels[i] = 0;
+
+    // Рисуем [D] белым цветом через GDI
+    SetBkMode(memDC, TRANSPARENT);
+    SetTextColor(memDC, RGB(255, 255, 255));
+    int fs = (int)(H * 0.55f); if (fs < 8) fs = 8;
+    HFONT f = CreateFontW(fs, 0, 0, 0, FW_BOLD, 0, 0, 0,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    HFONT of = (HFONT)SelectObject(memDC, f);
+    RECT r = {0, 0, W, H};
+    DrawTextW(memDC, L"[D]", -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(memDC, of); DeleteObject(f);
+
+    // Исправляем alpha-канал (GDI не пишет alpha):
+    //   текстовые пиксели (яркие) → alpha = brightness (видимы)
+    //   фоновые пиксели (тёмные) → alpha = 1 (прозрачны, но кликабельны)
+    for (int i = 0; i < W * H; i++) {
+        uint8_t b = (pixels[i] >>  0) & 0xFF;
+        uint8_t g = (pixels[i] >>  8) & 0xFF;
+        uint8_t rv= (pixels[i] >> 16) & 0xFF;
+        uint8_t brightness = (uint8_t)(((uint32_t)rv + g + b) / 3);
+        uint8_t a = (brightness > 20) ? brightness : 1;
+        // premultiplied BGRA для UpdateLayeredWindow / ULW_ALPHA
+        pixels[i] = ((uint32_t)a           << 24)
+                  | ((uint32_t)(rv * a / 255) << 16)
+                  | ((uint32_t)(g  * a / 255) <<  8)
+                  | ((uint32_t)(b  * a / 255));
+    }
+
+    POINT       ptSrc = {0, 0};
+    SIZE        sz    = {W, H};
+    BLENDFUNCTION bf  = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    UpdateLayeredWindow(hwnd, screenDC, nullptr, &sz, memDC,
+                        &ptSrc, 0, &bf, ULW_ALPHA);
+
+    SelectObject(memDC, hOld); DeleteObject(hBmp);
+    DeleteDC(memDC); ReleaseDC(nullptr, screenDC);
+}
+
+// Выводит Dota 2 на первый план
+static void bringDotaToFront(Dota2Capture* cap) {
+    if (!cap || !cap->isWindowFound()) return;
+    HWND hw = cap->gameWindowHandle();
+    if (!hw || !IsWindow(hw)) return;
+    if (IsIconic(hw)) ShowWindow(hw, SW_RESTORE);
+    DWORD fg = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+    DWORD my = GetCurrentThreadId();
+    if (fg != my) AttachThreadInput(my, fg, TRUE);
+    SetForegroundWindow(hw);
+    BringWindowToTop(hw);
+    if (fg != my) AttachThreadInput(my, fg, FALSE);
 }
 
 static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -178,12 +255,14 @@ static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             oc->cap->findGameWindow();
 
         if (oc->cap->isWindowFound()) {
-            // Показываем ТОЛЬКО когда Dota — активное (foreground) окно
-            HWND fg      = GetForegroundWindow();
+            // Видна когда активна Dota ИЛИ наше приложение
+            HWND fg       = GetForegroundWindow();
             HWND dotaHwnd = oc->cap->gameWindowHandle();
-            bool dotaActive = (fg == dotaHwnd);
+            HWND ourApp   = findAppWindow();
+            bool shouldShow = (fg == dotaHwnd) ||
+                              (ourApp && fg == ourApp);
 
-            if (dotaActive) {
+            if (shouldShow) {
                 if (!IsWindowVisible(hwnd))
                     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 updateOverlayPos(hwnd, oc->cap);
@@ -198,38 +277,19 @@ static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_LBUTTONDOWN: {
-        bringAppToFront();
+        auto* oc2 = reinterpret_cast<OverlayCtx*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+        HWND fg     = GetForegroundWindow();
+        HWND ourApp = findAppWindow();
+        if (ourApp && fg == ourApp) {
+            // Наше приложение активно → выводим Dota
+            bringDotaToFront(oc2 ? oc2->cap : nullptr);
+        } else {
+            // Dota активна → выводим наше приложение
+            bringAppToFront();
+        }
         return 0;
     }
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC dc = BeginPaint(hwnd, &ps);
-        RECT r;
-        GetClientRect(hwnd, &r);
-
-        // Прозрачный фон — LWA_ALPHA делает всё окно полупрозрачным (39%)
-        // Заливаем чёрным, который при alpha=100 почти незаметен
-        HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
-        FillRect(dc, &r, bg);
-        DeleteObject(bg);
-
-        // "[D]" — белый жирный текст, видим даже при низком alpha
-        SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, RGB(255, 255, 255));
-
-        int fs = (int)((r.bottom - r.top) * 0.55f);
-        if (fs < 8) fs = 8;
-        HFONT f = CreateFontW(fs, 0, 0, 0, FW_BOLD, 0, 0, 0,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        HFONT of = (HFONT)SelectObject(dc, f);
-        DrawTextW(dc, L"[D]", -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        SelectObject(dc, of);
-        DeleteObject(f);
-
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
+    // WM_PAINT не нужен: контент задаётся через UpdateLayeredWindow
     case WM_DESTROY:
         KillTimer(hwnd, 1);
         PostQuitMessage(0);
@@ -259,10 +319,11 @@ static DWORD WINAPI overlayThread(LPVOID param) {
 
     if (!hw) return 1;
 
-    // LWA_ALPHA=100 (39% opacity): вся 132×132 кликабельна, фон почти прозрачен
-    SetLayeredWindowAttributes(hw, 0, 100, LWA_ALPHA);
+    // Устанавливаем контент через UpdateLayeredWindow (per-pixel alpha)
+    // — прозрачный фон, видимый текст [D], вся область кликабельна
+    paintLayeredButton(hw);
 
-    ShowWindow(hw, SW_HIDE); // таймер сам покажет когда найдёт Dota
+    ShowWindow(hw, SW_HIDE); // таймер сам покажет когда нужно
 
     MSG m{};
     while (GetMessageW(&m, nullptr, 0, 0)) {
