@@ -1,6 +1,8 @@
 /*
- * dota_picker.cpp — GUI-режим пикера.
- * Экспортирует runPickerGui() → пишет результат в GuiPickerState.
+ * dota_picker.cpp — ML-пикер: CatBoost инференс + рекомендации героев.
+ *
+ * Цикл каждые 500мс: читает livepicks → формирует вектор признаков →
+ * инференс моделей (early/mid/late) → записывает результат в GuiPickerState.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -23,14 +25,14 @@
 #include <sqlite3.h>
 #include <c_api.h>
 
-// ─── Константы ────────────────────────────────────────────────────────────────
+// ─── Константы ───────────────────────────────────────────────────────────────
 
 static const char* UNKNOWN_HERO      = "unknown";
 static const char* UNKNOWN_POS       = "0";
 static constexpr int TOP_N           = 10;
 static constexpr int POLL_INTERVAL_MS = 500;
 
-// ─── Структуры данных ─────────────────────────────────────────────────────────
+// ─── Внутренние структуры ────────────────────────────────────────────────────
 
 struct ProStats {
     int games = 0, wins = 0, bans = 0;
@@ -59,7 +61,7 @@ struct LivePick {
     bool operator!=(const LivePick& o) const { return !(*this==o); }
 };
 
-// ─── Вектор признаков ─────────────────────────────────────────────────────────
+// ─── Вектор признаков для CatBoost ───────────────────────────────────────────
 
 static constexpr int N_CAT=20, N_FLOAT=70;
 struct FeatureVector {
@@ -135,7 +137,7 @@ void buildVector(FeatureVector& v, const LivePick& lp,
     v.finalize();
 }
 
-// ─── SQLite helpers ───────────────────────────────────────────────────────────
+// ─── SQLite-обёртки (readonly) ────────────────────────────────────────────────
 
 class DB {
     sqlite3* db_=nullptr;
@@ -164,7 +166,7 @@ public:
     bool col_null(int i){ return sqlite3_column_type(s_,i)==SQLITE_NULL; }
 };
 
-// ─── Загрузка данных ──────────────────────────────────────────────────────────
+// ─── Загрузка данных из SQLite ────────────────────────────────────────────────
 
 static std::map<int,std::string> loadHeroes(sqlite3* db) {
     std::map<int,std::string> m;
@@ -234,7 +236,7 @@ static bool loadLatestLivePick(sqlite3* db,LivePick& lp) {
     return true;
 }
 
-// ─── CatBoost ─────────────────────────────────────────────────────────────────
+// ─── CatBoost инференс ───────────────────────────────────────────────────────
 
 static inline double sigmoid(double x){ return 1.0/(1.0+std::exp(-x)); }
 static std::vector<double> runBatch(ModelCalcerHandle* model,std::vector<FeatureVector>& batch) {
@@ -262,10 +264,7 @@ static ModelCalcerHandle* selectModel(const StageModels& m,const LivePick& lp) {
     if (known<=7) return m.mid;
     return m.late;
 }
-// =============================================================================
-//  GUI режим: renderToGui + runPickerGui
-//  Вместо вывода в консоль — пишет в GuiPickerState (читает GUI-поток)
-// =============================================================================
+// ─── GUI режим: результаты → GuiPickerState (читает GUI-поток) ───────────────
 
 static void renderToGui(
     GuiPickerState*                              state,
@@ -284,9 +283,7 @@ static void renderToGui(
         return it != hero_map.end() ? it->second : "";
     };
 
-    // our_slot хранится как 1-based (от GSI team_slot+1).
-    // our_side: 1=Radiant, 0=Dire.
-    // our_r/our_d: 0-based индекс в массиве radiant[]/dire[].
+    // our_slot: 1-based (от GSI). our_side: 1=Radiant, 0=Dire.
     int our_r = -1, our_d = -1;
     if (lp.our_slot >= 1 && lp.our_slot <= 5) {
         int idx = lp.our_slot - 1;           // 0-4
@@ -301,7 +298,7 @@ static void renderToGui(
     state->isRadiant = (lp.our_side == 1);
     state->ourSlot   = lp.our_slot;
 
-    // ── Hero slots ────────────────────────────────────────────────────────────
+    // ── Слоты героев ──────────────────────────────────────────────────────────
     for (int i = 0; i < 5; i++) {
         HeroSlotGui& s = state->radiant[i];
         s.heroId = lp.r[i].hero_id;
@@ -321,7 +318,7 @@ static void renderToGui(
         std::snprintf(s.name, sizeof(s.name), "%s", n.c_str());
     }
 
-    // ── Our hero & position ───────────────────────────────────────────────────
+    // ── Наш герой и позиция ────────────────────────────────────────────────────
     int our_hero = (our_r >= 0 && our_r < 5) ? lp.r[our_r].hero_id : 0;
     if (our_d >= 0 && our_d < 5) our_hero = lp.d[our_d].hero_id;
 
@@ -330,9 +327,9 @@ static void renderToGui(
     if (our_r >= 0 && our_r < 5) state->ourPosition = lp.r[our_r].position;
     if (our_d >= 0 && our_d < 5) state->ourPosition = lp.d[our_d].position;
 
-    // ── Win probability OR top-10 recs ───────────────────────────────────────
+    // ── P(win) текущего драфта ИЛИ рекомендации top-10 ─────────────────────
     if (our_hero != 0) {
-        // Mode 1: show P(win) for current draft
+        // Режим 1: наш герой выбран → показываем P(win)
         FeatureVector v;
         buildVector(v, lp, hero_map, pro_map, our_stats, 0);
         std::vector<FeatureVector> batch = {v};
@@ -343,8 +340,8 @@ static void renderToGui(
         state->recCount = 0;
 
     } else {
-        // Mode 2: рекомендации top-10
-        // Сначала считаем P(win) для текущего частичного драфта (без нашего героя)
+        // Режим 2: рекомендации top-10
+        // P(win) текущего частичного драфта (без нашего героя)
         {
             FeatureVector v0;
             buildVector(v0, lp, hero_map, pro_map, our_stats, 0);
@@ -413,7 +410,7 @@ static void renderToGui(
     state->gameStarted = true;
 }
 
-// ─── runPickerGui ─────────────────────────────────────────────────────────────
+// ─── Главный цикл пикера ─────────────────────────────────────────────────────
 
 int runPickerGui(const char* model_path, const char* db_path,
                  std::atomic<bool>& running,

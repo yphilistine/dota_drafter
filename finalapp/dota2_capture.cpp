@@ -1,5 +1,5 @@
 /*
- * dota2_capture.cpp
+ * dota2_capture.cpp — реализация захвата окна Dota 2 через PrintWindow/GDI.
  */
 
 #include "dota2_capture.h"

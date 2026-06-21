@@ -1,6 +1,6 @@
 #include "common.h"
 
-// ---------------------- Глобальные переменные ----------------------
+// ─── Глобальные переменные ────────────────────────────────────────────────────
 std::mutex    g_logMutex;
 std::mutex    g_dbWriteMutex;
 bool          g_ansiEnabled  = false;
@@ -9,7 +9,7 @@ FILE*         g_curlDebugFile = nullptr;
 
 static std::atomic<int> g_logCounter{0};
 
-// ---------------------- Утилиты ----------------------
+// ─── Утилиты ─────────────────────────────────────────────────────────────────
 std::string sanitizeUtf8(const std::string& input) {
     std::string out;
     out.reserve(input.size());
@@ -31,7 +31,7 @@ std::string sanitizeUtf8(const std::string& input) {
     return out;
 }
 
-// ---------------------- Логирование ----------------------
+// ─── Логирование ─────────────────────────────────────────────────────────────
 void ensureLogsDir() {
 #ifdef _WIN32
     CreateDirectoryA("logs", nullptr);
@@ -142,7 +142,7 @@ void logConsole(LogLevel level, const std::string& msg) {
     }
 }
 
-// ---------------------- HTTP ----------------------
+// ─── HTTP ────────────────────────────────────────────────────────────────────
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
     output->append(static_cast<char*>(contents), size * nmemb);
     return size * nmemb;

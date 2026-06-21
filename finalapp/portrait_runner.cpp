@@ -1,12 +1,8 @@
 /*
- * portrait_runner.cpp
+ * portrait_runner.cpp — захват портретов + overlay-кнопка [D].
  *
- * Захватывает портреты каждые 500 мс пока running == true.
- * НЕ сохраняет PNG. При score >= 0.5 и имя != "NULL" пишет в livepicks.
- *
- * Кнопка [D] — прозрачный overlay поверх Dota 2 (без фона).
- * Видна всегда пока открыта Dota 2, независимо от фазы и фокуса окна.
- * Клик — выводит главное окно приложения на передний план.
+ * Портреты: захват каждые 500мс → распознавание (Pearson ≥ 0.5) → запись в livepicks.
+ * Кнопка [D]: прозрачный overlay поверх Dota 2, клик переключает фокус.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -71,8 +67,7 @@ static int lookupHeroId(const std::map<std::string, int>& nameMap, const char* r
     return it != nameMap.end() ? it->second : 0;
 }
 
-// Размер overlay-кнопки: прямоугольник 120×64 — весь прямоугольник кликабелен
-// Фон полностью прозрачный, текст [D] отображается через per-pixel alpha
+// Размер overlay-кнопки: весь прямоугольник кликабелен, текст [D] через per-pixel alpha
 static constexpr int OVERLAY_BTN_W = 80;
 static constexpr int OVERLAY_BTN_H = 63;
 static constexpr int OVERLAY_BTN_Y_OFFSET = 30;static constexpr int OVERLAY_ICON_SHIFT_UP = 5;
@@ -111,12 +106,8 @@ static void clearHeroSlots(sqlite3* db) {
         nullptr, nullptr, nullptr);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Overlay — кнопка [D] без фона (прозрачный WS_EX_LAYERED window)
-// Ищет главное окно Dota_Drafter и выводит его на передний план по клику.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Overlay-кнопка [D] (WS_EX_LAYERED, per-pixel alpha) ─────────────────────
 
-// Цвет-ключ прозрачности: RGB(1,1,1) — почти чёрный, не перекрывает текст
 static const COLORREF TRANSPARENT_KEY = RGB(1, 1, 1);
 
 struct OverlayCtx {
@@ -163,8 +154,7 @@ static void updateOverlayPos(HWND overlay, Dota2Capture* cap) {
     }
 }
 
-// ─── Per-pixel alpha rendering для transparent overlay ────────────────────────
-// Фон alpha=1 (кликабелен, визуально прозрачен), текст [D] alpha=brightness
+// Per-pixel alpha: фон alpha=1 (кликабелен, визуально прозрачен), текст alpha=brightness
 static void paintLayeredButton(HWND hwnd) {
     const int W = OVERLAY_BTN_W, H = OVERLAY_BTN_H;
     HDC screenDC = GetDC(nullptr);
@@ -221,7 +211,7 @@ static void paintLayeredButton(HWND hwnd) {
     DeleteDC(memDC); ReleaseDC(nullptr, screenDC);
 }
 
-// Выводит Dota 2 на первый план
+// Вывод окна Dota 2 на передний план
 static void bringDotaToFront(Dota2Capture* cap) {
     if (!cap || !cap->isWindowFound()) return;
     HWND hw = cap->gameWindowHandle();
@@ -307,7 +297,7 @@ static DWORD WINAPI overlayThread(LPVOID param) {
     wc.hCursor       = LoadCursor(nullptr, IDC_HAND);
     RegisterClassW(&wc);
 
-    // WS_EX_LAYERED для прозрачности. БЕЗ WS_EX_TRANSPARENT — весь 132×132 кликабелен.
+    // WS_EX_LAYERED для прозрачности. Без WS_EX_TRANSPARENT — вся область кликабельна.
     HWND hw = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
         CLASS, L"[D]", WS_POPUP,
@@ -346,11 +336,7 @@ static void clearHeroSlot(sqlite3* db, int slot) {
     sqlite3_finalize(st);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// startDotaOverlay — запускает [D] кнопку один раз при старте приложения.
-// Кнопка видна всегда, пока открыто окно Dota 2, независимо от фазы.
-// Использует static-хранилище — безопасно вызывать один раз из любого потока.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── startDotaOverlay — запуск кнопки [D] (один раз при старте) ───────────────
 
 static Dota2Capture  s_overlayCap("");
 static OverlayCtx    s_overlayCtx{ &s_overlayCap };
@@ -361,9 +347,7 @@ void startDotaOverlay() {
     s_overlayHandle = CreateThread(nullptr, 0, overlayThread, &s_overlayCtx, 0, nullptr);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// runPortraitCapture
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Главный цикл захвата портретов ──────────────────────────────────────────
 
 void runPortraitCapture(GameInfo&           gameInfo,
                         const std::string&  dbPath,
@@ -393,8 +377,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
     std::puts("[portrait] ВНИМАНИЕ: hero_hashes.h не найден");
 #endif
 
-    // Overlay уже запущен через startDotaOverlay() из оркестратора.
-    // Здесь создаём отдельный Dota2Capture только для захвата экрана.
+    // Отдельный Dota2Capture для захвата (overlay запущен из оркестратора)
     Dota2Capture cap("");
 
     // Ждём Dota 2

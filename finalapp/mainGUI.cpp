@@ -1,16 +1,13 @@
 /*
- * mainGUI.cpp
+ * mainGUI.cpp — ImGui D3D11 GUI + фоновый оркестратор (фазы 1-3).
  *
- * Unified: ImGui D3D11 GUI + backend orchestrator (phases 1-3).
- * Replaces: mainGUI.cpp (standalone mockup) + main_unified.cpp (console).
- *
- * Thread model:
- *   GUI thread      — WinMain / message loop / ImGui render
- *   Orchestrator    — watches GameInfo, manages portrait + picker threads
- *   GSI thread      — runGsiServer (always running after player set)
- *   Phase-1 thread  — runDataFetcher (once per player ID)
- *   Portrait thread — runPortraitCapture (HERO_SELECTION + 30s tail)
- *   Picker thread   — runPickerGui (DRAFT / INGAME)
+ * Потоковая модель:
+ *   GUI-поток      — WinMain / message loop / ImGui render
+ *   Оркестратор    — управление portrait + picker потоками по состоянию GameInfo
+ *   GSI-поток      — runGsiServer (постоянно после ввода Steam ID)
+ *   Фаза 1         — runDataFetcher (однократно при смене игрока)
+ *   Portrait        — runPortraitCapture (HERO_SELECTION + 5с хвост)
+ *   Picker          — runPickerGui (HERO_SELECTION + 5с хвост)
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -43,9 +40,7 @@
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
 
-// =============================================================================
-//  D3D11 boilerplate
-// =============================================================================
+// ─── D3D11 инициализация ──────────────────────────────────────────────────────
 static ID3D11Device*           g_Device    = nullptr;
 static ID3D11DeviceContext*    g_Context   = nullptr;
 static IDXGISwapChain*         g_SwapChain = nullptr;
@@ -97,9 +92,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hWnd, msg, wp, lp);
 }
 
-// =============================================================================
-//  Palette
-// =============================================================================
+// ─── Палитра ─────────────────────────────────────────────────────────────────
 static const ImVec4 kBg     = {0.04f, 0.04f, 0.04f, 1.f};
 static const ImVec4 kCard   = {0.09f, 0.09f, 0.09f, 1.f};
 static const ImVec4 kCard2  = {0.15f, 0.15f, 0.15f, 1.f};
@@ -114,14 +107,12 @@ static const ImVec4 kBlue   = {0.35f, 0.60f, 0.90f, 1.f};
 inline ImU32 C(ImVec4 v)           { return ImGui::ColorConvertFloat4ToU32(v); }
 inline ImU32 Ca(ImVec4 v, float a) { v.w = a; return ImGui::ColorConvertFloat4ToU32(v); }
 
-// =============================================================================
-//  Shared cross-thread state
-// =============================================================================
+// ─── Общее состояние потоков ──────────────────────────────────────────────────
 static GameInfo            g_gameInfo;
 static SharedPortraitState g_portraitState;
 static GuiPickerState      g_pickerState;
 
-// Player info — written by background threads, read by GUI
+// Данные игрока: пишутся фоновыми потоками, читаются GUI
 struct PlayerState {
     std::mutex  mtx;
     long long   accountId     = 0;
@@ -135,16 +126,15 @@ struct PlayerState {
 };
 static PlayerState g_player;
 
-// Config (set once from env/defaults, then read-only)
+// Конфигурация (из переменных окружения / умолчаний, затем read-only)
 static std::string g_stratzToken;
 static std::string g_steamKey;
 static const char* DB_PATH    = "playerandlivestats.db";
 static const char* MODEL_PATH = "draft_helper_v3";
-// Фаза 3 (портреты + пикер) активна во время HERO_SELECTION + хвост 5 сек.
-// После — пикер остановлен, GUI показывает последний результат до конца игры.
+// Портреты + пикер: активны HERO_SELECTION + 5с. GUI показывает результат до конца игры.
 static constexpr int PHASE3_TAIL_SEC = 5;
 
-// Thread management
+// Управление потоками
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
 static std::atomic<bool> g_orchestratorRunning{true};
@@ -152,15 +142,13 @@ static std::thread       g_pickerThread;
 static std::thread       g_portraitThread;
 static std::thread       g_orchestratorThread;
 
-// GUI-only state (touched only from GUI thread)
+// Состояние GUI (только из GUI-потока)
 static bool  s_editMode     = false;
 static char  s_inputBuf[32] = {};
 static bool  s_nameFetching = false;
 static char  s_fetchedName[128] = {};
 
-// =============================================================================
-//  SQLite helpers — player_info table
-// =============================================================================
+// ─── SQLite: таблица player_info ──────────────────────────────────────────────
 static void createPlayerInfoTable(sqlite3* db) {
     sqlite3_exec(db,
         "CREATE TABLE IF NOT EXISTS player_info ("
@@ -198,9 +186,7 @@ static void savePlayerInfo(sqlite3* db, long long accountId, const char* name) {
     sqlite3_finalize(st);
 }
 
-// =============================================================================
-//  livepicks table
-// =============================================================================
+// ─── Таблица livepicks ────────────────────────────────────────────────────────
 static void createLivePicksIfNotExists(sqlite3* db) {
     sqlite3_exec(db, R"(
         CREATE TABLE IF NOT EXISTS livepicks (
@@ -243,9 +229,7 @@ static void initLivePicksRow(sqlite3* db, long long matchId,
     sqlite3_finalize(st);
 }
 
-// =============================================================================
-//  STRATZ — fetch player name (runs in a short-lived background thread)
-// =============================================================================
+// ─── STRATZ: получение имени игрока (фоновый поток) ───────────────────────────
 static std::string fetchStratzName(long long accountId, const std::string& token) {
     // GraphQL query for player display name
     char qbuf[256];
@@ -258,7 +242,7 @@ static std::string fetchStratzName(long long accountId, const std::string& token
         "https://api.stratz.com/graphql", qbuf, token);
     if (resp.empty()) return "";
 
-    // Simple parse: find "name":"..."
+    // Простой парсинг: ищем "name":"..."
     auto pos = resp.find("\"name\":");
     if (pos == std::string::npos) return "";
     pos += 7;
@@ -273,9 +257,7 @@ static std::string fetchStratzName(long long accountId, const std::string& token
     return name;
 }
 
-// =============================================================================
-//  Phase 1 launcher
-// =============================================================================
+// ─── Запуск фазы 1 (DataFetcher + имя игрока) ────────────────────────────────
 static void startPhase1(long long accountId) {
     {
         std::lock_guard<std::mutex> lk(g_player.mtx);
@@ -287,7 +269,7 @@ static void startPhase1(long long accountId) {
     }
 
     std::thread([accountId]() {
-        // Fetch STRATZ display name first (fast, ~1s)
+        // Имя из STRATZ (быстро, ~1с)
         std::string fetchedName = fetchStratzName(accountId, g_stratzToken);
         if (!fetchedName.empty()) {
             // Save to DB and update player state
@@ -302,7 +284,7 @@ static void startPhase1(long long accountId) {
                           "%s", fetchedName.c_str());
         }
 
-        // Main data fetch (~30-90s)
+        // Основная загрузка данных (~30-90с)
         int rc = runDataFetcher(accountId, g_stratzToken);
 
         std::lock_guard<std::mutex> lk(g_player.mtx);
@@ -319,9 +301,7 @@ static void startPhase1(long long accountId) {
     }).detach();
 }
 
-// =============================================================================
-//  Background orchestrator — mirrors main_unified.cpp loop
-// =============================================================================
+// ─── Фоновый оркестратор: управление portrait + picker потоками ───────────────
 static void orchestratorMain() {
     long long accountId = 0;
     {
@@ -361,7 +341,7 @@ static void orchestratorMain() {
             accountId = g_player.accountId;
         }
 
-        // Read GameInfo
+        // Чтение состояния игры
         GamePhase   phase;
         std::string matchId;
         int         ourSide, ourSlot;
@@ -509,7 +489,7 @@ static void orchestratorMain() {
 
     } // end while (g_orchestratorRunning)
 
-    // Clean shutdown
+    // Остановка потоков
     g_pickerRunning.store(false);
     g_portraitRunning.store(false);
     if (g_pickerThread.joinable())   g_pickerThread.join();
@@ -518,9 +498,7 @@ static void orchestratorMain() {
     sqlite3_close(db);
 }
 
-// =============================================================================
-//  Style
-// =============================================================================
+// ─── Стиль ImGui ─────────────────────────────────────────────────────────────
 static void ApplyStyle() {
     ImGuiStyle& s = ImGui::GetStyle();
     s.WindowRounding = s.ChildRounding = s.FrameRounding  = 0.f;
@@ -556,13 +534,11 @@ static void ApplyStyle() {
     c[ImGuiCol_Tab]                  = kCard;
     c[ImGuiCol_TabHovered]           = kCard2;
     c[ImGuiCol_TabActive]            = kCard2;
-    // Масштабируем все отступы/рамки/скроллбары на 1.25× (вместе с шрифтом 20px)
+    // Масштаб 1.25× (вместе со шрифтом 20px)
     s.ScaleAllSizes(1.25f);
 }
 
-// =============================================================================
-//  Draw helpers
-// =============================================================================
+// ─── Вспомогательные функции отрисовки ────────────────────────────────────────
 static void DrawPortrait(ImDrawList* dl, ImVec2 p, float sz,
                          ImU32 fill, ImU32 border, const char* label) {
     dl->AddRectFilled(p, {p.x+sz, p.y+sz}, fill);
@@ -596,11 +572,7 @@ static ImVec4 WinColor(float w) {
     return kRed;
 }
 
-// =============================================================================
-//  DrawHeroSlot
-//  showPos  — показывать позицию (только своя команда)
-//  slotNum  — номер слота 1-5, используется если h.pos == 0
-// =============================================================================
+// ─── Отрисовка слота героя ────────────────────────────────────────────────────
 static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
                          bool radiantSide, bool showPos, int slotNum) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
@@ -670,9 +642,7 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
     ImGui::Spacing();
 }
 
-// =============================================================================
-//  SectionLabel
-// =============================================================================
+// ─── Метка секции ────────────────────────────────────────────────────────────
 static void SectionLabel(const char* label) {
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
     ImGui::TextUnformatted(">");
@@ -681,15 +651,13 @@ static void SectionLabel(const char* label) {
     ImGui::TextUnformatted(label);
 }
 
-// =============================================================================
-//  DrawDraftPanel  — live data from g_pickerState, or "Waiting" overlay
-// =============================================================================
+// ─── Панель драфта (слоты Radiant/Dire + winProb) ─────────────────────────────
 static void DrawDraftPanel(float panelW) {
     const float PAD  = 8.f;
     const float colW = (panelW - PAD*3.f) * 0.5f;
     const float lh   = ImGui::GetTextLineHeight();
 
-    // Snapshot picker state
+    // Снимок состояния пикера
     bool         gameStarted;
     bool         isRadiant;
     float        winProb;
@@ -827,9 +795,7 @@ static void DrawDraftPanel(float panelW) {
     ImGui::Dummy({bW, bH});
 }
 
-// =============================================================================
-//  DrawPicksPanel  — live data from g_pickerState, or "Waiting" overlay
-// =============================================================================
+// ─── Панель рекомендаций (top-10 / выбранный герой) ───────────────────────────
 static void DrawPicksPanel(float panelW) {
     const float PAD       = 8.f;
     const float lh        = ImGui::GetTextLineHeight();
@@ -837,7 +803,7 @@ static void DrawPicksPanel(float panelW) {
     const float BAR_W     = 68.f;
     const float rW_ref    = panelW - PAD*2.f;
 
-    // Snapshot
+    // Снимок состояния
     bool       gameStarted, ourHeroPicked;
     char       ourHeroName[64];
     float      winProb;
@@ -905,7 +871,7 @@ static void DrawPicksPanel(float panelW) {
         return;
     }
 
-    // Column headers
+    // Заголовки колонок
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
     ImGui::SetCursorPosX(ImGui::GetCursorPosX()+4.f);
     ImGui::TextUnformatted("#  Hero");
@@ -927,7 +893,7 @@ static void DrawPicksPanel(float panelW) {
     // statsX : 47% от ширины строки (фиксирован, независимо от имени)
     // winX   : rW - WIN_COL_W
 
-    // Row lambda
+    // Отрисовка строки рекомендации
     auto DrawPickRow = [&](int rank, const char* name, float win, bool highlight,
                            int gamesPlayer, float wrPlayer, int gamesImm, float wrImm)
     {
@@ -1000,10 +966,10 @@ static void DrawPicksPanel(float panelW) {
     };
 
     if (ourHeroPicked) {
-        // Show our hero + win prob
+        // Наш герой + P(win)
         DrawPickRow(0, ourHeroName, winProb, true, 0,0,0,0);
     } else {
-        // Show top-10
+        // Top-10 рекомендаций
         for (int i=0;i<recCount && i<10;i++) {
             const PickRowGui& r = recs[i];
             DrawPickRow(r.rank, r.name, r.winProb, r.rank==1,
@@ -1014,7 +980,7 @@ static void DrawPicksPanel(float panelW) {
         }
     }
 
-    // Legend — динамическое выравнивание через CalcTextSize
+    // Легенда цветов
     ImGui::Separator();
     ImGui::Spacing();
     {
@@ -1044,11 +1010,9 @@ static void DrawPicksPanel(float panelW) {
     }
 }
 
-// =============================================================================
-//  DrawStatusBar  — phase indicators between header and content
-// =============================================================================
+// ─── Полоса статуса (Data + Game phase + match ID) ────────────────────────────
 static void DrawStatusBar(float fullW) {
-    // Snapshot player state
+    // Снимок состояния player state
     bool   phase1Running, phase1Done, phase1Error;
     char   phase1Msg[256];
     bool   hasPlayer;
@@ -1110,9 +1074,7 @@ static void DrawStatusBar(float fullW) {
     ImGui::Dummy({fullW, H});
 }
 
-// =============================================================================
-//  DrawHeader  — logo [D] (clickable) + title + player card / ID input
-// =============================================================================
+// ─── Шапка: логотип [D] + заголовок + карточка игрока / ввод Steam ID ─────────
 static void DrawHeader(float fullW) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      hs  = ImGui::GetCursorScreenPos();
@@ -1155,7 +1117,7 @@ static void DrawHeader(float fullW) {
     dl->AddRectFilled({cx+8,hs.y+8},{cx+44,hs.y+44},C(kCard2));
     dl->AddRect      ({cx+8,hs.y+8},{cx+44,hs.y+44},C(kBorder));
 
-    // Snapshot player info
+    // Снимок состояния player info
     long long  accountId;
     char       pname[128];
     bool       hasPlayer;
@@ -1251,9 +1213,7 @@ static void DrawHeader(float fullW) {
     ImGui::Dummy({fullW, 0.f});
 }
 
-// =============================================================================
-//  RenderFrame
-// =============================================================================
+// ─── Главный кадр ────────────────────────────────────────────────────────────
 static void RenderFrame() {
     auto&       io   = ImGui::GetIO();
     const float W    = io.DisplaySize.x;
@@ -1318,9 +1278,7 @@ static void RenderFrame() {
     ImGui::End();
 }
 
-// =============================================================================
-//  Application icon — рисуем [D] программно через GDI
-// =============================================================================
+// ─── Иконка приложения [D] (программно через GDI) ────────────────────────────
 static HICON g_AppIcon = nullptr;
 
 static HICON CreateDIcon(int sz) {
@@ -1360,11 +1318,9 @@ static HICON CreateDIcon(int sz) {
     return icon;
 }
 
-// =============================================================================
-//  WinMain
-// =============================================================================
+// ─── Точка входа ─────────────────────────────────────────────────────────────
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
-    // DPI awareness
+    // DPI-осведомлённость
     if (HMODULE u32 = GetModuleHandleW(L"user32.dll")) {
         typedef BOOL(WINAPI* SPDA_t)(void*);
         if (auto fn = (SPDA_t)GetProcAddress(u32,"SetProcessDpiAwarenessContext"))
@@ -1402,7 +1358,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     // ── Start orchestrator thread ─────────────────────────────────────────
     g_orchestratorThread = std::thread(orchestratorMain);
 
-    // If we already have a player, kick off Phase 1 (OUTSIDE mutex to avoid deadlock)
+    // Запуск фазы 1 (за пределами мьютекса во избежание deadlock)
     {
         long long savedId  = 0;
         bool      hasPlayer = false;
@@ -1434,7 +1390,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         nullptr, nullptr, hInst, nullptr);
     g_Hwnd = hwnd;
 
-    // DWM theming
+    // Тёмная тема окна (DWM)
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
     DwmSetWindowAttribute(hwnd, 19, &dark, sizeof(dark));
@@ -1490,7 +1446,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         g_SwapChain->Present(1, 0);
     }
 
-    // ── Shutdown ──────────────────────────────────────────────────────────
+    // ── Завершение ────────────────────────────────────────────────────────
     g_orchestratorRunning.store(false);
     if (g_orchestratorThread.joinable()) g_orchestratorThread.join();
 

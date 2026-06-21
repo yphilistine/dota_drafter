@@ -1,21 +1,17 @@
 #pragma once
 /*
- * dhash.h  —  Grey 8x8 Pearson correlation
+ * dhash.h — распознавание героев по Pearson-корреляции серых 8x8 матриц.
  *
- * Both reference images (build_hero_db) and query images (live capture)
- * come from the same HUD crop pipeline (PrintWindow -> BitBlt).
- * In this case grey 8x8 + Pearson gives the best same/different gap:
+ * Референсные (build_hero_db) и query (live capture) изображения
+ * из одного пайплайна (PrintWindow → BitBlt), поэтому серая 8x8 +
+ * Pearson даёт лучший зазор same/different:
  *
- *   same hero:       Pearson ~ 0.99
- *   different hero:  Pearson ~ 0.0 to -0.1
- *   gap:             ~1.098
+ *   тот же герой:    Pearson ~ 0.99
+ *   другой герой:    Pearson ~ 0.0 .. -0.1
+ *   зазор:           ~1.098
  *
- * Adding colour histogram or larger matrix reduces the gap when both
- * images are from identical rendering pipelines.
- *
- * Storage:  64 float32 per hero  (256 bytes)
- * Score:    Pearson correlation  1.0=identical  0.0=unrelated
- * Threshold: score >= 0.80 = confident match
+ * Хранение: 64 float32 на героя (256 байт)
+ * Порог уверенности: score >= 0.80
  */
 
 #include <cstdint>
@@ -25,46 +21,50 @@
 
 namespace dota2 {
 
+// Серая 8x8 матрица (zero-mean, unit-variance)
 struct Matrix8 {
-    float v[64];   // grey 8x8, zero-mean unit-variance
+    float v[64];
     bool empty() const {
         for (float x : v) if (x != 0.0f) return false;
         return true;
     }
 };
 
+// Запись базы хешей: имя героя + матрица
 struct HeroHashEntry {
     const char* name;
     Matrix8     mat;
 };
 
+// Результат распознавания: имя героя + score (Pearson, 1.0 = идентичен)
 struct HeroMatch {
     const char* name;
-    float       score;   // Pearson 1.0=identical
+    float       score;
     bool confident() const { return score >= 0.80f; }
 };
 
-// Pearson (both already zero-mean unit-variance: dot / (N-1))
+// Корреляция Пирсона (обе матрицы уже нормализованы: dot / (N-1))
 inline float pearson(const Matrix8& a, const Matrix8& b) {
     float dot = 0.0f;
     for (int i = 0; i < 64; ++i) dot += a.v[i] * b.v[i];
     return dot / 63.0f;
 }
 
+// BGRA-пиксели → Matrix8 (greyscale BT.601 → bilinear resize 8x8 → нормализация)
 inline Matrix8 computeMatrix(const uint8_t* bgra, int w, int h) {
     Matrix8 out{};
     if (!bgra || w <= 0 || h <= 0) return out;
 
     constexpr int SZ = 8;
 
-    // BT.601 greyscale
+    // BT.601 серый
     std::vector<float> grey(static_cast<size_t>(w) * h);
     for (int i = 0; i < w * h; ++i) {
         float b = bgra[i*4+0], g = bgra[i*4+1], r = bgra[i*4+2];
         grey[i] = 0.114f*b + 0.587f*g + 0.299f*r;
     }
 
-    // Bilinear resize to 8x8
+    // Билинейное масштабирование до 8x8
     const float sx = static_cast<float>(w) / SZ;
     const float sy = static_cast<float>(h) / SZ;
     for (int dy = 0; dy < SZ; ++dy) {
@@ -83,7 +83,7 @@ inline Matrix8 computeMatrix(const uint8_t* bgra, int w, int h) {
         }
     }
 
-    // Zero-mean unit-variance
+    // Нормализация: zero-mean unit-variance
     float mean = 0.0f;
     for (int i = 0; i < 64; ++i) mean += out.v[i];
     mean /= 64.0f;
@@ -102,15 +102,18 @@ inline Matrix8 computeMatrix(const BitmapT& bmp) {
     return computeMatrix(bmp.pixels.data(), bmp.width, bmp.height);
 }
 
+// Поиск ближайшего героя по базе хешей (линейный перебор + Pearson)
 class HeroRecognizer {
 public:
     explicit HeroRecognizer(const HeroHashEntry* db, size_t count)
         : db_(db), count_(count) {}
 
+    // Распознавание из BGRA-пикселей
     HeroMatch recognize(const uint8_t* bgra, int w, int h) const {
         return findNearest(computeMatrix(bgra, w, h));
     }
 
+    // Распознавание из Bitmap-структуры
     template<typename BitmapT>
     HeroMatch recognize(const BitmapT& bmp) const {
         if (bmp.empty()) return {"(empty)", -1.0f};
@@ -137,6 +140,6 @@ private:
     size_t               count_;
 };
 
-using DHash = uint64_t; // kept for build_hero_db.cpp
+using DHash = uint64_t; // для совместимости с build_hero_db.cpp
 
 } // namespace dota2

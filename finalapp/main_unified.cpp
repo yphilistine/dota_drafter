@@ -1,16 +1,9 @@
 /*
- * main_unified.cpp
+ * main_unified.cpp — консольный оркестратор (альтернативная точка входа без GUI).
  *
- * Правила работы модулей:
- *
- *  Portrait  — запускается при входе в HERO_SELECTION,
- *              работает ещё 30 сек после выхода из HERO_SELECTION,
- *              затем останавливается.
- *
- *  Picker    — запускается при входе в DRAFT (HERO_SELECTION / STRATEGY_TIME),
- *              работает всю игру (INGAME), останавливается при POSTGAME / IDLE.
- *
- *  Кнопка    — видна всегда пока открыта Dota 2 (в portrait_runner).
+ * Portrait  — HERO_SELECTION + 30с хвост.
+ * Picker    — DRAFT/INGAME, стоп при POSTGAME/IDLE.
+ * Кнопка [D] — видна всегда пока открыта Dota 2.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN

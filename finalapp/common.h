@@ -1,4 +1,9 @@
 #pragma once
+/*
+ * common.h — общие утилиты: логирование, HTTP, RAII-обёртки для curl/SQLite.
+ * Подключается всеми модулями проекта.
+ */
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -33,30 +38,37 @@
 
 using json = nlohmann::json;
 
-// ---------------------- Константы ----------------------
+// ─── Константы ───────────────────────────────────────────────────────────────
+
 const std::string DEFAULT_STRATZ_TOKEN =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTdWJqZWN0IjoiNjhjODAzMjItMzQyYS00NWYwLWFlOWYtNjlhZjA3NzllMTMxIiwiU3RlYW1JZCI6IjEyNjE2NjAxMzUiLCJBUElVc2VyIjoidHJ1ZSIsIm5iZiI6MTc1MzEyNzU2NiwiZXhwIjoxNzg0NjYzNTY2LCJpYXQiOjE3NTMxMjc1NjYsImlzcyI6Imh0dHBzOi8vYXBpLnN0cmF0ei5jb20ifQ.UrC1HTdn6dDNf76buspQd3jSQNvhSqOtgAL-2kURGnE";
 
-// ---------------------- Типы данных ----------------------
+// ─── Типы данных ─────────────────────────────────────────────────────────────
+
+// Статистика героя игрока (из OpenDota)
 struct HeroStats {
     long long hero_id;
     long long games;
     long long wins;
 };
 
+// Запись справочника героев (из OpenDota /api/heroes)
 struct HeroInfo {
     long long id;
-    std::string name;
-    std::string localized_name;
+    std::string name;           // внутреннее имя (npc_dota_hero_*)
+    std::string localized_name; // отображаемое имя
 };
 
-// ---------------------- RAII обёртки ----------------------
+// ─── RAII-обёртки ────────────────────────────────────────────────────────────
+
+// curl_global_init / cleanup
 class CurlGlobal {
 public:
     CurlGlobal()  { curl_global_init(CURL_GLOBAL_ALL); }
     ~CurlGlobal() { curl_global_cleanup(); }
 };
 
+// curl_slist для HTTP-заголовков
 class CurlHeaders {
     struct curl_slist* headers;
 public:
@@ -66,6 +78,7 @@ public:
     struct curl_slist* get() const { return headers; }
 };
 
+// curl_easy_init / cleanup
 class CurlHandle {
     CURL* curl;
 public:
@@ -76,6 +89,7 @@ public:
     CURL* get() const { return curl; }
 };
 
+// sqlite3_open / close с настройкой PRAGMA
 class SqliteDB {
     sqlite3* db;
 public:
@@ -96,6 +110,7 @@ public:
     sqlite3* get() const { return db; }
 };
 
+// BEGIN / COMMIT / ROLLBACK (автоматический откат в деструкторе)
 class SqliteTransaction {
     sqlite3* db_;
     bool committed_ = false;
@@ -125,26 +140,35 @@ public:
     SqliteTransaction& operator=(const SqliteTransaction&) = delete;
 };
 
-// ---------------------- Логирование ----------------------
+// ─── Логирование ─────────────────────────────────────────────────────────────
+
 enum class LogLevel { INFO, WARN, ERR };
 
 extern std::mutex   g_logMutex;
-extern std::mutex   g_dbWriteMutex;
+extern std::mutex   g_dbWriteMutex;    // защита параллельных записей в SQLite
 extern bool         g_ansiEnabled;
 extern std::ofstream g_logFile;
 extern FILE*        g_curlDebugFile;
 
+// Вывод сообщения с таймстампом в консоль и logs/console.log
 void logConsole(LogLevel level, const std::string& msg);
+// Инициализация логов, ANSI-режима консоли, curl debug файла
 void initConsole();
+// Создание папки logs/
 void ensureLogsDir();
 
 #define LOG_INFO(msg) do { std::ostringstream _ss; _ss.imbue(std::locale::classic()); _ss << msg; logConsole(LogLevel::INFO, _ss.str()); } while(0)
 #define LOG_WARN(msg) do { std::ostringstream _ss; _ss.imbue(std::locale::classic()); _ss << msg; logConsole(LogLevel::WARN, _ss.str()); } while(0)
 #define LOG_ERR(msg)  do { std::ostringstream _ss; _ss.imbue(std::locale::classic()); _ss << msg; logConsole(LogLevel::ERR,  _ss.str()); } while(0)
 
-// ---------------------- HTTP ----------------------
+// ─── HTTP ────────────────────────────────────────────────────────────────────
+
+// GET-запрос с ретраями (3 попытки, пауза 10 сек). Бросает исключение при неудаче.
 std::string httpGet (const std::string& url);
+// POST-запрос с ретраями и Bearer-авторизацией. Бросает исключение при неудаче.
 std::string httpPost(const std::string& url, const std::string& postData, const std::string& authToken);
 
-// ---------------------- Утилиты ----------------------
+// ─── Утилиты ─────────────────────────────────────────────────────────────────
+
+// Замена невалидных UTF-8 последовательностей на U+FFFD
 std::string sanitizeUtf8(const std::string& input);

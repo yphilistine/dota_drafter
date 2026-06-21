@@ -1,14 +1,18 @@
 #pragma once
 /*
- * shared_types.h
+ * shared_types.h — общие типы для межпоточного взаимодействия.
+ * Используется всеми модулями: GSI, Portrait, Picker, GUI.
  */
 
 #include <string>
 #include <mutex>
 #include <atomic>
 
+// ─── Фаза игры ───────────────────────────────────────────────────────────────
+
 enum class GamePhase { IDLE, DRAFT, INGAME, POSTGAME };
 
+// Возвращает строковое имя фазы для логирования
 inline const char* phaseName(GamePhase p) {
     switch (p) {
         case GamePhase::DRAFT:    return "DRAFT";
@@ -18,16 +22,19 @@ inline const char* phaseName(GamePhase p) {
     }
 }
 
+// ─── Состояние матча (от GSI-сервера) ─────────────────────────────────────────
+
 struct GameInfo {
     std::mutex  mtx;
     GamePhase   phase           = GamePhase::IDLE;
     std::string matchId;
-    int         ourSide         = 1;
-    int         ourSlot         = 1;
+    int         ourSide         = 1;   // 1 = Radiant, 0 = Dire
+    int         ourSlot         = 1;   // 1-5
     bool        newMatch        = false;
-    // true только при HERO_SELECTION (не STRATEGY_TIME / TEAM_SHOWCASE)
-    bool        isHeroSelection = false;
+    bool        isHeroSelection = false; // true только при HERO_SELECTION
 };
+
+// ─── Результат распознавания портрета ─────────────────────────────────────────
 
 struct PortraitResult {
     std::string heroName;
@@ -36,6 +43,7 @@ struct PortraitResult {
     bool        valid() const { return heroId > 0 && score >= 0.5f; }
 };
 
+// 10 слотов портретов (0-4 Radiant, 5-9 Dire), mutex-protected
 struct SharedPortraitState {
     std::mutex     mtx;
     PortraitResult slots[10];
@@ -47,47 +55,49 @@ struct SharedPortraitState {
     }
 };
 
-// ─── GUI Picker State ─────────────────────────────────────────────────────────
-// Written by runPickerGui (picker thread), read by GUI thread
+// ─── Состояние пикера для GUI ─────────────────────────────────────────────────
+// Пишется потоком runPickerGui, читается GUI-потоком
 
 struct HeroSlotGui {
     char name[64] = {};
     int  heroId   = 0;
-    int  pos      = 0;   // 1-5, 0=unknown
+    int  pos      = 0;   // позиция 1-5, 0 = неизвестна
     bool filled   = false;
     bool isYou    = false;
 };
 
+// Строка рекомендации: герой + вероятность победы + статистика
 struct PickRowGui {
     char  name[64]  = {};
     int   heroId    = 0;
     float winProb   = 0.f;
     int   rank      = 0;
     int   gamesPlayer = 0;
-    float wrPlayer  = 0.f;   // win rate [0..1]
+    float wrPlayer  = 0.f;   // винрейт [0..1]
     int   gamesPro  = 0;
     int   gamesImm  = 0;
     float wrImm     = 0.f;
 };
 
+// Полное состояние пикера: слоты драфта + рекомендации top-10
 struct GuiPickerState {
     std::mutex   mtx;
 
-    bool         active       = false;  // picker thread is running
-    bool         gameStarted  = false;  // received DRAFT/INGAME state
+    bool         active       = false;  // поток пикера запущен
+    bool         gameStarted  = false;  // получен DRAFT/INGAME
 
     HeroSlotGui  radiant[5];
     HeroSlotGui  dire[5];
 
-    // Our hero status
+    // Статус нашего героя
     bool  ourHeroPicked = false;
     char  ourHeroName[64] = {};
     float winProb         = 0.f;
-    int   ourPosition     = 0;   // detected position 1-5
-    int   ourSlot         = 1;   // slot 1-5
+    int   ourPosition     = 0;   // позиция 1-5
+    int   ourSlot         = 1;   // слот 1-5
     bool  isRadiant       = true;
 
-    // Top-10 recommendations (when our hero not yet picked)
+    // Рекомендации top-10 (пока наш герой не выбран)
     PickRowGui   recs[10];
     int          recCount = 0;
 
@@ -105,14 +115,19 @@ struct GuiPickerState {
     }
 };
 
-// ─── Function declarations ────────────────────────────────────────────────────
+// ─── Декларации функций модулей ───────────────────────────────────────────────
 
+// Фаза 1: загрузка данных игрока. Возвращает 0 при успехе.
 int  runDataFetcher(long long accountId, const std::string& stratzToken);
+
+// Фаза 2: GSI HTTP-сервер на порту 3000, обновляет gameInfo.
 void runGsiServer(GameInfo& gameInfo, const std::string& steamApiKey);
+
+// Захват портретов HUD каждые 500мс, запись в livepicks.
 void runPortraitCapture(GameInfo& gameInfo, const std::string& dbPath,
                         std::atomic<bool>& running, SharedPortraitState& out);
 
-// GUI picker — writes to GuiPickerState instead of console
+// ML-пикер: читает livepicks, пишет рекомендации в guiState.
 int  runPickerGui(const char* modelPath, const char* dbPath,
                   std::atomic<bool>& running,
                   GuiPickerState* guiState,

@@ -1,18 +1,18 @@
 #pragma once
 /*
- * portrait_runner.h
+ * portrait_runner.h — захват портретов + overlay-кнопка [D].
  */
 
 #include "shared_types.h"
 #include <string>
 #include <atomic>
 
-// Запускает прозрачную кнопку [D] поверх Dota 2.
-// Вызывать один раз при старте приложения (из orchestratorMain).
-// Кнопка видна всегда, пока окно Dota 2 открыто.
+// Запуск прозрачной кнопки [D] поверх Dota 2.
+// Вызывать один раз при старте (из orchestratorMain). Видна пока открыто окно Dota 2.
 void startDotaOverlay();
 
-// Запускает цикл захвата портретов. Блокирует поток пока running == true.
+// Цикл захвата портретов каждые 500мс → распознавание → запись в livepicks.
+// Блокирует поток до running == false.
 void runPortraitCapture(GameInfo&           gameInfo,
                         const std::string&  dbPath,
                         std::atomic<bool>&  running,

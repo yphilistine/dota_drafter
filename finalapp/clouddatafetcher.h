@@ -1,7 +1,12 @@
 #pragma once
+/*
+ * clouddatafetcher.h — синхронизация данных из PostgreSQL в SQLite.
+ * Таблицы: proherostats, immortalherostats (агрегат recentimmortalmatches).
+ */
+
 #include "common.h"
 
-// Строка из PostgreSQL таблицы proherostats (с позицией)
+// Строка про-статистики героя на позиции (PG → SQLite)
 struct ProHeroStats {
     int hero_id;
     int pos;    // позиция 1-5
@@ -10,7 +15,7 @@ struct ProHeroStats {
     int bans;
 };
 
-// Строка для immortalherostats (агрегат из recentimmortalmatches)
+// Строка immortal-статистики (агрегат матчей immortal-рейтинга)
 struct ImmortalHeroStats {
     int hero_id;
     int pos;
@@ -19,10 +24,8 @@ struct ImmortalHeroStats {
     int bans;   // всегда 0 — в recentimmortalmatches нет данных о банах
 };
 
-// Подключается к PostgreSQL, читает proherostats (hero_id, pos, games, wins, bans),
-// создаёт/обновляет таблицу proherostats в SQLite.
+// PG proherostats → SQLite proherostats. Полная перезапись.
 void fetchAndStoreProHeroStats(sqlite3* db, const std::string& connStr);
 
-// Подключается к PostgreSQL, читает recentimmortalmatches,
-// агрегирует статистику по (hero_id, pos) и сохраняет в SQLite таблицу immortalherostats.
+// PG recentimmortalmatches → агрегация по (hero_id, pos) → SQLite immortalherostats
 void fetchAndStoreImmortalHeroStats(sqlite3* db, const std::string& connStr);

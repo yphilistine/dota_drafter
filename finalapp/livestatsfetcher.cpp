@@ -1,7 +1,9 @@
 /*
- * livestatsfetcher.cpp
- * GSI HTTP-сервер + Steam-поллер (только лог).
- * Обновляет GameInfo.phase и GameInfo.isHeroSelection.
+ * livestatsfetcher.cpp — GSI HTTP-сервер (порт 3000) + Steam API поллер.
+ *
+ * POST / — приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot).
+ * GET /phase — JSON статус текущей фазы.
+ * Steam поллер — логирование GetMatchDetails (не пишет в livepicks).
  */
 
 #pragma comment(lib, "ws2_32.lib")

@@ -1,7 +1,7 @@
 #include "clouddatafetcher.h"
 #include <libpq-fe.h>
 
-// ---------------------- RAII-обёртка для PGconn ----------------------
+// ─── RAII-обёртка PQconnectdb / PQfinish ─────────────────────────────────────
 class PgConnection {
     PGconn* conn_;
 public:
@@ -20,7 +20,7 @@ public:
     PgConnection& operator=(const PgConnection&) = delete;
 };
 
-// ---------------------- RAII-обёртка для PGresult ----------------------
+// ─── RAII-обёртка PGresult / PQclear ─────────────────────────────────────────
 class PgResult {
     PGresult* res_;
 public:
@@ -31,9 +31,7 @@ public:
     PgResult& operator=(const PgResult&) = delete;
 };
 
-// ----------------------
-// proherostats
-// ----------------------
+// ─── proherostats ────────────────────────────────────────────────────────────
 
 static void createProHeroStatsTableIfNotExists(sqlite3* db) {
     const char* sql = R"(
@@ -129,9 +127,7 @@ void fetchAndStoreProHeroStats(sqlite3* db, const std::string& connStr) {
     LOG_INFO("SQLite: сохранено " << rows.size() << " строк -> proherostats");
 }
 
-// ----------------------
-// immortalherostats  (агрегат из recentimmortalmatches)
-// ----------------------
+// ─── immortalherostats (агрегат recentimmortalmatches) ────────────────────────
 
 static void createImmortalHeroStatsTableIfNotExists(sqlite3* db) {
     const char* sql = R"(
