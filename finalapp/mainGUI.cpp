@@ -39,6 +39,7 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "ole32.lib")
 
 // ─── D3D11 инициализация ──────────────────────────────────────────────────────
 static ID3D11Device*           g_Device    = nullptr;
@@ -123,8 +124,13 @@ struct PlayerState {
     bool        phase1Error   = false;
     char        phase1Msg[256] = {};
     bool        idChanged     = false;  // сигнал оркестратору сбросить фазу 3
+    std::vector<uint8_t> avatarData;    // сырые байты изображения (из HTTP)
+    bool        avatarDataReady = false;
 };
 static PlayerState g_player;
+
+// Текстура аватара (только GUI-поток)
+static ID3D11ShaderResourceView* g_avatarSRV = nullptr;
 
 // Конфигурация (из переменных окружения / умолчаний, затем read-only)
 static std::string g_stratzToken;
@@ -229,32 +235,102 @@ static void initLivePicksRow(sqlite3* db, long long matchId,
     sqlite3_finalize(st);
 }
 
-// ─── STRATZ: получение имени игрока (фоновый поток) ───────────────────────────
-static std::string fetchStratzName(long long accountId, const std::string& token) {
-    // GraphQL query for player display name
-    char qbuf[256];
-    std::snprintf(qbuf, sizeof(qbuf),
-        "{\"query\":\"{ player(steamAccountId: %lld) "
-        "{ steamAccount { name } } }\"}",
-        accountId);
+// ─── Создание D3D11 текстуры из байтов изображения (JPEG/PNG) ─────────────────
+static ID3D11ShaderResourceView* createTextureFromImageData(
+    const uint8_t* data, size_t size)
+{
+    if (!data || size == 0 || !g_Device) return nullptr;
 
-    std::string resp = httpPost(
-        "https://api.stratz.com/graphql", qbuf, token);
-    if (resp.empty()) return "";
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
+    if (!hMem) return nullptr;
+    memcpy(GlobalLock(hMem), data, size);
+    GlobalUnlock(hMem);
 
-    // Простой парсинг: ищем "name":"..."
-    auto pos = resp.find("\"name\":");
-    if (pos == std::string::npos) return "";
-    pos += 7;
-    while (pos < resp.size() && resp[pos] != '"') ++pos;
-    if (pos >= resp.size()) return "";
-    ++pos; // skip opening "
-    std::string name;
-    while (pos < resp.size() && resp[pos] != '"') {
-        if (resp[pos] == '\\') { ++pos; }
-        if (pos < resp.size()) name += resp[pos++];
+    IStream* stream = nullptr;
+    if (FAILED(CreateStreamOnHGlobal(hMem, TRUE, &stream))) {
+        GlobalFree(hMem);
+        return nullptr;
     }
-    return name;
+
+    ID3D11ShaderResourceView* result = nullptr;
+    {
+        Gdiplus::Bitmap bmp(stream);
+        if (bmp.GetLastStatus() == Gdiplus::Ok) {
+            int w = (int)bmp.GetWidth(), h = (int)bmp.GetHeight();
+            if (w > 0 && h > 0) {
+                Gdiplus::BitmapData bd{};
+                Gdiplus::Rect rect(0, 0, w, h);
+                bmp.LockBits(&rect, Gdiplus::ImageLockModeRead,
+                             PixelFormat32bppARGB, &bd);
+
+                D3D11_TEXTURE2D_DESC desc{};
+                desc.Width  = w;  desc.Height = h;
+                desc.MipLevels = 1; desc.ArraySize = 1;
+                desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                desc.SampleDesc.Count = 1;
+                desc.Usage     = D3D11_USAGE_DEFAULT;
+                desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+                D3D11_SUBRESOURCE_DATA init{};
+                init.pSysMem      = bd.Scan0;
+                init.SysMemPitch  = bd.Stride;
+
+                ID3D11Texture2D* tex = nullptr;
+                HRESULT hr = g_Device->CreateTexture2D(&desc, &init, &tex);
+                bmp.UnlockBits(&bd);
+
+                if (SUCCEEDED(hr) && tex) {
+                    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+                    srvDesc.Format = desc.Format;
+                    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+                    srvDesc.Texture2D.MipLevels = 1;
+                    g_Device->CreateShaderResourceView(tex, &srvDesc, &result);
+                    tex->Release();
+                }
+            }
+        }
+    }
+    stream->Release();
+    return result;
+}
+
+// ─── OpenDota: получение имени и аватара игрока (фоновый поток) ───────────────
+static void fetchOpenDotaProfile(long long accountId) {
+    std::string url = "https://api.opendota.com/api/players/"
+                    + std::to_string(accountId);
+    std::string resp;
+    try { resp = httpGet(url); } catch (...) { return; }
+    if (resp.empty()) return;
+
+    auto j = json::parse(resp, nullptr, false);
+    if (j.is_discarded() || !j.contains("profile") || !j["profile"].is_object())
+        return;
+
+    auto& profile = j["profile"];
+    std::string name      = profile.value("personaname", "");
+    std::string avatarUrl = profile.value("avatarmedium", "");
+
+    if (!name.empty()) {
+        sqlite3* db = nullptr;
+        if (sqlite3_open(DB_PATH, &db) == SQLITE_OK) {
+            createPlayerInfoTable(db);
+            savePlayerInfo(db, accountId, name.c_str());
+            sqlite3_close(db);
+        }
+        std::lock_guard<std::mutex> lk(g_player.mtx);
+        std::snprintf(g_player.name, sizeof(g_player.name), "%s", name.c_str());
+    }
+
+    if (!avatarUrl.empty()) {
+        try {
+            std::string imgData = httpGet(avatarUrl);
+            if (!imgData.empty()) {
+                std::lock_guard<std::mutex> lk(g_player.mtx);
+                g_player.avatarData.assign(imgData.begin(), imgData.end());
+                g_player.avatarDataReady = true;
+            }
+        } catch (...) {}
+    }
 }
 
 // ─── Запуск фазы 1 (DataFetcher + имя игрока) ────────────────────────────────
@@ -268,21 +344,12 @@ static void startPhase1(long long accountId) {
                       "Fetching data...");
     }
 
+    // Сброс аватара (GUI-поток, безопасно — startPhase1 вызывается из GUI)
+    if (g_avatarSRV) { g_avatarSRV->Release(); g_avatarSRV = nullptr; }
+
     std::thread([accountId]() {
-        // Имя из STRATZ (быстро, ~1с)
-        std::string fetchedName = fetchStratzName(accountId, g_stratzToken);
-        if (!fetchedName.empty()) {
-            // Save to DB and update player state
-            sqlite3* db = nullptr;
-            if (sqlite3_open(DB_PATH, &db) == SQLITE_OK) {
-                createPlayerInfoTable(db);
-                savePlayerInfo(db, accountId, fetchedName.c_str());
-                sqlite3_close(db);
-            }
-            std::lock_guard<std::mutex> lk(g_player.mtx);
-            std::snprintf(g_player.name, sizeof(g_player.name),
-                          "%s", fetchedName.c_str());
-        }
+        // Имя + аватар из OpenDota (~1с)
+        fetchOpenDotaProfile(accountId);
 
         // Основная загрузка данных (~30-90с)
         int rc = runDataFetcher(accountId, g_stratzToken);
@@ -1177,12 +1244,16 @@ static void DrawHeader(float fullW) {
 
     } else {
         // ── Display mode ──────────────────────────────────────────────────
-        // Initials in avatar box
-        char av[3] = {pname[0] ? pname[0] : '?',
-                      pname[1] ? pname[1] : '\0', '\0'};
-        ImVec2 avts = ImGui::CalcTextSize(av);
-        dl->AddText({cx+8+(36-avts.x)/2.f, hs.y+8+(36-avts.y)/2.f},
-                    C(kMuted), av);
+        if (g_avatarSRV) {
+            dl->AddImage((ImTextureID)g_avatarSRV,
+                         {cx+8.f, hs.y+8.f}, {cx+44.f, hs.y+44.f});
+        } else {
+            char av[3] = {pname[0] ? pname[0] : '?',
+                          pname[1] ? pname[1] : '\0', '\0'};
+            ImVec2 avts = ImGui::CalcTextSize(av);
+            dl->AddText({cx+8+(36-avts.x)/2.f, hs.y+8+(36-avts.y)/2.f},
+                        C(kMuted), av);
+        }
 
         // Player name (clickable to edit)
         dl->AddText({cx+52.f, hs.y+8.f},  C(kText), pname);
@@ -1215,6 +1286,22 @@ static void DrawHeader(float fullW) {
 
 // ─── Главный кадр ────────────────────────────────────────────────────────────
 static void RenderFrame() {
+    // Загрузка аватара из буфера (GUI-поток → D3D11 текстура)
+    {
+        bool ready = false;
+        { std::lock_guard<std::mutex> lk(g_player.mtx); ready = g_player.avatarDataReady; }
+        if (ready) {
+            std::vector<uint8_t> data;
+            {
+                std::lock_guard<std::mutex> lk(g_player.mtx);
+                data = std::move(g_player.avatarData);
+                g_player.avatarDataReady = false;
+            }
+            if (g_avatarSRV) { g_avatarSRV->Release(); g_avatarSRV = nullptr; }
+            g_avatarSRV = createTextureFromImageData(data.data(), data.size());
+        }
+    }
+
     auto&       io   = ImGui::GetIO();
     const float W    = io.DisplaySize.x;
     const float H    = io.DisplaySize.y;
@@ -1330,6 +1417,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     ensureLogsDir();
     CurlGlobal curlInit;
 
+    // GDI+ для декодирования аватаров (JPEG/PNG)
+    Gdiplus::GdiplusStartupInput gdipInput;
+    ULONG_PTR gdipToken = 0;
+    Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);
+
     // ── Config from environment ───────────────────────────────────────────
     g_steamKey   = "F54FDF3461131271522AA4679FB980D7";
     if (const char* e = std::getenv("STEAM_API_KEY"))  g_steamKey   = e;
@@ -1415,11 +1507,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     {
         ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr;
-        // Шрифт: Segoe UI 20px (Windows), fallback — Arial 20px
+        // Шрифт: Segoe UI 20px с кириллическими глифами
         float fontSize = 20.f;
-        if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", fontSize))
-            io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", fontSize);
-        // Если ни один не найден — ImGui использует дефолтный шрифт
+        const ImWchar* glyphRanges = io.Fonts->GetGlyphRangesCyrillic();
+        if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", fontSize, nullptr, glyphRanges))
+            io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", fontSize, nullptr, glyphRanges);
     }
     ApplyStyle();
     ImGui_ImplWin32_Init(hwnd);
@@ -1450,6 +1542,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     g_orchestratorRunning.store(false);
     if (g_orchestratorThread.joinable()) g_orchestratorThread.join();
 
+    if (g_avatarSRV) { g_avatarSRV->Release(); g_avatarSRV = nullptr; }
+
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
@@ -1457,5 +1551,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     DestroyWindow(hwnd);
     UnregisterClassW(L"Dota_Drafter", hInst);
     if (g_AppIcon) DestroyIcon(g_AppIcon);
+    Gdiplus::GdiplusShutdown(gdipToken);
     return 0;
 }

@@ -222,7 +222,8 @@ GUI: ImGui/D3D11 + оркестратор.
 | `RenderFrame()` | Главный кадр: root window → Header → StatusBar → Draft + Picks |
 | `orchestratorMain()` | Фоновый цикл: GSI → portrait → picker (управление потоками) |
 | `startPhase1(accountId)` | Запуск DataFetcher + STRATZ имя в фоновом потоке |
-| `fetchStratzName(accountId, token)` | GraphQL запрос имени игрока из STRATZ |
+| `fetchOpenDotaProfile(accountId)` | OpenDota /api/players/{id} → имя + аватар (avatarmedium) |
+| `createTextureFromImageData(data, size)` | JPEG/PNG байты → D3D11 текстура через GDI+ |
 | `WinMain(hInst, ...)` | Точка входа: D3D11, ImGui, окно, оркестратор, message loop |
 
 Палитра: `kBg`, `kCard`, `kText`, `kMuted`, `kGreen`, `kRed`, `kAmber`, `kBlue`.
@@ -277,7 +278,8 @@ GUI: ImGui/D3D11 + оркестратор.
 | OpenDota `/api/heroes` | Справочник героев |
 | OpenDota `/api/players/{id}/heroes` | Статистика героев игрока |
 | OpenDota `/api/players/{id}/matches` | Список match_id (90 дней) |
-| STRATZ GraphQL | Батч-запрос деталей матчей, имя игрока |
+| STRATZ GraphQL | Батч-запрос деталей матчей |
+| OpenDota `/api/players/{id}` | Профиль игрока (personaname, avatarmedium) |
 | Steam Web API `GetMatchDetails` | Поллинг (только логирование) |
 | Dota 2 GSI (порт 3000) | Состояние игры в реальном времени |
 
