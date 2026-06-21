@@ -159,8 +159,6 @@ GSI HTTP-сервер + Steam API поллер.
 | `runGsiServer(gameInfo, steamApiKey)` | Запуск HTTP-сервера на порту 3000, приём GSI-данных |
 | `parsePhaseStr(s)` | Строка GSI game_state → GamePhase |
 | `handle_request(raw)` | Обработка HTTP: POST / → парсинг GSI, GET /phase → JSON статус |
-| `poll_loop()` | Фоновый поллинг Steam API (GetMatchDetails) — только логирование |
-| `load_heroes()` | Загрузка справочника героев из SQLite |
 
 ---
 
@@ -175,7 +173,8 @@ GSI HTTP-сервер + Steam API поллер.
 | `clearHeroSlots(db)` | Обнуление всех hero-слотов в livepicks |
 | `clearHeroSlot(db, slot)` | Обнуление одного слота |
 | `overlayProc(hwnd, msg, wp, lp)` | WndProc overlay: таймер позиционирования + клик-переключение |
-| `paintLayeredButton(hwnd)` | Per-pixel alpha отрисовка [D] через UpdateLayeredWindow |
+| `paintLayeredButton(hwnd)` | Per-pixel alpha отрисовка [D] серым цветом (как шестерёнка HUD) через UpdateLayeredWindow |
+| `selectOverlayPos(w, h)` | Выбор позиции кнопки по аспекту: 4:3 / 16:10 / 16:9 / 21:9 |
 | `bringAppToFront()` | Вывод главного окна приложения на передний план |
 | `bringDotaToFront(cap)` | Вывод окна Dota 2 на передний план |
 
@@ -216,7 +215,8 @@ GUI: ImGui/D3D11 + оркестратор.
 | `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb |
 | `DrawPicksPanel(panelW)` | Правая панель: рекомендации top-10 / выбранный герой |
 | `DrawHeroSlot(rowW, h, ...)` | Отрисовка одного слота героя (портрет, имя, позиция) |
-| `DrawPortrait(dl, p, sz, ...)` | Отрисовка квадрата портрета с инициалами |
+| `DrawPortrait(dl, p, sz, ...)` | Отрисовка квадрата портрета: PNG-текстура из assets/ (если есть) или инициалы |
+| `loadHeroPortraits()` | Загрузка PNG из assets/ → кэш `g_heroPortraits` (localized_name → D3D11 текстура) |
 | `DrawBar(dl, p, w, h, frac, fill)` | Горизонтальный прогресс-бар |
 | `WinColor(w)` | Цвет по win probability (green/amber/red) |
 | `RenderFrame()` | Главный кадр: root window → Header → StatusBar → Draft + Picks |
@@ -227,19 +227,6 @@ GUI: ImGui/D3D11 + оркестратор.
 | `WinMain(hInst, ...)` | Точка входа: D3D11, ImGui, окно, оркестратор, message loop |
 
 Палитра: `kBg`, `kCard`, `kText`, `kMuted`, `kGreen`, `kRed`, `kAmber`, `kBlue`.
-
----
-
-### main_unified.cpp
-Консольный оркестратор (альтернативная точка входа без GUI).
-
-| Функция | Описание |
-|---------|----------|
-| `createLivePicksIfNotExists(db)` | Создание таблицы livepicks |
-| `clearLivePicks(db)` | Очистка таблицы livepicks |
-| `initLivePicksRow(db, matchId, accountId, ourSide, ourSlot)` | Инициализация строки для нового матча |
-| `runDataFetcherPhase(accountId, stratzToken)` | Обёртка фазы 1 с замером времени |
-| `main(argc, argv)` | Консольная точка входа: параметры → фаза 1 → GSI + Portrait + Picker цикл |
 
 ---
 
@@ -280,7 +267,6 @@ GUI: ImGui/D3D11 + оркестратор.
 | OpenDota `/api/players/{id}/matches` | Список match_id (90 дней) |
 | STRATZ GraphQL | Батч-запрос деталей матчей |
 | OpenDota `/api/players/{id}` | Профиль игрока (personaname, avatarmedium) |
-| Steam Web API `GetMatchDetails` | Поллинг (только логирование) |
 | Dota 2 GSI (порт 3000) | Состояние игры в реальном времени |
 
 ---

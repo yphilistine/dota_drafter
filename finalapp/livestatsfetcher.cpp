@@ -1,9 +1,8 @@
 /*
- * livestatsfetcher.cpp — GSI HTTP-сервер (порт 3000) + Steam API поллер.
+ * livestatsfetcher.cpp — GSI HTTP-сервер (порт 3000).
  *
  * POST / — приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot).
  * GET /phase — JSON статус текущей фазы.
- * Steam поллер — логирование GetMatchDetails (не пишет в livepicks).
  */
 
 #pragma comment(lib, "ws2_32.lib")
@@ -12,50 +11,16 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
-#include <curl/curl.h>
-#include <sqlite3.h>
 
 #include "shared_types.h"
 
-#include <algorithm>
 #include <iostream>
-#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <vector>
-#include <ctime>
 
-static std::string g_steam_api_key;
-static const char* DB_FILE  = "playerandlivestats.db";
-static const int   PORT     = 3000;
-static const int   POLL_SEC = 5;
-
-struct LocalState {
-    std::string match_id;
-    std::string game_state;
-    int         team_slot = 0;
-    std::string team;
-};
-static LocalState            g_local;
-static std::mutex            g_localMutex;
-static std::map<int,std::string> g_heroes;
-static GameInfo*             g_gameInfo = nullptr;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Утилиты
-// ─────────────────────────────────────────────────────────────────────────────
-
-static std::string now_hms() {
-    SYSTEMTIME st; GetLocalTime(&st);
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
-    return buf;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// parsePhaseStr
-// ─────────────────────────────────────────────────────────────────────────────
+static const int PORT = 3000;
+static GameInfo* g_gameInfo = nullptr;
 
 static GamePhase parsePhaseStr(const std::string& s) {
     if (s == "DOTA_GAMERULES_STATE_HERO_SELECTION" ||
@@ -99,103 +64,7 @@ static std::string json_get(const std::string& src, const std::string& key) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Загрузка героев
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void load_heroes() {
-    sqlite3* db = nullptr;
-    if (sqlite3_open_v2(DB_FILE, &db,
-            SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK)
-        return;
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, "SELECT id, localized_name FROM heroes",
-                           -1, &stmt, nullptr) == SQLITE_OK) {
-        int count = 0;
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            int id = sqlite3_column_int(stmt, 0);
-            const char* name = (const char*)sqlite3_column_text(stmt, 1);
-            if (name) { g_heroes[id] = name; count++; }
-        }
-        sqlite3_finalize(stmt);
-        std::printf("[GSI] Loaded %d heroes from local DB\n", count);
-    }
-    sqlite3_close(db);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// curl GET
-// ─────────────────────────────────────────────────────────────────────────────
-
-static size_t curl_write_cb(void* ptr, size_t sz, size_t nmemb, std::string* s) {
-    s->append((char*)ptr, sz*nmemb); return sz*nmemb;
-}
-static std::string curl_get(const std::string& url) {
-    CURL* curl = curl_easy_init(); if (!curl) return "";
-    std::string resp;
-    curl_easy_setopt(curl, CURLOPT_URL,            url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,  curl_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA,      &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT,        10L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-    return resp;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Steam-поллер — только лог, в livepicks не пишет
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void poll_loop() {
-    while (true) {
-        Sleep(POLL_SEC * 1000);
-        std::string mid, gstate;
-        {
-            std::lock_guard<std::mutex> lk(g_localMutex);
-            mid    = g_local.match_id;
-            gstate = g_local.game_state;
-        }
-        if (mid.empty() || g_steam_api_key.empty()) continue;
-        if (gstate != "DOTA_GAMERULES_STATE_HERO_SELECTION") continue;
-
-        std::string url =
-            "https://api.steampowered.com/IDOTA2Match_570/GetMatchDetails/v1/"
-            "?key=" + g_steam_api_key + "&match_id=" + mid;
-        std::string resp = curl_get(url);
-        if (resp.empty()) continue;
-
-        // Простой лог: сколько героев пикнуто
-        int radiant_count = 0, dire_count = 0;
-        size_t p = 0;
-        while ((p = resp.find("\"hero_id\"", p)) != std::string::npos) {
-            p += 9;
-            size_t colon = resp.find(':', p);
-            if (colon == std::string::npos) break;
-            std::string hv = resp.substr(colon+1, 10);
-            hv.erase(std::remove_if(hv.begin(), hv.end(),
-                [](char c){ return c==' '||c==','||c=='}'||c==']'; }), hv.end());
-            if (hv == "0" || hv.empty()) continue;
-            // player_slot — ищем рядом
-            size_t slotPos = resp.rfind("\"player_slot\"", colon);
-            if (slotPos != std::string::npos && colon - slotPos < 200) {
-                size_t sc = resp.find(':', slotPos);
-                if (sc != std::string::npos) {
-                    int slot = std::stoi(resp.substr(sc+1, 5));
-                    if (slot < 128) radiant_count++; else dire_count++;
-                }
-            }
-        }
-        if (radiant_count || dire_count)
-            std::printf("[%s] Steam match=%s  Radiant:%d  Dire:%d\n",
-                now_hms().c_str(), mid.c_str(), radiant_count, dire_count);
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HTTP handler
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── HTTP handler ────────────────────────────────────────────────────────────
 
 static std::string handle_request(const std::string& raw) {
     bool is_post = raw.size() >= 4 && raw.substr(0,4) == "POST";
@@ -225,14 +94,6 @@ static std::string handle_request(const std::string& raw) {
         int team_slot = slot_str.empty() ? 0 : std::stoi(slot_str);
 
         if (!mid.empty()) {
-            {
-                std::lock_guard<std::mutex> lk(g_localMutex);
-                g_local.match_id   = mid;
-                g_local.game_state = gstate;
-                g_local.team       = team;
-                g_local.team_slot  = team_slot;
-            }
-
             if (g_gameInfo) {
                 std::lock_guard<std::mutex> lk(g_gameInfo->mtx);
                 bool newId = (!mid.empty() && mid != g_gameInfo->matchId);
@@ -295,11 +156,8 @@ static void client_thread(SOCKET client) {
 // runGsiServer
 // ─────────────────────────────────────────────────────────────────────────────
 
-void runGsiServer(GameInfo& gameInfo, const std::string& steamApiKey) {
-    g_gameInfo      = &gameInfo;
-    g_steam_api_key = steamApiKey;
-    load_heroes();
-    std::thread(poll_loop).detach();
+void runGsiServer(GameInfo& gameInfo, const std::string& /*steamApiKey*/) {
+    g_gameInfo = &gameInfo;
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {

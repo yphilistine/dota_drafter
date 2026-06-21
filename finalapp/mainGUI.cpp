@@ -28,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <map>
 #include <cstdio>
 #include <cstring>
 
@@ -103,7 +104,6 @@ static const ImVec4 kBorder = {1.f,   1.f,   1.f,   0.10f};
 static const ImVec4 kGreen  = {0.39f, 0.78f, 0.47f, 1.f};
 static const ImVec4 kRed    = {0.88f, 0.45f, 0.35f, 1.f};
 static const ImVec4 kAmber  = {0.88f, 0.73f, 0.35f, 1.f};
-static const ImVec4 kBlue   = {0.35f, 0.60f, 0.90f, 1.f};
 
 inline ImU32 C(ImVec4 v)           { return ImGui::ColorConvertFloat4ToU32(v); }
 inline ImU32 Ca(ImVec4 v, float a) { v.w = a; return ImGui::ColorConvertFloat4ToU32(v); }
@@ -132,9 +132,11 @@ static PlayerState g_player;
 // Текстура аватара (только GUI-поток)
 static ID3D11ShaderResourceView* g_avatarSRV = nullptr;
 
+// Кэш портретов героев: localized_name → D3D11 текстура (PNG из assets/)
+static std::map<std::string, ID3D11ShaderResourceView*> g_heroPortraits;
+
 // Конфигурация (из переменных окружения / умолчаний, затем read-only)
 static std::string g_stratzToken;
-static std::string g_steamKey;
 static const char* DB_PATH    = "playerandlivestats.db";
 static const char* MODEL_PATH = "draft_helper_v3";
 // Портреты + пикер: активны HERO_SELECTION + 5с. GUI показывает результат до конца игры.
@@ -151,8 +153,6 @@ static std::thread       g_orchestratorThread;
 // Состояние GUI (только из GUI-потока)
 static bool  s_editMode     = false;
 static char  s_inputBuf[32] = {};
-static bool  s_nameFetching = false;
-static char  s_fetchedName[128] = {};
 
 // ─── SQLite: таблица player_info ──────────────────────────────────────────────
 static void createPlayerInfoTable(sqlite3* db) {
@@ -294,6 +294,43 @@ static ID3D11ShaderResourceView* createTextureFromImageData(
     return result;
 }
 
+// ─── Загрузка портретов героев из assets/ ────────────────────────────────────
+static void loadHeroPortraits() {
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(L"assets\\*.png", &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+
+        wchar_t path[MAX_PATH];
+        _snwprintf_s(path, MAX_PATH, L"assets\\%s", fd.cFileName);
+
+        HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ,
+                                   nullptr, OPEN_EXISTING, 0, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) continue;
+
+        DWORD sz = GetFileSize(hFile, nullptr);
+        if (sz == 0 || sz == INVALID_FILE_SIZE) { CloseHandle(hFile); continue; }
+
+        std::vector<uint8_t> buf(sz);
+        DWORD read = 0;
+        ReadFile(hFile, buf.data(), sz, &read, nullptr);
+        CloseHandle(hFile);
+        if (read != sz) continue;
+
+        auto* srv = createTextureFromImageData(buf.data(), buf.size());
+        if (!srv) continue;
+
+        // Имя файла без .png → ключ (localized_name)
+        int nameLen = (int)wcslen(fd.cFileName) - 4; // убрать ".png"
+        char key[128] = {};
+        WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, nameLen,
+                            key, sizeof(key)-1, nullptr, nullptr);
+        g_heroPortraits[key] = srv;
+    } while (FindNextFileW(hFind, &fd));
+    FindClose(hFind);
+}
+
 // ─── OpenDota: получение имени и аватара игрока (фоновый поток) ───────────────
 static void fetchOpenDotaProfile(long long accountId) {
     std::string url = "https://api.opendota.com/api/players/"
@@ -307,7 +344,7 @@ static void fetchOpenDotaProfile(long long accountId) {
         return;
 
     auto& profile = j["profile"];
-    std::string name      = profile.value("personaname", "");
+    std::string name      = sanitizeUtf8(profile.value("personaname", ""));
     std::string avatarUrl = profile.value("avatarmedium", "");
 
     if (!name.empty()) {
@@ -390,7 +427,7 @@ static void orchestratorMain() {
     startDotaOverlay();
 
     // Start GSI server (always)
-    std::thread([&]{ runGsiServer(g_gameInfo, g_steamKey); }).detach();
+    std::thread([&]{ runGsiServer(g_gameInfo, ""); }).detach();
 
     std::string lastMatchId;
     using Clock = std::chrono::steady_clock;
@@ -607,13 +644,19 @@ static void ApplyStyle() {
 
 // ─── Вспомогательные функции отрисовки ────────────────────────────────────────
 static void DrawPortrait(ImDrawList* dl, ImVec2 p, float sz,
-                         ImU32 fill, ImU32 border, const char* label) {
-    dl->AddRectFilled(p, {p.x+sz, p.y+sz}, fill);
-    dl->AddRect      (p, {p.x+sz, p.y+sz}, border, 0.f, 0, 1.f);
-    if (label && *label) {
-        ImVec2 ts = ImGui::CalcTextSize(label);
-        dl->AddText({p.x+(sz-ts.x)*0.5f, p.y+(sz-ts.y)*0.5f}, C(kText), label);
+                         ImU32 fill, ImU32 border, const char* label,
+                         ImTextureID tex = 0) {
+    if (tex) {
+        dl->AddRectFilled(p, {p.x+sz, p.y+sz}, IM_COL32(0,0,0,255));
+        dl->AddImage(tex, p, {p.x+sz, p.y+sz});
+    } else {
+        dl->AddRectFilled(p, {p.x+sz, p.y+sz}, fill);
+        if (label && *label) {
+            ImVec2 ts = ImGui::CalcTextSize(label);
+            dl->AddText({p.x+(sz-ts.x)*0.5f, p.y+(sz-ts.y)*0.5f}, C(kText), label);
+        }
     }
+    dl->AddRect(p, {p.x+sz, p.y+sz}, border, 0.f, 0, 1.f);
 }
 static void DrawDashedRect(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col) {
     const float D=5.f, G=4.f;
@@ -675,7 +718,10 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
         dl->AddText({pp.x+(PSZ-ts.x)/2.f, pp.y+(PSZ-ts.y)/2.f}, C(kMuted), "?");
     } else {
         char ab[3] = {h.name[0], h.name[1] ? h.name[1] : '\0', '\0'};
-        DrawPortrait(dl, pp, PSZ, heroFill, Ca(kText, 0.18f), ab);
+        ImTextureID htex = 0;
+        auto it = g_heroPortraits.find(h.name);
+        if (it != g_heroPortraits.end()) htex = (ImTextureID)it->second;
+        DrawPortrait(dl, pp, PSZ, heroFill, Ca(kText, 0.18f), ab, htex);
     }
 
     float tx = pp.x + PSZ + PAD;
@@ -996,7 +1042,10 @@ static void DrawPicksPanel(float panelW) {
         ImU32  fill = highlight ? Ca(wc,0.20f) : C(kCard2);
         ImU32  bord = highlight ? Ca(wc,0.45f) : Ca(kText,0.12f);
         char   ab[3] = {name[0], name[1] ? name[1] : '\0', '\0'};
-        DrawPortrait(dl, pp, PSZ, fill, bord, ab);
+        ImTextureID htex = 0;
+        auto hit = g_heroPortraits.find(name);
+        if (hit != g_heroPortraits.end()) htex = (ImTextureID)hit->second;
+        DrawPortrait(dl, pp, PSZ, fill, bord, ab, htex);
 
         // Колонка 3: имя героя (фиксированный x, клипп до statsX)
         dl->PushClipRect({nameX, rp.y}, {statsX - 6.f, rp.y+RH}, true);
@@ -1109,20 +1158,23 @@ static void DrawStatusBar(float fullW) {
 
     dl->AddRectFilled(sp,{sp.x+fullW,sp.y+H},Ca(kCard2,0.5f));
 
-    // Phase 1 dot + text
+    // Player data dot + text (точки на уровне середины текста)
+    const float dotR  = 4.f;
+    const float dotCY = ty + lh * 0.5f;
     ImVec4 dot1col = phase1Error ? kRed : (phase1Done ? kGreen : (phase1Running ? kAmber : kMuted));
-    dl->AddCircleFilled({sp.x+10.f,sp.y+H*0.5f}, 4.f, C(dot1col));
+    dl->AddCircleFilled({sp.x+10.f, dotCY}, dotR, C(dot1col));
     char p1buf[64];
-    std::snprintf(p1buf, sizeof(p1buf), " Data: %s",
+    std::snprintf(p1buf, sizeof(p1buf), " Player data: %s",
                   phase1Running ? "fetching..." : (phase1Done ? "ready" : (phase1Error ? "error" : "pending")));
     dl->AddText({sp.x+18.f, ty}, C(kMuted), p1buf);
 
-    // Phase 2 dot + text (game state)
+    // Game phase dot + text
     ImVec4 dot2col = (phase == GamePhase::DRAFT   ? kAmber  :
                       phase == GamePhase::INGAME  ? kGreen  :
                       phase == GamePhase::POSTGAME? kMuted  : kMuted);
-    float x2 = sp.x + 160.f;
-    dl->AddCircleFilled({x2+4.f,sp.y+H*0.5f}, 4.f, C(dot2col));
+    ImVec2 p1sz = ImGui::CalcTextSize(p1buf);
+    float x2 = sp.x + 18.f + p1sz.x + 16.f;
+    dl->AddCircleFilled({x2+4.f, dotCY}, dotR, C(dot2col));
     const char* phaseStr = (phase == GamePhase::IDLE)     ? "Waiting for game" :
                            (phase == GamePhase::DRAFT)    ? "Draft / Hero Select" :
                            (phase == GamePhase::INGAME)   ? "In Game" : "Post Game";
@@ -1148,19 +1200,19 @@ static void DrawHeader(float fullW) {
     const float H   = 60.f;
     const float lh  = ImGui::GetTextLineHeight();
 
-    // ── [D] logo box — 44×44 в верхнем левом углу шапки ─────────────────
-    const float LOGO_SZ = 44.f;
+    // ── [D] logo box (на всю высоту шапки) ─────────────────────────────
+    const float LOGO_W = H;
     ImVec2 logoPos = {hs.x, hs.y};
 
-    dl->AddRectFilled(logoPos, {logoPos.x+LOGO_SZ, logoPos.y+LOGO_SZ}, C(kCard));
-    dl->AddRect      (logoPos, {logoPos.x+LOGO_SZ, logoPos.y+LOGO_SZ}, C(kBorder));
+    dl->AddRectFilled(logoPos, {logoPos.x+LOGO_W, logoPos.y+H}, C(kCard));
+    dl->AddRect      (logoPos, {logoPos.x+LOGO_W, logoPos.y+H}, C(kBorder));
     ImVec2 sts = ImGui::CalcTextSize("[D]");
-    dl->AddText({logoPos.x+(LOGO_SZ-sts.x)/2.f,
-                 logoPos.y+(LOGO_SZ-sts.y)/2.f}, C(kText), "[D]");
+    dl->AddText({logoPos.x+(LOGO_W-sts.x)/2.f,
+                 logoPos.y+(H-sts.y)/2.f - 1.f}, C(kText), "[D]");
 
     // Invisible button over the [D] box
     ImGui::SetCursorScreenPos(logoPos);
-    if (ImGui::InvisibleButton("##logo_btn",{LOGO_SZ, LOGO_SZ})) {
+    if (ImGui::InvisibleButton("##logo_btn",{LOGO_W, H})) {
         if (g_Hwnd) {
             if (IsIconic(g_Hwnd)) ShowWindow(g_Hwnd, SW_RESTORE);
             SetForegroundWindow(g_Hwnd);
@@ -1168,10 +1220,12 @@ static void DrawHeader(float fullW) {
         }
     }
 
-    // ── Title ─────────────────────────────────────────────────────────────
-    float tx = hs.x+54.f;
-    dl->AddText({tx, hs.y+4.f},       C(kText),  "Dota_Drafter");
-    dl->AddText({tx, hs.y+4.f+lh+2},  C(kMuted), "Dota 2 Draft Analyzer - Live Overlay");
+    // ── Title (вертикально по центру шапки, две строки) ───────────────────
+    float tx       = hs.x + LOGO_W + 10.f;
+    float textH    = lh * 2.f + 2.f;
+    float titleY   = hs.y + (H - textH) * 0.5f;
+    dl->AddText({tx, titleY},            C(kText),  "Dota_Drafter");
+    dl->AddText({tx, titleY + lh + 2.f}, C(kMuted), "Dota 2 Draft Analyzer - Live Overlay");
 
     // ── Player card (right side) ──────────────────────────────────────────
     const float CW = 240.f;
@@ -1180,9 +1234,11 @@ static void DrawHeader(float fullW) {
     dl->AddRectFilled({cx,hs.y},    {cx+CW,hs.y+H}, C(kCard));
     dl->AddRect      ({cx,hs.y},    {cx+CW,hs.y+H}, C(kBorder));
 
-    // Avatar box
-    dl->AddRectFilled({cx+8,hs.y+8},{cx+44,hs.y+44},C(kCard2));
-    dl->AddRect      ({cx+8,hs.y+8},{cx+44,hs.y+44},C(kBorder));
+    // Avatar box (36×36, вертикально по центру карточки)
+    const float AVS  = 36.f;
+    const float avY  = hs.y + (H - AVS) * 0.5f;
+    dl->AddRectFilled({cx+8, avY}, {cx+8+AVS, avY+AVS}, C(kCard2));
+    dl->AddRect      ({cx+8, avY}, {cx+8+AVS, avY+AVS}, C(kBorder));
 
     // Снимок состояния player info
     long long  accountId;
@@ -1199,15 +1255,14 @@ static void DrawHeader(float fullW) {
 
     if (!hasPlayer || s_editMode) {
         // ── Input mode ────────────────────────────────────────────────────
-        // Prompt text in avatar box
         ImVec2 avts = ImGui::CalcTextSize("ID");
-        dl->AddText({cx+8+(36-avts.x)/2.f, hs.y+8+(36-avts.y)/2.f},
+        dl->AddText({cx+8+(AVS-avts.x)/2.f, avY+(AVS-avts.y)/2.f},
                     C(kMuted), "ID");
 
-        dl->AddText({cx+52.f, hs.y+8.f}, C(kMuted), "Enter Steam ID (32-bit):");
+        dl->AddText({cx+52.f, avY}, C(kMuted), "Enter Steam ID (32-bit):");
 
         // InputText + Set button
-        ImGui::SetCursorScreenPos({cx+52.f, hs.y+8.f+lh+4.f});
+        ImGui::SetCursorScreenPos({cx+52.f, avY+lh+4.f});
         ImGui::SetNextItemWidth(120.f);
         bool commit = ImGui::InputText("##steamid", s_inputBuf, sizeof(s_inputBuf),
                                        ImGuiInputTextFlags_CharsNoBlank |
@@ -1246,23 +1301,25 @@ static void DrawHeader(float fullW) {
         // ── Display mode ──────────────────────────────────────────────────
         if (g_avatarSRV) {
             dl->AddImage((ImTextureID)g_avatarSRV,
-                         {cx+8.f, hs.y+8.f}, {cx+44.f, hs.y+44.f});
+                         {cx+8.f, avY}, {cx+8.f+AVS, avY+AVS});
         } else {
             char av[3] = {pname[0] ? pname[0] : '?',
                           pname[1] ? pname[1] : '\0', '\0'};
             ImVec2 avts = ImGui::CalcTextSize(av);
-            dl->AddText({cx+8+(36-avts.x)/2.f, hs.y+8+(36-avts.y)/2.f},
+            dl->AddText({cx+8+(AVS-avts.x)/2.f, avY+(AVS-avts.y)/2.f},
                         C(kMuted), av);
         }
 
-        // Player name (clickable to edit)
-        dl->AddText({cx+52.f, hs.y+8.f},  C(kText), pname);
+        // Player name + ID (вертикально по центру карточки)
+        float nameBlockH = lh * 2.f + 2.f;
+        float nameY      = hs.y + (H - nameBlockH) * 0.5f;
+        dl->AddText({cx+52.f, nameY},            C(kText), pname);
         char idStr[32];
         std::snprintf(idStr, sizeof(idStr), "ID %lld", accountId);
-        dl->AddText({cx+52.f, hs.y+8.f+lh+4.f}, C(kMuted), idStr);
+        dl->AddText({cx+52.f, nameY+lh+2.f}, C(kMuted), idStr);
 
         // Invisible button over name area to trigger edit
-        ImGui::SetCursorScreenPos({cx+52.f, hs.y+8.f});
+        ImGui::SetCursorScreenPos({cx+52.f, nameY});
         if (ImGui::InvisibleButton("##player_edit",{CW-60.f,lh*2.f+8.f})) {
             s_editMode = true;
             std::snprintf(s_inputBuf, sizeof(s_inputBuf), "%lld", accountId);
@@ -1319,13 +1376,7 @@ static void RenderFrame() {
 
     ImGui::SetCursorPos({PAD, PAD});
 
-    float headerH = 0.f;
-    {
-        ImVec2 before = ImGui::GetCursorScreenPos();
-        DrawHeader(FULL);
-        ImVec2 after  = ImGui::GetCursorScreenPos();
-        headerH = after.y - before.y;
-    }
+    DrawHeader(FULL);
 
     ImGui::Spacing();
     DrawStatusBar(FULL);
@@ -1352,16 +1403,6 @@ static void RenderFrame() {
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
-    // ── No-player overlay (full screen) ───────────────────────────────────
-    bool showEnterID = false;
-    {
-        std::lock_guard<std::mutex> lk(g_player.mtx);
-        showEnterID = !g_player.hasPlayer && !s_editMode;
-    }
-    // The header already handles the input; no separate overlay needed.
-    // Just show a hint in the content area when panels are empty.
-    (void)showEnterID;
-
     ImGui::End();
 }
 
@@ -1381,7 +1422,7 @@ static HICON CreateDIcon(int sz) {
 
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(220, 220, 220));
-    int fs = (int)(sz * 0.55f);
+    int fs = (std::max)(8, (int)(sz * 0.45f));
     HFONT f  = CreateFontW(fs, 0, 0, 0, FW_BOLD, 0, 0, 0,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
@@ -1423,8 +1464,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);
 
     // ── Config from environment ───────────────────────────────────────────
-    g_steamKey   = "F54FDF3461131271522AA4679FB980D7";
-    if (const char* e = std::getenv("STEAM_API_KEY"))  g_steamKey   = e;
     if (const char* e = std::getenv("STRATZ_API_KEY")) g_stratzToken = e;
     else g_stratzToken = DEFAULT_STRATZ_TOKEN;
 
@@ -1495,27 +1534,42 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
     if (!InitD3D(hwnd)) { DestroyWindow(hwnd); return 1; }
 
-    // ── Icon ──────────────────────────────────────────────────────────────
-    g_AppIcon = CreateDIcon(32);
-    if (g_AppIcon) {
-        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_AppIcon);
-        SendMessage(hwnd, WM_SETICON, ICON_BIG,   (LPARAM)g_AppIcon);
-    }
+    // ── Icon (16×16 для заголовка, 32×32 для панели задач) ──────────────
+    int smSz = GetSystemMetrics(SM_CXSMICON);  // обычно 16
+    int bgSz = GetSystemMetrics(SM_CXICON);    // обычно 32
+    HICON iconSm = CreateDIcon(smSz ? smSz : 16);
+    g_AppIcon    = CreateDIcon(bgSz ? bgSz : 32);
+    if (iconSm)    SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)iconSm);
+    if (g_AppIcon) SendMessage(hwnd, WM_SETICON, ICON_BIG,   (LPARAM)g_AppIcon);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     {
         ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr;
-        // Шрифт: Segoe UI 20px с кириллическими глифами
-        float fontSize = 20.f;
-        const ImWchar* glyphRanges = io.Fonts->GetGlyphRangesCyrillic();
+        // Шрифт: Segoe UI 24px — латиница + кириллица + спецсимволы Steam-ников
+        float fontSize = 24.f;
+        static const ImWchar glyphRanges[] = {
+            0x0020, 0x00FF, // Basic Latin + Latin Supplement
+            0x0100, 0x024F, // Latin Extended-A/B
+            0x0400, 0x052F, // Кириллица + Cyrillic Supplement
+            0x2000, 0x206F, // General Punctuation (—, –, …, ′, ″)
+            0x2100, 0x214F, // Letterlike Symbols (℃, №, ™, ℠)
+            0x2190, 0x21FF, // Arrows (→, ←, ↑, ↓)
+            0x2200, 0x22FF, // Math Operators (∞, ≈, ≠, ≤, ≥)
+            0x25A0, 0x25FF, // Geometric Shapes (■, □, ▲, ▼, ◆, ●)
+            0x2600, 0x26FF, // Misc Symbols (★, ☆, ♥, ♠, ♦, ♣, ☺, ♪, ♫)
+            0x2700, 0x27BF, // Dingbats (✓, ✗, ✦, ✧, ✪, ✰)
+            0,
+        };
         if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", fontSize, nullptr, glyphRanges))
             io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", fontSize, nullptr, glyphRanges);
     }
     ApplyStyle();
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_Device, g_Context);
+
+    loadHeroPortraits();
 
     ShowWindow(hwnd, SW_SHOWDEFAULT);
     UpdateWindow(hwnd);
@@ -1543,6 +1597,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     if (g_orchestratorThread.joinable()) g_orchestratorThread.join();
 
     if (g_avatarSRV) { g_avatarSRV->Release(); g_avatarSRV = nullptr; }
+    for (auto& [k, srv] : g_heroPortraits) if (srv) srv->Release();
+    g_heroPortraits.clear();
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
