@@ -69,10 +69,10 @@ static int lookupHeroId(const std::map<std::string, int>& nameMap, const char* r
 
 // Позиция и размер кнопки [D] относительно окна Dota 2 (всё в долях 0..1)
 struct OverlayLayout { float xFrac; float yFrac; float wFrac; float hFrac; };
-static constexpr OverlayLayout OVERLAY_16_9  = { 0.008f, 0.05875f, 0.042f, 0.058f };
-static constexpr OverlayLayout OVERLAY_16_10 = { 0.0075f, 0.05875f, 0.0228f, 0.024f };
-static constexpr OverlayLayout OVERLAY_21_9  = { 0.005f, 0.05875f, 0.025f, 0.046f };
-static constexpr OverlayLayout OVERLAY_4_3   = { 0.012f, 0.05875f, 0.057f, 0.063f };
+static constexpr OverlayLayout OVERLAY_16_9  = { 0.0058f, 0.05475f, 0.0228f, 0.024f };
+static constexpr OverlayLayout OVERLAY_16_10 = { 0.0075f, 0.05475f, 0.0228f, 0.024f };
+static constexpr OverlayLayout OVERLAY_21_9  = { 0.0050f, 0.05475f, 0.0178f, 0.024f };
+static constexpr OverlayLayout OVERLAY_4_3   = { 0.0102f, 0.05599f, 0.0234f, 0.024f };
 
 static OverlayLayout selectOverlayLayout(int w, int h) {
     if (h <= 0) return OVERLAY_16_9;
@@ -233,7 +233,7 @@ static void paintLayeredButton(HWND hwnd, int W, int H) {
     SelectObject(memDC, of); DeleteObject(f);
 
     // Цвет кнопки — серый как шестерёнка Dota 2 HUD
-    const uint8_t gearR = 87, gearG = 92, gearB = 99;
+    const uint8_t gearR = 159, gearG = 165, gearB = 190;
     for (int i = 0; i < W * H; i++) {
         uint8_t b = (pixels[i] >>  0) & 0xFF;
         uint8_t g = (pixels[i] >>  8) & 0xFF;
@@ -284,11 +284,16 @@ static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         auto* oc = reinterpret_cast<OverlayCtx*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
         if (!oc) break;
 
+        // Проверяем, жив ли сохранённый HWND Dota 2
+        if (oc->cap->isWindowFound() &&
+            !IsWindow(oc->cap->gameWindowHandle())) {
+            oc->cap->findGameWindow();   // сброс + попытка найти заново
+        }
+
         if (!oc->cap->isWindowFound())
             oc->cap->findGameWindow();
 
         if (oc->cap->isWindowFound()) {
-            // Видна когда активна Dota ИЛИ наше приложение
             HWND fg       = GetForegroundWindow();
             HWND dotaHwnd = oc->cap->gameWindowHandle();
             HWND ourApp   = findAppWindow();
