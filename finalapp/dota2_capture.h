@@ -19,6 +19,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <atomic>
 #include <stdexcept>
 #include <filesystem>
 
@@ -170,7 +171,6 @@ public:
  
 private:
     Bitmap captureWindow();
-    Bitmap cropBitmap(const Bitmap& src, RECT r) const;
     void   computeRegions();
     bool   saveBitmapAsPng(const Bitmap& bmp,
                            const std::filesystem::path& path) const;
@@ -182,7 +182,7 @@ private:
     std::vector<Bitmap>       portraits_;
     std::filesystem::path     output_dir_;
     PortraitCallback          callback_;
-    volatile bool             running_  = false;
+    std::atomic<bool>         running_  {false};
 };
  
 // Диагностика: вывод всех видимых окон с именами классов

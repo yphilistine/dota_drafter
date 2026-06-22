@@ -77,13 +77,9 @@ bool Dota2Capture::findGameWindow() {
     if (IsIconic(hwnd_)) { hwnd_ = nullptr; return false; }
 
     {
-        HDC wdc  = GetDC(hwnd_);
-        HDC mdc  = CreateCompatibleDC(wdc);
-        HBITMAP hb = CreateCompatibleBitmap(wdc, 1, 1);
+        HDC wdc = GetDC(hwnd_);
         int phys_w = GetDeviceCaps(wdc, DESKTOPHORZRES);
         int phys_h = GetDeviceCaps(wdc, DESKTOPVERTRES);
-        DeleteObject(hb);
-        DeleteDC(mdc);
 
         RECT cr{};
         GetClientRect(hwnd_, &cr);
@@ -206,49 +202,6 @@ Bitmap Dota2Capture::captureWindow() {
 }
 
 Bitmap Dota2Capture::captureFullWindow() { return captureWindow(); }
-
-static Bitmap captureRect(HWND hwnd, RECT r) {
-    const int w = r.right - r.left, h = r.bottom - r.top;
-    if (w <= 0 || h <= 0) return {};
-    HDC screenDC = GetDC(nullptr);
-    HDC memDC    = CreateCompatibleDC(screenDC);
-    HBITMAP hBmp = CreateCompatibleBitmap(screenDC, w, h);
-    HBITMAP hOld = static_cast<HBITMAP>(SelectObject(memDC, hBmp));
-    HDC tmpDC = CreateCompatibleDC(screenDC);
-    RECT cr{}; GetClientRect(hwnd, &cr);
-    HBITMAP hTmp    = CreateCompatibleBitmap(screenDC, cr.right, cr.bottom);
-    HBITMAP hTmpOld = static_cast<HBITMAP>(SelectObject(tmpDC, hTmp));
-    const UINT flags = 0x00000001u | PW_RENDERFULLCONTENT;
-    if (!PrintWindow(hwnd, tmpDC, flags)) PrintWindow(hwnd, tmpDC, PW_RENDERFULLCONTENT);
-    BitBlt(memDC, 0, 0, w, h, tmpDC, r.left, r.top, SRCCOPY);
-    SelectObject(tmpDC, hTmpOld); DeleteObject(hTmp); DeleteDC(tmpDC);
-    BITMAPINFOHEADER bi{};
-    bi.biSize=sizeof(bi); bi.biWidth=w; bi.biHeight=-h;
-    bi.biPlanes=1; bi.biBitCount=32; bi.biCompression=BI_RGB;
-    Bitmap result; result.width=w; result.height=h;
-    result.pixels.resize(static_cast<size_t>(w)*h*4);
-    GetDIBits(memDC,hBmp,0,static_cast<UINT>(h),result.pixels.data(),
-              reinterpret_cast<BITMAPINFO*>(&bi),DIB_RGB_COLORS);
-    SelectObject(memDC,hOld); DeleteObject(hBmp); DeleteDC(memDC);
-    ReleaseDC(nullptr,screenDC);
-    return result;
-}
-
-Bitmap Dota2Capture::cropBitmap(const Bitmap& src, RECT r) const {
-    r.left   = (std::max)(r.left,   static_cast<LONG>(0));
-    r.top    = (std::max)(r.top,    static_cast<LONG>(0));
-    r.right  = (std::min)(r.right,  static_cast<LONG>(src.width));
-    r.bottom = (std::min)(r.bottom, static_cast<LONG>(src.height));
-    const int cw = r.right-r.left, ch = r.bottom-r.top;
-    if (cw<=0||ch<=0) return {};
-    Bitmap dst; dst.width=cw; dst.height=ch;
-    dst.pixels.resize(static_cast<size_t>(cw)*ch*4);
-    for (int y=0;y<ch;++y) {
-        const uint8_t* srcRow=src.pixels.data()+((r.top+y)*src.width+r.left)*4;
-        std::memcpy(dst.pixels.data()+y*cw*4, srcRow, static_cast<size_t>(cw)*4);
-    }
-    return dst;
-}
 
 int Dota2Capture::capturePortraits() {
     if (!hwnd_) return 0;
