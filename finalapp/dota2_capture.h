@@ -111,15 +111,7 @@ inline HudLayout selectStrategyLayout(int w, int h) {
     else                     return STRATEGY_LAYOUT_21_9;
 }
  
-static constexpr HudLayout INGAME_LAYOUT = {
-    /* radiant_x_start */ 0.0052f,
-    /* radiant_y_start */ 0.9120f,
-    /* portrait_w      */ 0.0365f,
-    /* portrait_h      */ 0.0840f,
-    /* portrait_gap    */ 0.0010f,
-    /* dire_x_start    */ 0.6220f,
-};
- 
+
 // Раскладка по умолчанию — перезаписывается в findGameWindow()
 static constexpr HudLayout DEFAULT_LAYOUT = STRATEGY_LAYOUT_16_9;
 
