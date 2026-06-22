@@ -157,7 +157,6 @@ echo(
 echo  При первом запуске введи Steam ID (32-bit) прямо в интерфейсе.
 echo  Env vars (опционально):
 echo    set STRATZ_API_KEY=eyJ...
-echo    set STEAM_API_KEY=XXXX
 echo(
 
 endlocal

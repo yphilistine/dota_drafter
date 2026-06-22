@@ -152,11 +152,11 @@
 ---
 
 ### livestatsfetcher.cpp
-GSI HTTP-сервер + Steam API поллер.
+GSI HTTP-сервер.
 
 | Функция | Описание |
 |---------|----------|
-| `runGsiServer(gameInfo, steamApiKey)` | Запуск HTTP-сервера на порту 3000, приём GSI-данных |
+| `runGsiServer(gameInfo)` | Запуск HTTP-сервера на порту 3000, приём GSI-данных |
 | `parsePhaseStr(s)` | Строка GSI game_state → GamePhase |
 | `handle_request(raw)` | Обработка HTTP: POST / → парсинг GSI, GET /phase → JSON статус |
 

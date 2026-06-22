@@ -121,7 +121,7 @@ struct GuiPickerState {
 int  runDataFetcher(long long accountId, const std::string& stratzToken);
 
 // Фаза 2: GSI HTTP-сервер на порту 3000, обновляет gameInfo.
-void runGsiServer(GameInfo& gameInfo, const std::string& steamApiKey);
+void runGsiServer(GameInfo& gameInfo);
 
 // Захват портретов HUD каждые 500мс, запись в livepicks.
 void runPortraitCapture(GameInfo& gameInfo, const std::string& dbPath,

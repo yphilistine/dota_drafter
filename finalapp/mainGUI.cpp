@@ -294,41 +294,15 @@ static ID3D11ShaderResourceView* createTextureFromImageData(
     return result;
 }
 
-// ─── Загрузка портретов героев из assets/ ────────────────────────────────────
+// ─── Загрузка портретов героев (встроены в exe) ──────────────────────────────
+#include "hero_portraits_data.h"
+
 static void loadHeroPortraits() {
-    WIN32_FIND_DATAW fd;
-    HANDLE hFind = FindFirstFileW(L"assets\\*.png", &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
-    do {
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-
-        wchar_t path[MAX_PATH];
-        _snwprintf_s(path, MAX_PATH, L"assets\\%s", fd.cFileName);
-
-        HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ,
-                                   nullptr, OPEN_EXISTING, 0, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) continue;
-
-        DWORD sz = GetFileSize(hFile, nullptr);
-        if (sz == 0 || sz == INVALID_FILE_SIZE) { CloseHandle(hFile); continue; }
-
-        std::vector<uint8_t> buf(sz);
-        DWORD read = 0;
-        ReadFile(hFile, buf.data(), sz, &read, nullptr);
-        CloseHandle(hFile);
-        if (read != sz) continue;
-
-        auto* srv = createTextureFromImageData(buf.data(), buf.size());
-        if (!srv) continue;
-
-        // Имя файла без .png → ключ (localized_name)
-        int nameLen = (int)wcslen(fd.cFileName) - 4; // убрать ".png"
-        char key[128] = {};
-        WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, nameLen,
-                            key, sizeof(key)-1, nullptr, nullptr);
-        g_heroPortraits[key] = srv;
-    } while (FindNextFileW(hFind, &fd));
-    FindClose(hFind);
+    for (size_t i = 0; i < g_embeddedPortraitsCount; ++i) {
+        auto& ep = g_embeddedPortraits[i];
+        auto* srv = createTextureFromImageData(ep.data, ep.size);
+        if (srv) g_heroPortraits[ep.name] = srv;
+    }
 }
 
 // ─── OpenDota: получение имени и аватара игрока (фоновый поток) ───────────────
@@ -427,7 +401,7 @@ static void orchestratorMain() {
     startDotaOverlay();
 
     // Start GSI server (always)
-    std::thread([&]{ runGsiServer(g_gameInfo, ""); }).detach();
+    std::thread([&]{ runGsiServer(g_gameInfo); }).detach();
 
     std::string lastMatchId;
     using Clock = std::chrono::steady_clock;
@@ -647,7 +621,7 @@ static void DrawPortrait(ImDrawList* dl, ImVec2 p, float sz,
                          ImU32 fill, ImU32 border, const char* label,
                          ImTextureID tex = 0) {
     if (tex) {
-        dl->AddRectFilled(p, {p.x+sz, p.y+sz}, IM_COL32(0,0,0,255));
+        dl->AddRectFilled(p, {p.x+sz, p.y+sz}, C(kCard));
         dl->AddImage(tex, p, {p.x+sz, p.y+sz});
     } else {
         dl->AddRectFilled(p, {p.x+sz, p.y+sz}, fill);
@@ -727,8 +701,7 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
     float tx = pp.x + PSZ + PAD;
 
     if (!h.filled && h.isYou) {
-        dl->AddText({tx, rp.y + H*0.3f},        C(kText),       "Your Pick");
-        dl->AddText({tx, rp.y + H*0.3f+lh+2.f}, Ca(kText,0.6f), "Pending...");
+        dl->AddText({tx, rp.y+(H-lh)*0.5f}, C(kText), "Your Pick");
     } else if (!h.filled) {
         dl->AddText({tx, rp.y+(H-lh)*0.5f}, C(kMuted), "Unknown");
     } else {
@@ -1019,7 +992,7 @@ static void DrawPicksPanel(float panelW) {
         ImVec4      wc  = WinColor(win);
 
         // Фиксированные X-позиции (lh-based)
-        const float portX  = rp.x + lh2 * 1.8f;   // после ранка
+        const float portX  = (rank > 0) ? rp.x + lh2 * 1.8f : rp.x + lh2 * 0.3f;
         const float nameX  = portX + PSZ + lh2 * 0.5f;
         const float statsX = rp.x + rW * 0.47f;
         const float winX   = rp.x + rW - WIN_COL_W;

@@ -156,7 +156,7 @@ static void client_thread(SOCKET client) {
 // runGsiServer
 // ─────────────────────────────────────────────────────────────────────────────
 
-void runGsiServer(GameInfo& gameInfo, const std::string& /*steamApiKey*/) {
+void runGsiServer(GameInfo& gameInfo) {
     g_gameInfo = &gameInfo;
 
     WSADATA wsa;
