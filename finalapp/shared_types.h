@@ -105,6 +105,9 @@ struct GuiPickerState {
     PickRowGui   recs[10];
     int          recCount = 0;
 
+    // Счётчик завершённых циклов инференса (атомарный, без мьютекса)
+    std::atomic<int> inferenceGen{0};
+
     void reset() {
         std::lock_guard<std::mutex> lk(mtx);
         gameStarted     = false;

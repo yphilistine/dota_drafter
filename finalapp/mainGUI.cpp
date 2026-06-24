@@ -434,7 +434,7 @@ static void orchestratorMain() {
                 g_gameInfo.lastUpdate.time_since_epoch().count() > 0)
             {
                 auto elapsed = std::chrono::steady_clock::now() - g_gameInfo.lastUpdate;
-                if (elapsed > std::chrono::seconds(10)) {
+                if (elapsed > std::chrono::seconds(15)) {
                     g_gameInfo.phase           = GamePhase::IDLE;
                     g_gameInfo.isHeroSelection = false;
                     g_gameInfo.matchId.clear();
@@ -587,7 +587,8 @@ static void orchestratorMain() {
 
         // ── One-shot: ручная смена позиции вне фазы 3 → запись в DB + инференс ──
         {
-            static int oneShotCountdown = 0;
+            static bool oneShotActive = false;
+            static int  oneShotGen    = 0;
 
             if (g_posRefreshNeeded.exchange(false)
                 && !g_pickerRunning.load()
@@ -622,22 +623,22 @@ static void orchestratorMain() {
                     }
                 }
 
-                // Запуск пикера на один цикл (~1.5с)
+                oneShotGen = g_pickerState.inferenceGen.load(std::memory_order_acquire);
                 g_pickerRunning.store(true);
                 if (g_pickerThread.joinable()) g_pickerThread.join();
                 g_pickerThread = std::thread([]{
                     runPickerGui(MODEL_PATH, DB_PATH,
                                  g_pickerRunning, &g_pickerState, &g_portraitState);
                 });
-                oneShotCountdown = 5; // 5 × 300мс = 1.5с
+                oneShotActive = true;
             }
 
-            if (oneShotCountdown > 0) {
-                --oneShotCountdown;
-                if (oneShotCountdown == 0) {
-                    g_pickerRunning.store(false);
-                    if (g_pickerThread.joinable()) g_pickerThread.join();
-                }
+            if (oneShotActive &&
+                g_pickerState.inferenceGen.load(std::memory_order_acquire) > oneShotGen)
+            {
+                g_pickerRunning.store(false);
+                if (g_pickerThread.joinable()) g_pickerThread.join();
+                oneShotActive = false;
             }
         }
 

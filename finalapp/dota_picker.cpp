@@ -409,6 +409,7 @@ static void renderToGui(
     }
 
     state->gameStarted = true;
+    state->inferenceGen.fetch_add(1, std::memory_order_release);
 }
 
 // ─── Главный цикл пикера ─────────────────────────────────────────────────────
