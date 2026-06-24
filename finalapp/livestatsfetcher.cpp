@@ -106,9 +106,9 @@ static std::string handle_request(const std::string& raw) {
                     std::printf("[GSI] Новый матч: %s  player:%s  state:%s\n",
                         mid.c_str(), uid.c_str(), gstate.c_str());
                 }
-                // isHeroSelection — только при этом конкретном состоянии
                 g_gameInfo->isHeroSelection =
                     (gstate == "DOTA_GAMERULES_STATE_HERO_SELECTION");
+                g_gameInfo->lastUpdate = std::chrono::steady_clock::now();
             }
 
             std::printf("[GSI] match=%s state=%s team=%s slot=%d\n",

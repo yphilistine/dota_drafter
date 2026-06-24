@@ -146,6 +146,7 @@ static constexpr int PHASE3_TAIL_SEC = 5;
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
 static std::atomic<bool> g_orchestratorRunning{true};
+static std::atomic<bool> g_posRefreshNeeded{false};
 static std::thread       g_pickerThread;
 static std::thread       g_portraitThread;
 static std::thread       g_orchestratorThread;
@@ -426,6 +427,21 @@ static void orchestratorMain() {
         bool        newMatch, isHeroSel;
         {
             std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
+
+            // GSI таймаут: если Dota 2 закрыта, GSI перестаёт слать данные.
+            // Сброс на IDLE через 15 секунд без обновлений.
+            if (g_gameInfo.phase != GamePhase::IDLE &&
+                g_gameInfo.lastUpdate.time_since_epoch().count() > 0)
+            {
+                auto elapsed = std::chrono::steady_clock::now() - g_gameInfo.lastUpdate;
+                if (elapsed > std::chrono::seconds(10)) {
+                    g_gameInfo.phase           = GamePhase::IDLE;
+                    g_gameInfo.isHeroSelection = false;
+                    g_gameInfo.matchId.clear();
+                    std::puts("[orchestrator] GSI timeout — reset to IDLE");
+                }
+            }
+
             phase     = g_gameInfo.phase;
             matchId   = g_gameInfo.matchId;
             ourSide   = g_gameInfo.ourSide;
@@ -506,12 +522,25 @@ static void orchestratorMain() {
             lastMatchId = matchId;
         }
 
-        // ── Фаза 3: портреты + пикер запускаются на HERO_SELECTION ───────────
-        // Останавливаются через PHASE3_TAIL_SEC после окончания HERO_SELECTION.
-        // g_pickerState НЕ сбрасывается — GUI показывает последний результат
-        // пока фаза STRATEGY / INGAME (до следующего newMatch).
+        // ── Фаза 3: портреты + пикер ─────────────────────────────────────────
+        // Если игра закончилась (IDLE/POSTGAME) — немедленно остановить потоки,
+        // даже если isHeroSel ещё true (stale из-за обрыва GSI).
+        if (phase == GamePhase::IDLE || phase == GamePhase::POSTGAME) {
+            if (g_pickerRunning.load()) {
+                g_pickerRunning.store(false);
+                if (g_pickerThread.joinable()) g_pickerThread.join();
+            }
+            if (g_portraitRunning.load()) {
+                g_portraitRunning.store(false);
+                if (g_portraitThread.joinable()) g_portraitThread.join();
+                g_portraitState.clear();
+            }
+            phase3EndPending = false;
+            if (g_pickerState.gameStarted) {
+                g_pickerState.reset();
+            }
 
-        if (isHeroSel) {
+        } else if (isHeroSel) {
             phase3EndPending = false;
 
             // Запустить пикер сразу при HERO_SELECTION
@@ -537,7 +566,7 @@ static void orchestratorMain() {
             }
 
         } else {
-            // HERO_SELECTION кончился — отсчитываем хвост
+            // HERO_SELECTION кончился, но игра продолжается — отсчитываем хвост
             if (g_pickerRunning.load() || g_portraitRunning.load()) {
                 if (!phase3EndPending) {
                     phase3EndPending = true;
@@ -546,21 +575,68 @@ static void orchestratorMain() {
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                     Clock::now() - phase3EndTime).count();
                 if (elapsed >= PHASE3_TAIL_SEC) {
-                    // Остановить оба потока
                     g_pickerRunning.store(false);
                     if (g_pickerThread.joinable()) g_pickerThread.join();
                     g_portraitRunning.store(false);
                     if (g_portraitThread.joinable()) g_portraitThread.join();
                     g_portraitState.clear();
-                    // g_pickerState НЕ сбрасываем — данные остаются для отображения
                     phase3EndPending = false;
                 }
             }
+        }
 
-            // Если игра закончилась / IDLE — сбросить состояние пикера
-            if (phase == GamePhase::IDLE || phase == GamePhase::POSTGAME) {
-                if (g_pickerState.gameStarted) {
-                    g_pickerState.reset();
+        // ── One-shot: ручная смена позиции вне фазы 3 → запись в DB + инференс ──
+        {
+            static int oneShotCountdown = 0;
+
+            if (g_posRefreshNeeded.exchange(false)
+                && !g_pickerRunning.load()
+                && g_pickerState.gameStarted
+                && accountId != 0)
+            {
+                // Записать manualPos нашей команды в livepicks
+                int side = 0;
+                {
+                    std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
+                    side = g_gameInfo.ourSide;
+                }
+                int base = (side == 1) ? 0 : 5;
+                for (int i = 0; i < 5; ++i) {
+                    int slot = base + i;
+                    int mp = 0;
+                    {
+                        std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+                        mp = g_portraitState.manualPos[slot];
+                    }
+                    if (mp > 0 && mp <= 5) {
+                        char col[16];
+                        if (slot < 5) std::snprintf(col, sizeof(col), "r%d_pos", slot + 1);
+                        else          std::snprintf(col, sizeof(col), "d%d_pos", slot - 4);
+                        char sql[128];
+                        std::snprintf(sql, sizeof(sql),
+                            "UPDATE livepicks SET %s=%d, updated_at=%lld;",
+                            col, mp, (long long)std::chrono::duration_cast<
+                                std::chrono::milliseconds>(
+                                std::chrono::system_clock::now().time_since_epoch()).count());
+                        sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
+                    }
+                }
+
+                // Запуск пикера на один цикл (~1.5с)
+                g_pickerRunning.store(true);
+                if (g_pickerThread.joinable()) g_pickerThread.join();
+                g_pickerThread = std::thread([]{
+                    runPickerGui(MODEL_PATH, DB_PATH,
+                                 g_pickerRunning, &g_pickerState, &g_portraitState);
+                });
+                oneShotCountdown = 5; // 5 × 300мс = 1.5с
+            }
+
+            if (oneShotCountdown > 0) {
+                --oneShotCountdown;
+                if (oneShotCountdown == 0) {
+                    g_pickerRunning.store(false);
+                    if (g_pickerThread.joinable()) g_pickerThread.join();
                 }
             }
         }
@@ -657,8 +733,10 @@ static ImVec4 WinColor(float w) {
 }
 
 // ─── Отрисовка слота героя ────────────────────────────────────────────────────
+// absSlot: 0-9 (0-4 Radiant, 5-9 Dire). usedPos: позиции 1-5 занятые другими слотами в команде.
 static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
-                         bool radiantSide, bool showPos, int slotNum) {
+                         bool radiantSide, bool showPos, int slotNum,
+                         int absSlot, const int usedPos[5]) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      rp  = ImGui::GetCursorScreenPos();
     const float lh  = ImGui::GetTextLineHeight();
@@ -708,22 +786,56 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
         dl->AddText({tx, rp.y+(H-lh)*0.5f}, C(kText), h.name);
     }
 
-    // Тег позиции — только для своей команды.
-    // Используем h.pos если известна, иначе номер слота (1-5).
+    // Тег позиции — кликабельный popup для своей команды.
     if (showPos) {
-        int dispPos = (h.pos > 0) ? h.pos : slotNum;
-        if (dispPos > 0) {
-            char posStr[8]; std::snprintf(posStr, sizeof(posStr), "Pos%d", dispPos);
-            ImVec2 ts  = ImGui::CalcTextSize(posStr);
-            float  tgW = ts.x + PAD*1.5f;
-            float  tgH = lh + 4.f;
-            float  tgX = rp.x + rowW - tgW - PAD;
-            float  tgY = rp.y + (H - tgH) * 0.5f;
-            dl->AddRectFilled({tgX,tgY},{tgX+tgW,tgY+tgH}, C(kCard2));
-            dl->AddText({tgX+PAD*0.75f,tgY+2.f}, C(kMuted), posStr);
+        int dispPos = (h.pos > 0) ? h.pos : 0;
+        char posStr[8];
+        if (dispPos > 0)
+            std::snprintf(posStr, sizeof(posStr), "Pos%d", dispPos);
+        else
+            std::snprintf(posStr, sizeof(posStr), "Pos?");
+
+        ImVec2 ts  = ImGui::CalcTextSize(posStr);
+        float  tgW = ts.x + PAD*1.5f;
+        float  tgH = lh + 4.f;
+        float  tgX = rp.x + rowW - tgW - PAD;
+        float  tgY = rp.y + (H - tgH) * 0.5f;
+
+        dl->AddRectFilled({tgX,tgY},{tgX+tgW,tgY+tgH}, C(kCard2));
+        dl->AddText({tgX+PAD*0.75f,tgY+2.f}, C(kMuted), posStr);
+
+        char popupId[32];
+        std::snprintf(popupId, sizeof(popupId), "##pos_%d", absSlot);
+        ImGui::SetCursorScreenPos({tgX, tgY});
+        if (ImGui::InvisibleButton(popupId, {tgW, tgH}))
+            ImGui::OpenPopup(popupId);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click to set position");
+
+        if (ImGui::BeginPopup(popupId)) {
+            int myIdx = absSlot % 5;
+            int teamBase = absSlot - myIdx; // 0 for radiant, 5 for dire
+            for (int p = 1; p <= 5; ++p) {
+                char label[16];
+                std::snprintf(label, sizeof(label), "Pos %d", p);
+                if (ImGui::Selectable(label, p == dispPos)) {
+                    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+                    // Свап: если позиция занята другим слотом, обменять
+                    for (int j = 0; j < 5; ++j) {
+                        if (j != myIdx && usedPos[j] == p) {
+                            g_portraitState.manualPos[teamBase + j] = dispPos;
+                            break;
+                        }
+                    }
+                    g_portraitState.manualPos[absSlot] = p;
+                    g_posRefreshNeeded.store(true);
+                }
+            }
+            ImGui::EndPopup();
         }
     }
 
+    ImGui::SetCursorScreenPos(rp);
     ImGui::Dummy({rowW, H});
     ImGui::Spacing();
 }
@@ -812,6 +924,10 @@ static void DrawDraftPanel(float panelW) {
         return;
     }
 
+    // Позиции, занятые в каждой команде (для popup без дубликатов)
+    int radUsedPos[5] = {}, dirUsedPos[5] = {};
+    for (int i=0;i<5;i++) { radUsedPos[i] = rad[i].pos; dirUsedPos[i] = dir[i].pos; }
+
     // ── Radiant column ─────────────────────────────────────────────────────
     ImGui::BeginGroup();
     {
@@ -828,7 +944,7 @@ static void DrawDraftPanel(float panelW) {
         ImGui::Text("%d/5", rCount);
         ImGui::PopStyleColor();
         ImGui::Spacing();
-        for (int i=0;i<5;i++) DrawHeroSlot(colW, rad[i], true,  isRadiant,  i+1);
+        for (int i=0;i<5;i++) DrawHeroSlot(colW, rad[i], true,  isRadiant,  i+1, i, radUsedPos);
     }
     ImGui::EndGroup();
 
@@ -850,7 +966,7 @@ static void DrawDraftPanel(float panelW) {
         ImGui::Text("%d/5", dCount);
         ImGui::PopStyleColor();
         ImGui::Spacing();
-        for (int i=0;i<5;i++) DrawHeroSlot(colW, dir[i], false, !isRadiant, i+1);
+        for (int i=0;i<5;i++) DrawHeroSlot(colW, dir[i], false, !isRadiant, i+1, 5+i, dirUsedPos);
     }
     ImGui::EndGroup();
 
@@ -1149,7 +1265,7 @@ static void DrawStatusBar(float fullW) {
     float x2 = sp.x + 18.f + p1sz.x + 16.f;
     dl->AddCircleFilled({x2+4.f, dotCY}, dotR, C(dot2col));
     const char* phaseStr = (phase == GamePhase::IDLE)     ? "Waiting for game" :
-                           (phase == GamePhase::DRAFT)    ? "Draft / Hero Select" :
+                           (phase == GamePhase::DRAFT)    ? "Draft Phase" :
                            (phase == GamePhase::INGAME)   ? "In Game" : "Post Game";
     char p2buf[64];
     std::snprintf(p2buf, sizeof(p2buf), " Game: %s", phaseStr);

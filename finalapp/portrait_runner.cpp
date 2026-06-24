@@ -22,6 +22,11 @@
 #  define HERO_DB_LOADED 1
 #endif
 
+#if __has_include("pos_hashes.h")
+#  include "pos_hashes.h"
+#  define POS_DB_LOADED 1
+#endif
+
 #include <map>
 #include <string>
 #include <algorithm>
@@ -89,23 +94,31 @@ static int g_curBtnW = 0, g_curBtnH = 0;
 // ─────────────────────────────────────────────────────────────────────────────
 
 static void updateSlot(sqlite3* db, int slot, int heroId) {
-    char col[16], colPos[16];
-    if (slot < 5) {
-        std::snprintf(col,    sizeof(col),    "r%d_hero", slot + 1);
-        std::snprintf(colPos, sizeof(colPos), "r%d_pos",  slot + 1);
-    } else {
-        std::snprintf(col,    sizeof(col),    "d%d_hero", slot - 4);
-        std::snprintf(colPos, sizeof(colPos), "d%d_pos",  slot - 4);
-    }
-    int pos = (slot < 5) ? (slot + 1) : (slot - 4);
-    char sql[256];
+    char col[16];
+    if (slot < 5) std::snprintf(col, sizeof(col), "r%d_hero", slot + 1);
+    else          std::snprintf(col, sizeof(col), "d%d_hero", slot - 4);
+    char sql[128];
     std::snprintf(sql, sizeof(sql),
-        "UPDATE livepicks SET %s=?, %s=?, updated_at=?;", col, colPos);
+        "UPDATE livepicks SET %s=?, updated_at=?;", col);
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) return;
     sqlite3_bind_int(st,   1, heroId);
-    sqlite3_bind_int(st,   2, pos);
-    sqlite3_bind_int64(st, 3, nowMs());
+    sqlite3_bind_int64(st, 2, nowMs());
+    sqlite3_step(st);
+    sqlite3_finalize(st);
+}
+
+static void updateSlotPos(sqlite3* db, int slot, int pos) {
+    char col[16];
+    if (slot < 5) std::snprintf(col, sizeof(col), "r%d_pos", slot + 1);
+    else          std::snprintf(col, sizeof(col), "d%d_pos", slot - 4);
+    char sql[128];
+    std::snprintf(sql, sizeof(sql),
+        "UPDATE livepicks SET %s=?, updated_at=?;", col);
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) return;
+    sqlite3_bind_int(st,   1, pos);
+    sqlite3_bind_int64(st, 2, nowMs());
     sqlite3_step(st);
     sqlite3_finalize(st);
 }
@@ -113,8 +126,10 @@ static void updateSlot(sqlite3* db, int slot, int heroId) {
 static void clearHeroSlots(sqlite3* db) {
     sqlite3_exec(db,
         "UPDATE livepicks SET "
-        "r1_hero=0,r2_hero=0,r3_hero=0,r4_hero=0,r5_hero=0,"
-        "d1_hero=0,d2_hero=0,d3_hero=0,d4_hero=0,d5_hero=0,"
+        "r1_hero=0,r1_pos=0,r2_hero=0,r2_pos=0,r3_hero=0,r3_pos=0,"
+        "r4_hero=0,r4_pos=0,r5_hero=0,r5_pos=0,"
+        "d1_hero=0,d1_pos=0,d2_hero=0,d2_pos=0,d3_hero=0,d3_pos=0,"
+        "d4_hero=0,d4_pos=0,d5_hero=0,d5_pos=0,"
         "updated_at=0;",
         nullptr, nullptr, nullptr);
 }
@@ -429,6 +444,13 @@ void runPortraitCapture(GameInfo&           gameInfo,
     std::puts("[portrait] ВНИМАНИЕ: hero_hashes.h не найден");
 #endif
 
+#ifdef POS_DB_LOADED
+    PosRecognizer posRecognizer(g_pos_db, g_pos_db_size);
+    std::printf("[portrait] Pos-база: %zu шаблонов\n", posRecognizer.size());
+#else
+    std::puts("[portrait] ВНИМАНИЕ: pos_hashes.h не найден");
+#endif
+
     // Отдельный Dota2Capture для захвата (overlay запущен из оркестратора)
     Dota2Capture cap("");
 
@@ -535,6 +557,48 @@ void runPortraitCapture(GameInfo&           gameInfo,
                     lastScore[slot] = m.score;
                 }
 #endif
+            }
+
+            // ── Распознавание позиций (только своя команда) ──────────────
+            {
+                int ourSide = 0;
+                {
+                    std::lock_guard<std::mutex> lk(gameInfo.mtx);
+                    ourSide = gameInfo.ourSide; // 1 = Radiant, 0 = Dire
+                }
+                int slotStart = (ourSide == 1) ? 0 : 5;
+                int slotEnd   = slotStart + 5;
+
+                const auto& posBitmaps = cap.posPortraits();
+
+                for (int slot = slotStart; slot < slotEnd && slot < (int)posBitmaps.size(); ++slot) {
+                    // GUI override имеет приоритет
+                    int manual = 0;
+                    {
+                        std::lock_guard<std::mutex> lk(out.mtx);
+                        manual = out.manualPos[slot];
+                    }
+                    if (manual > 0 && manual <= 5) {
+                        updateSlotPos(db, slot, manual);
+                        continue;
+                    }
+
+#ifdef POS_DB_LOADED
+                    const Bitmap& pbmp = posBitmaps[slot];
+                    if (pbmp.empty()) continue;
+                    PosMatch pm = posRecognizer.recognize(pbmp);
+                    int pos = pm.confident() ? pm.pos : 0;
+                    updateSlotPos(db, slot, pos);
+#else
+                    updateSlotPos(db, slot, 0);
+#endif
+                }
+
+                // Вражеская команда — позиции всегда 0
+                int enemyStart = (ourSide == 1) ? 5 : 0;
+                for (int slot = enemyStart; slot < enemyStart + 5; ++slot) {
+                    updateSlotPos(db, slot, 0);
+                }
             }
 
             auto elapsed   = std::chrono::steady_clock::now() - frameStart;

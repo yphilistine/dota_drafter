@@ -60,10 +60,18 @@ struct HudLayout {
     float portrait_h;        // высота портрета
     float portrait_gap;      // горизонтальный зазор между портретами
     float dire_x_start;      // левый край первого портрета Dire
+
+    // Области индикаторов позиций (1-5) — аналогично портретам
+    float pos_x_start;       // x первого индикатора позиции Radiant
+    float pos_y;             // y индикаторов позиций
+    float pos_w;             // ширина индикатора
+    float pos_h;             // высота индикатора
+    float pos_gap;           // горизонтальный зазор между индикаторами
+    float pos_x_start_dire;  // x первого индикатора позиции Dire
 };
 
 // ── Раскладки экрана стратегии по соотношению сторон ──────────────────────────
-// Все доли измерены на реальных захватах.
+// Все доли измерены на реальных захватах.(лично мной, и клод и дипсик туповаты)
 
 static constexpr HudLayout STRATEGY_LAYOUT_16_9 = {
     /* radiant_x_start */ 0.13109f,
@@ -72,6 +80,13 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_9 = {
     /* portrait_h      */ 0.03000f,
     /* portrait_gap    */ 0.04656f,
     /* dire_x_start    */ 0.59242f,
+    //
+    /* pos_x_start     */ 0.11484f,
+    /* pos_y           */ 0.10278f,
+    /* pos_w           */ 0.05547f,
+    /* pos_h           */ 0.00764f,
+    /* pos_gap         */ 0.01597f,
+    /* pos_x_start_dire*/ 0.57148f,
 };
 
 static constexpr HudLayout STRATEGY_LAYOUT_16_10 = {
@@ -81,6 +96,13 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_10 = {
     /* portrait_h      */ 0.03000f,
     /* portrait_gap    */ 0.05188f,
     /* dire_x_start    */ 0.61793f,
+    //
+    /* pos_x_start     */ 0.05703f,
+    /* pos_y           */ 0.1025f,
+    /* pos_w           */ 0.06172f,
+    /* pos_h           */ 0.00750f,
+    /* pos_gap         */ 0.01016f,
+    /* pos_x_start_dire*/ 0.59414f,
 };
 
 static constexpr HudLayout STRATEGY_LAYOUT_21_9 = {
@@ -90,6 +112,13 @@ static constexpr HudLayout STRATEGY_LAYOUT_21_9 = {
     /* portrait_h      */ 0.0300f,
     /* portrait_gap    */ 0.0393f,
     /* dire_x_start    */ 0.6396f,
+    //
+    /* pos_x_start     */ 0.05664f,
+    /* pos_y           */ 0.10221f,
+    /* pos_w           */ 0.06299f,
+    /* pos_h           */ 0.00781f,
+    /* pos_gap         */ 0.08398f,
+    /* pos_x_start_dire*/ 0.59423f,
 };
 
 static constexpr HudLayout STRATEGY_LAYOUT_4_3 = {
@@ -99,19 +128,25 @@ static constexpr HudLayout STRATEGY_LAYOUT_4_3 = {
     /* portrait_h      */ 0.0300f,
     /* portrait_gap    */ 0.0693f,
     /* dire_x_start    */ 0.5841f,
+    //
+    /* pos_x_start     */ 0.20447f,
+    /* pos_y           */ 0.10305f,
+    /* pos_w           */ 0.04252f,
+    /* pos_h           */ 0.00763f,
+    /* pos_gap         */ 0.01653f,
+    /* pos_x_start_dire*/ 0.55507f,
 };
 
 // Выбор раскладки по соотношению сторон окна (вызывается в findGameWindow)
 inline HudLayout selectStrategyLayout(int w, int h) {
     if (h <= 0) return STRATEGY_LAYOUT_16_9;
     float ratio = static_cast<float>(w) / static_cast<float>(h);
-    // Границы: средние точки между известными соотношениями
+    // Границы: средние точки между известными соотношениями(вцелом все кроме 16:9 и 16:10 - это буржуи и не таргетодиенс)
     if      (ratio < 1.467f) return STRATEGY_LAYOUT_4_3;
     else if (ratio < 1.689f) return STRATEGY_LAYOUT_16_10;
     else if (ratio < 2.056f) return STRATEGY_LAYOUT_16_9;
     else                     return STRATEGY_LAYOUT_21_9;
 }
- 
 
 // Раскладка по умолчанию — перезаписывается в findGameWindow()
 static constexpr HudLayout DEFAULT_LAYOUT = STRATEGY_LAYOUT_16_9;
@@ -145,8 +180,9 @@ public:
     // Захват всех портретов из одного кадра. Возвращает количество слотов (0-10).
     int capturePortraits();
 
-    // Последний набор захваченных портретов
+    // Последний набор захваченных портретов / позиций
     const std::vector<Bitmap>& portraits() const { return portraits_; }
+    const std::vector<Bitmap>& posPortraits() const { return posPortraits_; }
 
     // Сохранение портретов как PNG: radiant_0.png .. dire_9.png
     void savePortraits(const std::filesystem::path& dir = "") const;
@@ -172,17 +208,20 @@ public:
 private:
     Bitmap captureWindow();
     void   computeRegions();
+    void   computePosRegions();
     bool   saveBitmapAsPng(const Bitmap& bmp,
                            const std::filesystem::path& path) const;
- 
-    HWND                      hwnd_     = nullptr;
-    Resolution                res_      = {};
-    HudLayout                 layout_   = DEFAULT_LAYOUT;
+
+    HWND                        hwnd_     = nullptr;
+    Resolution                  res_      = {};
+    HudLayout                   layout_   = DEFAULT_LAYOUT;
     std::vector<PortraitRegion> regions_;
-    std::vector<Bitmap>       portraits_;
-    std::filesystem::path     output_dir_;
-    PortraitCallback          callback_;
-    std::atomic<bool>         running_  {false};
+    std::vector<Bitmap>         portraits_;
+    std::vector<PortraitRegion> posRegions_;
+    std::vector<Bitmap>         posPortraits_;
+    std::filesystem::path       output_dir_;
+    PortraitCallback            callback_;
+    std::atomic<bool>           running_  {false};
 };
  
 // Диагностика: вывод всех видимых окон с именами классов

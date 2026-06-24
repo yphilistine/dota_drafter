@@ -140,6 +140,54 @@ private:
     size_t               count_;
 };
 
+// ─── Распознавание позиций (1-5 / NULL) ─────────────────────────────────────
+
+struct PosHashEntry {
+    int     pos;   // 0 = NULL/пусто, 1-5
+    Matrix8 mat;
+};
+
+struct PosMatch {
+    int   pos;    // 0-5
+    float score;
+    bool confident() const { return score >= 0.80f; }
+};
+
+class PosRecognizer {
+public:
+    explicit PosRecognizer(const PosHashEntry* db, size_t count)
+        : db_(db), count_(count) {}
+
+    PosMatch recognize(const uint8_t* bgra, int w, int h) const {
+        return findNearest(computeMatrix(bgra, w, h));
+    }
+
+    template<typename BitmapT>
+    PosMatch recognize(const BitmapT& bmp) const {
+        if (bmp.empty()) return {0, -1.0f};
+        return recognize(bmp.pixels.data(), bmp.width, bmp.height);
+    }
+
+    size_t size() const { return count_; }
+
+private:
+    PosMatch findNearest(const Matrix8& q) const {
+        if (!db_ || count_ == 0 || q.empty()) return {0, -1.0f};
+        PosMatch best{0, -1.0f};
+        for (size_t i = 0; i < count_; ++i) {
+            if (db_[i].mat.empty()) continue;
+            float s = pearson(q, db_[i].mat);
+            if (s > best.score) {
+                best.score = s;
+                best.pos   = db_[i].pos;
+            }
+        }
+        return best;
+    }
+    const PosHashEntry* db_;
+    size_t              count_;
+};
+
 using DHash = uint64_t; // для совместимости с build_hero_db.cpp
 
 } // namespace dota2

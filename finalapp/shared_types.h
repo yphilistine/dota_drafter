@@ -7,6 +7,7 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 // ─── Фаза игры ───────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ struct GameInfo {
     int         ourSlot         = 1;   // 1-5
     bool        newMatch        = false;
     bool        isHeroSelection = false; // true только при HERO_SELECTION
+    std::chrono::steady_clock::time_point lastUpdate;
 };
 
 // ─── Результат распознавания портрета ─────────────────────────────────────────
@@ -47,10 +49,12 @@ struct PortraitResult {
 struct SharedPortraitState {
     std::mutex     mtx;
     PortraitResult slots[10];
+    int            manualPos[10] = {};  // 0 = auto (screen capture), 1-5 = GUI override
     bool           active = false;
     void clear() {
         std::lock_guard<std::mutex> lk(mtx);
         for (auto& s : slots) s = {};
+        for (auto& p : manualPos) p = 0;
         active = false;
     }
 };

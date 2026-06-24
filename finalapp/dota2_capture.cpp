@@ -159,6 +159,44 @@ void Dota2Capture::computeRegions() {
         pr.rect.bottom = toY(ryf + phf);
         regions_.push_back(pr);
     }
+
+    computePosRegions();
+}
+
+void Dota2Capture::computePosRegions() {
+    posRegions_.clear();
+    const int W = res_.width;
+    const int H = res_.height;
+    const HudLayout& L = layout_;
+
+    auto toX = [&](float f) { return static_cast<int>(f * W + 0.5f); };
+    auto toY = [&](float f) { return static_cast<int>(f * H + 0.5f); };
+
+    const float pw = L.pos_w;
+    const float ph = L.pos_h;
+    const float pg = L.pos_gap;
+    const float py = L.pos_y;
+
+    for (int i = 0; i < 5; ++i) {
+        const float leftf  = L.pos_x_start + i * (pw + pg);
+        PortraitRegion pr;
+        pr.slot        = i;
+        pr.rect.left   = toX(leftf);
+        pr.rect.top    = toY(py);
+        pr.rect.right  = toX(leftf + pw);
+        pr.rect.bottom = toY(py + ph);
+        posRegions_.push_back(pr);
+    }
+    for (int i = 0; i < 5; ++i) {
+        const float leftf  = L.pos_x_start_dire + i * (pw + pg);
+        PortraitRegion pr;
+        pr.slot        = 5 + i;
+        pr.rect.left   = toX(leftf);
+        pr.rect.top    = toY(py);
+        pr.rect.right  = toX(leftf + pw);
+        pr.rect.bottom = toY(py + ph);
+        posRegions_.push_back(pr);
+    }
 }
 
 #ifndef PW_RENDERFULLCONTENT
@@ -207,6 +245,8 @@ int Dota2Capture::capturePortraits() {
     if (!hwnd_) return 0;
     portraits_.clear();
     portraits_.resize(10);
+    posPortraits_.clear();
+    posPortraits_.resize(10);
     if (IsIconic(hwnd_)) return 0;
     const int W = res_.width, H = res_.height;
     if (W<=0||H<=0) return 0;
@@ -220,11 +260,11 @@ int Dota2Capture::capturePortraits() {
     if (!PrintWindow(hwnd_, fullDC, flags))
         PrintWindow(hwnd_, fullDC, PW_RENDERFULLCONTENT);
 
-    int count = 0;
-    for (const auto& reg : regions_) {
+    // Вырезка одного региона из fullDC в Bitmap
+    auto extractRegion = [&](const PortraitRegion& reg, Bitmap& dst) {
         const RECT& r = reg.rect;
         const int pw = r.right-r.left, ph = r.bottom-r.top;
-        if (pw<=0||ph<=0) continue;
+        if (pw<=0||ph<=0) return;
 
         HDC smallDC  = CreateCompatibleDC(screenDC);
         HBITMAP hBmp = CreateCompatibleBitmap(screenDC, pw, ph);
@@ -235,16 +275,24 @@ int Dota2Capture::capturePortraits() {
         bi.biSize=sizeof(bi); bi.biWidth=pw; bi.biHeight=-ph;
         bi.biPlanes=1; bi.biBitCount=32; bi.biCompression=BI_RGB;
 
-        Bitmap& portrait = portraits_[reg.slot];
-        portrait.width=pw; portrait.height=ph;
-        portrait.pixels.resize(static_cast<size_t>(pw)*ph*4);
+        dst.width=pw; dst.height=ph;
+        dst.pixels.resize(static_cast<size_t>(pw)*ph*4);
         GetDIBits(smallDC,hBmp,0,static_cast<UINT>(ph),
-                  portrait.pixels.data(),
+                  dst.pixels.data(),
                   reinterpret_cast<BITMAPINFO*>(&bi),DIB_RGB_COLORS);
 
         SelectObject(smallDC,hOld); DeleteObject(hBmp); DeleteDC(smallDC);
-        if (callback_) callback_(reg.slot, portrait);
-        ++count;
+    };
+
+    int count = 0;
+    for (const auto& reg : regions_) {
+        extractRegion(reg, portraits_[reg.slot]);
+        if (callback_) callback_(reg.slot, portraits_[reg.slot]);
+        if (!portraits_[reg.slot].empty()) ++count;
+    }
+
+    for (const auto& reg : posRegions_) {
+        extractRegion(reg, posPortraits_[reg.slot]);
     }
 
     SelectObject(fullDC,hFullOld); DeleteObject(hFull);
