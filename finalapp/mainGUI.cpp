@@ -1538,6 +1538,15 @@ static HICON CreateDIcon(int sz) {
 
 // ─── Точка входа ─────────────────────────────────────────────────────────────
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
+    // Рабочая директория = папка exe (иначе при запуске из иконки CWD может быть другой)
+    {
+        wchar_t exePath[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, exePath, MAX_PATH)) {
+            wchar_t* slash = wcsrchr(exePath, L'\\');
+            if (slash) { *slash = L'\0'; SetCurrentDirectoryW(exePath); }
+        }
+    }
+
     // DPI-осведомлённость
     if (HMODULE u32 = GetModuleHandleW(L"user32.dll")) {
         typedef BOOL(WINAPI* SPDA_t)(void*);
