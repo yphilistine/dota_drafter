@@ -1,6 +1,5 @@
 #include "common.h"
 #include "playerdatafetcher.h"
-#include "clouddatafetcher.h"
 #include "shared_types.h"
 
 int runDataFetcher(long long accountId, const std::string& stratzToken) {
@@ -56,16 +55,6 @@ int runDataFetcher(long long accountId, const std::string& stratzToken) {
         LOG_INFO("Герои игрока (рейтинг): " << PlayerHeroesRanked.size() << " записей");
         storePlayerHeroStatsTable(db.get(), accountId, PlayerHeroes,       "playerheroes");
         storePlayerHeroStatsTable(db.get(), accountId, PlayerHeroesRanked, "playerheroesranked");
-
-        try {
-            const char* pgEnv = std::getenv("PG_CONN_STR");
-            if (!pgEnv || pgEnv[0] == '\0')
-                throw std::runtime_error("Переменная окружения PG_CONN_STR не задана");
-            fetchAndStoreProHeroStats(db.get(), pgEnv);
-            fetchAndStoreImmortalHeroStats(db.get(), pgEnv);
-        } catch (const std::exception& e) {
-            LOG_WARN("Синхронизация proherostats пропущена: " << e.what());
-        }
 
         createIndexesIfNotExist(db.get());
         LOG_INFO("Данные сохранены в playerandlivestats.db");

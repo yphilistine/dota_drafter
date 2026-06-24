@@ -138,7 +138,7 @@ static std::map<std::string, ID3D11ShaderResourceView*> g_heroPortraits;
 // Конфигурация (из переменных окружения / умолчаний, затем read-only)
 static std::string g_stratzToken;
 static const char* DB_PATH    = "playerandlivestats.db";
-static const char* MODEL_PATH = "draft_helper_v3";
+static const char* MODEL_PATH = "draft_helper_abstract";
 // Портреты + пикер: активны HERO_SELECTION + 5с. GUI показывает результат до конца игры.
 static constexpr int PHASE3_TAIL_SEC = 5;
 
@@ -1627,8 +1627,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     // ── Icon (16×16 для заголовка, 32×32 для панели задач) ──────────────
     int smSz = GetSystemMetrics(SM_CXSMICON);  // обычно 16
     int bgSz = GetSystemMetrics(SM_CXICON);    // обычно 32
-    HICON iconSm = CreateDIcon(smSz ? smSz : 16);
-    g_AppIcon    = CreateDIcon(bgSz ? bgSz : 32);
+    HICON iconSm = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                     smSz ? smSz : 16, smSz ? smSz : 16, 0);
+    g_AppIcon    = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                     bgSz ? bgSz : 32, bgSz ? bgSz : 32, 0);
+    if (!iconSm) iconSm    = CreateDIcon(smSz ? smSz : 16);
+    if (!g_AppIcon) g_AppIcon = CreateDIcon(bgSz ? bgSz : 32);
     if (iconSm)    SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)iconSm);
     if (g_AppIcon) SendMessage(hwnd, WM_SETICON, ICON_BIG,   (LPARAM)g_AppIcon);
 
