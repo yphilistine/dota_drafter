@@ -297,6 +297,7 @@ static void renderToGui(
 
     state->isRadiant = (lp.our_side == 1);
     state->ourSlot   = lp.our_slot;
+    bool flipProb    = (lp.our_side != 1);
 
     // ── Слоты героев ──────────────────────────────────────────────────────────
     for (int i = 0; i < 5; i++) {
@@ -334,7 +335,7 @@ static void renderToGui(
         buildVector(v, lp, hero_map, pro_map, our_stats, 0);
         std::vector<FeatureVector> batch = {v};
         auto probs = runBatch(model, batch);
-        state->winProb  = (float)probs[0];
+        state->winProb  = flipProb ? 1.f - (float)probs[0] : (float)probs[0];
         auto on = hname(our_hero);
         std::snprintf(state->ourHeroName, sizeof(state->ourHeroName), "%s", on.c_str());
         state->recCount = 0;
@@ -347,7 +348,7 @@ static void renderToGui(
             buildVector(v0, lp, hero_map, pro_map, our_stats, 0);
             std::vector<FeatureVector> b0 = {v0};
             auto p0 = runBatch(model, b0);
-            state->winProb = (float)p0[0];
+            state->winProb = flipProb ? 1.f - (float)p0[0] : (float)p0[0];
         }
         std::set<int> picked;
         for (int i = 0; i < 5; i++) {
@@ -390,7 +391,7 @@ static void renderToGui(
                 PickRowGui& r = state->recs[i];
                 r.rank    = i + 1;
                 r.heroId  = hid;
-                r.winProb = (float)prob;
+                r.winProb = flipProb ? 1.f - (float)prob : (float)prob;
                 auto hn   = hname(hid);
                 std::snprintf(r.name, sizeof(r.name), "%s", hn.c_str());
 
