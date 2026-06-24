@@ -162,11 +162,17 @@ if exist "%CATBOOST%\catboostmodel-windows-x86_64-1.2.10.dll" (
     copy /Y "%CATBOOST%\catboostmodel-windows-x86_64-1.2.10.dll" "%OUT_DIR%\" >nul
 )
 
+:: Копируем exe в корневую папку проекта
+copy /Y "%OUT_DIR%\%TARGET%.exe" "%TARGET%.exe" >nul
+echo [INFO] Copied %TARGET%.exe to project root
+
 echo(
 echo [OK] %OUT_DIR%\%TARGET%.exe
+echo [OK] %TARGET%.exe
 echo(
 echo  Запуск:
 echo    %OUT_DIR%\%TARGET%.exe
+echo    %TARGET%.exe
 echo(
 echo  При первом запуске введи Steam ID (32-bit) прямо в интерфейсе.
 echo  Env vars (опционально):
