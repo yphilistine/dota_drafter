@@ -900,7 +900,7 @@ static void DrawDraftPanel(float panelW) {
 
         const char* line1 = hasPlayer_ ? "Waiting for a game..." : "Enter Steam ID";
         const char* line2 = hasPlayer_
-            ? (phase == GamePhase::IDLE ? "GSI server: listening on :3000" : phaseName(phase))
+            ? (phase == GamePhase::IDLE ? "GSI server: listening on :62326" : phaseName(phase))
             : "Enter your 32-bit Steam ID in the top-right corner";
 
         ImVec2 ts1 = ImGui::CalcTextSize(line1);

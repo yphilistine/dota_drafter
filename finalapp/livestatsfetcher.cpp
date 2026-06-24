@@ -1,5 +1,5 @@
 /*
- * livestatsfetcher.cpp — GSI HTTP-сервер (порт 3000).
+ * livestatsfetcher.cpp — GSI HTTP-сервер (порт 62326, localhost).
  *
  * POST / — приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot).
  * GET /phase — JSON статус текущей фазы.
@@ -19,7 +19,7 @@
 #include <string>
 #include <thread>
 
-static const int PORT = 3000;
+static const int PORT = 62326;
 static GameInfo* g_gameInfo = nullptr;
 
 static GamePhase parsePhaseStr(const std::string& s) {
@@ -172,7 +172,7 @@ void runGsiServer(GameInfo& gameInfo) {
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(PORT);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
     if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR ||
         listen(server, SOMAXCONN) == SOCKET_ERROR) {
         std::fprintf(stderr, "[GSI] bind/listen error: %d\n", WSAGetLastError());

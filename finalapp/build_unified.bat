@@ -90,6 +90,13 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 ::   dota2_capture.cpp       — захват окна Dota 2
 :: ─────────────────────────────────────────────────────────────────────────────
 
+:: ── Компилируем version.rc → version.res ─────────────────────────────────────
+rc.exe /nologo /fo "%OUT_DIR%\version.res" version.rc
+if %ERRORLEVEL% neq 0 (
+    echo [FAIL] rc.exe: version.rc
+    exit /b 1
+)
+
 cl.exe ^
     /nologo ^
     /std:c++17 ^
@@ -116,6 +123,7 @@ cl.exe ^
     /LIBPATH:"%VCPKG%\lib" ^
     /LIBPATH:"%CATBOOST%" ^
     /LIBPATH:"%WINSDK_LIB%" ^
+    "%OUT_DIR%\version.res" ^
     imgui.lib ^
     d3d11.lib dxgi.lib d3dcompiler.lib ^
     dwmapi.lib ^
@@ -137,6 +145,12 @@ if %ERRORLEVEL% neq 0 (
     echo(
     echo [FAIL] Сборка не удалась.
     exit /b 1
+)
+
+:: ── Встраиваем manifest ──────────────────────────────────────────────────────
+mt.exe -nologo -manifest app.manifest -outputresource:"%OUT_DIR%\%TARGET%.exe;1"
+if %ERRORLEVEL% neq 0 (
+    echo [WARN] mt.exe: не удалось встроить manifest
 )
 
 :: Копируем catboostmodel.dll рядом с exe
