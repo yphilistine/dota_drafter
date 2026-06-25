@@ -82,9 +82,9 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_9 = {
     /* dire_x_start    */ 0.59242f,
     //
     /* pos_x_start     */ 0.11484f,
-    /* pos_y           */ 0.10278f,
+    /* pos_y           */ 0.09896f,
     /* pos_w           */ 0.05547f,
-    /* pos_h           */ 0.00764f,
+    /* pos_h           */ 0.01528f,
     /* pos_gap         */ 0.01597f,
     /* pos_x_start_dire*/ 0.57148f,
 };
@@ -98,9 +98,9 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_10 = {
     /* dire_x_start    */ 0.61793f,
     //
     /* pos_x_start     */ 0.05703f,
-    /* pos_y           */ 0.1025f,
+    /* pos_y           */ 0.09875f,
     /* pos_w           */ 0.06172f,
-    /* pos_h           */ 0.00750f,
+    /* pos_h           */ 0.01500f,
     /* pos_gap         */ 0.01016f,
     /* pos_x_start_dire*/ 0.59414f,
 };
@@ -114,9 +114,9 @@ static constexpr HudLayout STRATEGY_LAYOUT_21_9 = {
     /* dire_x_start    */ 0.6396f,
     //
     /* pos_x_start     */ 0.05664f,
-    /* pos_y           */ 0.10221f,
+    /* pos_y           */ 0.09830f,
     /* pos_w           */ 0.06299f,
-    /* pos_h           */ 0.00781f,
+    /* pos_h           */ 0.01562f,
     /* pos_gap         */ 0.08398f,
     /* pos_x_start_dire*/ 0.59423f,
 };
@@ -130,9 +130,9 @@ static constexpr HudLayout STRATEGY_LAYOUT_4_3 = {
     /* dire_x_start    */ 0.5841f,
     //
     /* pos_x_start     */ 0.20447f,
-    /* pos_y           */ 0.10305f,
+    /* pos_y           */ 0.09924f,
     /* pos_w           */ 0.04252f,
-    /* pos_h           */ 0.00763f,
+    /* pos_h           */ 0.01526f,
     /* pos_gap         */ 0.01653f,
     /* pos_x_start_dire*/ 0.55507f,
 };

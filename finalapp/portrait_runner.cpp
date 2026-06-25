@@ -22,10 +22,7 @@
 #  define HERO_DB_LOADED 1
 #endif
 
-#if __has_include("pos_hashes.h")
-#  include "pos_hashes.h"
-#  define POS_DB_LOADED 1
-#endif
+#include "pos_ocr.h"
 
 #include <map>
 #include <string>
@@ -421,6 +418,8 @@ void runPortraitCapture(GameInfo&           gameInfo,
                         std::atomic<bool>&  running,
                         SharedPortraitState& out)
 {
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+
     Gdiplus::GdiplusStartupInput gdipInput;
     ULONG_PTR gdipToken;
     Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);
@@ -444,12 +443,9 @@ void runPortraitCapture(GameInfo&           gameInfo,
     std::puts("[portrait] ВНИМАНИЕ: hero_hashes.h не найден");
 #endif
 
-#ifdef POS_DB_LOADED
-    PosRecognizer posRecognizer(g_pos_db, g_pos_db_size);
-    std::printf("[portrait] Pos-база: %zu шаблонов\n", posRecognizer.size());
-#else
-    std::puts("[portrait] ВНИМАНИЕ: pos_hashes.h не найден");
-#endif
+    PosOcrRecognizer posRecognizer;
+    if (!posRecognizer.isAvailable())
+        std::puts("[portrait] ВНИМАНИЕ: Windows OCR недоступен, позиции только вручную");
 
     // Отдельный Dota2Capture для захвата (overlay запущен из оркестратора)
     Dota2Capture cap("");
@@ -583,15 +579,11 @@ void runPortraitCapture(GameInfo&           gameInfo,
                         continue;
                     }
 
-#ifdef POS_DB_LOADED
                     const Bitmap& pbmp = posBitmaps[slot];
                     if (pbmp.empty()) continue;
                     PosMatch pm = posRecognizer.recognize(pbmp);
                     int pos = pm.confident() ? pm.pos : 0;
                     updateSlotPos(db, slot, pos);
-#else
-                    updateSlotPos(db, slot, 0);
-#endif
                 }
 
                 // Вражеская команда — позиции всегда 0
@@ -612,5 +604,6 @@ cleanup:
     // overlay живёт всё время приложения — не останавливаем
     sqlite3_close(db);
     Gdiplus::GdiplusShutdown(gdipToken);
+    winrt::uninit_apartment();
     std::puts("[portrait] Захват остановлен");
 }

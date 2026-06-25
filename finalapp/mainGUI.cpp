@@ -1538,12 +1538,17 @@ static HICON CreateDIcon(int sz) {
 
 // ─── Точка входа ─────────────────────────────────────────────────────────────
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
-    // Рабочая директория = папка exe (иначе при запуске из иконки CWD может быть другой)
+    // Рабочая директория = папка с моделью (exe dir или parent, если exe в build/)
     {
-        wchar_t exePath[MAX_PATH];
-        if (GetModuleFileNameW(nullptr, exePath, MAX_PATH)) {
-            wchar_t* slash = wcsrchr(exePath, L'\\');
-            if (slash) { *slash = L'\0'; SetCurrentDirectoryW(exePath); }
+        wchar_t exeDir[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, exeDir, MAX_PATH)) {
+            wchar_t* slash = wcsrchr(exeDir, L'\\');
+            if (slash) *slash = L'\0';
+            SetCurrentDirectoryW(exeDir);
+            if (GetFileAttributesA("draft_helper_abstract.cbm") == INVALID_FILE_ATTRIBUTES) {
+                wchar_t* parent = wcsrchr(exeDir, L'\\');
+                if (parent) { *parent = L'\0'; SetCurrentDirectoryW(exeDir); }
+            }
         }
     }
 

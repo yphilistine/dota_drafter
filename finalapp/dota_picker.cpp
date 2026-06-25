@@ -1,9 +1,9 @@
 /*
  * dota_picker.cpp — ML-пикер: CatBoost инференс + рекомендации героев.
  *
- * Модель: draft_helper_abstract.cbm (одна модель, 10 cat + 42 float).
- * Фичи: 10 hero names, 30 matchup (global_wr/avg_vs/avg_with),
- *        2 mastery (target_hero_wr/games), 10 hero_pos_wr.
+ * Модель: draft_helper_abstract.cbm (одна модель, 10 cat + 72 float).
+ * Фичи: 10 hero names, 10 global_wr, 10 vs_adv, 10 with_adv,
+ *        2 mastery, 10 hero_pos_wr, 10 best_vs, 10 worst_vs, 10 pick_rate.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -66,11 +66,12 @@ struct MatchupData {
     std::map<std::pair<int,int>, float> with_wr;
     std::map<int, int> modal_pos;
     std::map<std::pair<int,int>, float> hero_pos_wr;
+    std::map<int, float> pick_rates;
 };
 
 // ─── Вектор признаков для CatBoost ───────────────────────────────────────────
 
-static constexpr int N_CAT=10, N_FLOAT=42;
+static constexpr int N_CAT=10, N_FLOAT=72;
 struct FeatureVector {
     std::string cat_str[N_CAT];
     const char* cat[N_CAT];
@@ -93,7 +94,6 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         return it != hero_map.end() ? it->second : UNKNOWN_HERO;
     };
 
-    // Собираем hero_id для всех 10 слотов (с подстановкой кандидата)
     int ids[10] = {};
     for (int i = 0; i < 5; ++i) {
         ids[i]   = lp.r[i].hero_id;
@@ -104,13 +104,11 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         if (our_d >= 0 && our_d < 5) ids[5+our_d]  = candidate_hero_id;
     }
 
-    // Позиции: своя команда = из livepicks, враг = modal
     int positions[10] = {};
     for (int i = 0; i < 5; ++i) {
         positions[i]   = lp.r[i].position;
         positions[5+i] = lp.d[i].position;
     }
-    // Для вражеских слотов без позиции → modal
     int enemyBase = (lp.our_side == 1) ? 5 : 0;
     for (int i = enemyBase; i < enemyBase + 5; ++i) {
         if (positions[i] <= 0 && ids[i] > 0) {
@@ -123,50 +121,68 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     for (int i = 0; i < 10; ++i)
         v.cat_str[i] = hero_name(ids[i]);
 
-    // ── 30 matchup floats (3 per slot) ──
-    int fi = 0;
+    // Precompute global_wr per slot
+    float gwr[10];
     for (int s = 0; s < 10; ++s) {
-        int hid = ids[s];
-        bool isRadSlot = (s < 5);
-
-        // global_wr
-        float gwr = 0.5f;
-        if (hid) {
-            auto it = md.global_wr.find(hid);
-            if (it != md.global_wr.end()) gwr = it->second;
+        gwr[s] = 0.5f;
+        if (ids[s]) {
+            auto it = md.global_wr.find(ids[s]);
+            if (it != md.global_wr.end()) gwr[s] = it->second;
         }
-        v.flt[fi++] = hid ? gwr : 0.5f;
+    }
 
-        // avg_vs: среднее vs_wr против раскрытых врагов
-        float avg_vs = 0.5f;
-        if (hid) {
-            int enemyStart = isRadSlot ? 5 : 0;
-            float sum = 0.f; int cnt = 0;
-            for (int e = enemyStart; e < enemyStart + 5; ++e) {
-                if (!ids[e]) continue;
-                auto it = md.vs_wr.find({hid, ids[e]});
-                if (it != md.vs_wr.end()) { sum += it->second; ++cnt; }
+    // Precompute per-slot vs_adv arrays for best/worst
+    float vs_adv_arr[10][5];
+    int   vs_adv_cnt[10] = {};
+    for (int s = 0; s < 10; ++s) {
+        if (!ids[s]) continue;
+        int enemyStart = (s < 5) ? 5 : 0;
+        for (int e = enemyStart; e < enemyStart + 5; ++e) {
+            if (!ids[e]) continue;
+            auto it = md.vs_wr.find({ids[s], ids[e]});
+            if (it != md.vs_wr.end()) {
+                vs_adv_arr[s][vs_adv_cnt[s]++] = it->second - gwr[s];
             }
-            if (cnt > 0) avg_vs = sum / cnt;
         }
-        v.flt[fi++] = hid ? avg_vs : 0.5f;
+    }
 
-        // avg_with: среднее with_wr с раскрытыми союзниками
-        float avg_with = 0.5f;
-        if (hid) {
-            int allyStart = isRadSlot ? 0 : 5;
+    int fi = 0;
+
+    // ── [0..9] 10 global_wr ──
+    for (int s = 0; s < 10; ++s)
+        v.flt[fi++] = ids[s] ? gwr[s] : 0.5f;
+
+    // ── [10..19] 10 vs_adv: avg(pairwise_wr - global_wr) vs enemies ──
+    for (int s = 0; s < 10; ++s) {
+        float val = 0.f;
+        if (ids[s] && vs_adv_cnt[s] > 0) {
+            float sum = 0.f;
+            for (int j = 0; j < vs_adv_cnt[s]; ++j) sum += vs_adv_arr[s][j];
+            val = sum / vs_adv_cnt[s];
+        }
+        v.flt[fi++] = val;
+    }
+
+    // ── [20..29] 10 with_adv: avg(pairwise_wr - global_wr) with allies ──
+    for (int s = 0; s < 10; ++s) {
+        float val = 0.f;
+        if (ids[s]) {
+            int allyStart = (s < 5) ? 0 : 5;
             float sum = 0.f; int cnt = 0;
             for (int a = allyStart; a < allyStart + 5; ++a) {
                 if (a == s || !ids[a]) continue;
-                auto it = md.with_wr.find({hid, ids[a]});
-                if (it != md.with_wr.end()) { sum += it->second; ++cnt; }
+                auto it = md.with_wr.find({ids[s], ids[a]});
+                if (it != md.with_wr.end()) {
+                    sum += it->second - gwr[s];
+                    ++cnt;
+                }
             }
-            if (cnt > 0) avg_with = sum / cnt;
+            if (cnt > 0) val = sum / cnt;
         }
-        v.flt[fi++] = hid ? avg_with : 0.5f;
+        v.flt[fi++] = val;
     }
 
-    // ── 2 mastery: target hero ──
+    // ── [30..31] 2 mastery: target hero ──
     int target_hid = 0;
     if (our_r >= 0 && our_r < 5) target_hid = ids[our_r];
     if (our_d >= 0 && our_d < 5) target_hid = ids[5+our_d];
@@ -185,16 +201,46 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     v.flt[fi++] = mastery_wr;
     v.flt[fi++] = mastery_games;
 
-    // ── 10 hero_pos_wr ──
+    // ── [32..41] 10 hero_pos_wr ──
     for (int s = 0; s < 10; ++s) {
-        int hid = ids[s];
-        int pos = positions[s];
         float hpwr = 0.5f;
-        if (hid && pos > 0) {
-            auto it = md.hero_pos_wr.find({hid, pos});
+        if (ids[s] && positions[s] > 0) {
+            auto it = md.hero_pos_wr.find({ids[s], positions[s]});
             if (it != md.hero_pos_wr.end()) hpwr = it->second;
         }
-        v.flt[fi++] = hid ? hpwr : 0.5f;
+        v.flt[fi++] = ids[s] ? hpwr : 0.5f;
+    }
+
+    // ── [42..51] 10 best_vs: max(vs_adv) across enemies ──
+    for (int s = 0; s < 10; ++s) {
+        float val = 0.f;
+        if (ids[s] && vs_adv_cnt[s] > 0) {
+            val = vs_adv_arr[s][0];
+            for (int j = 1; j < vs_adv_cnt[s]; ++j)
+                if (vs_adv_arr[s][j] > val) val = vs_adv_arr[s][j];
+        }
+        v.flt[fi++] = val;
+    }
+
+    // ── [52..61] 10 worst_vs: min(vs_adv) across enemies ──
+    for (int s = 0; s < 10; ++s) {
+        float val = 0.f;
+        if (ids[s] && vs_adv_cnt[s] > 0) {
+            val = vs_adv_arr[s][0];
+            for (int j = 1; j < vs_adv_cnt[s]; ++j)
+                if (vs_adv_arr[s][j] < val) val = vs_adv_arr[s][j];
+        }
+        v.flt[fi++] = val;
+    }
+
+    // ── [62..71] 10 pick_rate ──
+    for (int s = 0; s < 10; ++s) {
+        float pr = 0.f;
+        if (ids[s]) {
+            auto it = md.pick_rates.find(ids[s]);
+            if (it != md.pick_rates.end()) pr = it->second;
+        }
+        v.flt[fi++] = pr;
     }
 
     v.finalize();
@@ -267,9 +313,14 @@ static MatchupData loadMatchupData(sqlite3* db) {
         while (st.row()) md.hero_pos_wr[{st.col_int(0),st.col_int(1)}] = (float)st.col_double(2);
     } catch (...) { std::fprintf(stderr,"[picker] hero_pos_wr not found\n"); }
 
-    std::printf("[picker] Matchup data: gwr=%zu vs=%zu with=%zu modal=%zu hpwr=%zu\n",
+    try {
+        Stmt st(db,"SELECT hero_id,rate FROM pick_rates");
+        while (st.row()) md.pick_rates[st.col_int(0)] = (float)st.col_double(1);
+    } catch (...) { std::fprintf(stderr,"[picker] pick_rates not found\n"); }
+
+    std::printf("[picker] Matchup data: gwr=%zu vs=%zu with=%zu modal=%zu hpwr=%zu pr=%zu\n",
         md.global_wr.size(), md.vs_wr.size(), md.with_wr.size(),
-        md.modal_pos.size(), md.hero_pos_wr.size());
+        md.modal_pos.size(), md.hero_pos_wr.size(), md.pick_rates.size());
     return md;
 }
 

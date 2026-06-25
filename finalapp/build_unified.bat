@@ -110,6 +110,7 @@ cl.exe ^
     /I"%VCPKG%\include" ^
     /I"%VCPKG%\include\postgresql" ^
     /I"%CATBOOST%" ^
+    /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt" ^
     mainGUI.cpp ^
     portrait_runner.cpp ^
     common.cpp ^
@@ -138,6 +139,7 @@ cl.exe ^
     advapi32.lib bcrypt.lib ^
     user32.lib gdi32.lib shell32.lib ^
     Iphlpapi.lib Secur32.lib ^
+    WindowsApp.lib ^
     /SUBSYSTEM:WINDOWS ^
     /MACHINE:X64
 
