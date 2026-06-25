@@ -454,11 +454,14 @@ static void orchestratorMain() {
         // ── Слот/сторона изменились (GSI может прислать позже чем newMatch) ──
         if ((ourSlot != prevOurSlot || ourSide != prevOurSide) && !matchId.empty()) {
             const char* slotSql =
-                "UPDATE livepicks SET our_slot=?, our_side=? WHERE 1;";
+                "UPDATE livepicks SET our_slot=?, our_side=?, updated_at=? WHERE 1;";
             sqlite3_stmt* ss = nullptr;
             if (sqlite3_prepare_v2(db, slotSql, -1, &ss, nullptr) == SQLITE_OK) {
                 sqlite3_bind_int(ss, 1, ourSlot);
                 sqlite3_bind_int(ss, 2, ourSide);
+                sqlite3_bind_int64(ss, 3,
+                    (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
                 sqlite3_step(ss);
                 sqlite3_finalize(ss);
             }

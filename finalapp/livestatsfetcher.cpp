@@ -140,11 +140,38 @@ static std::string handle_request(const std::string& raw) {
 
 static void client_thread(SOCKET client) {
     std::string request;
-    char buf[4096]; int received;
-    do {
-        received = recv(client, buf, sizeof(buf), 0);
-        if (received > 0) request.append(buf, received);
-    } while (received == (int)sizeof(buf));
+    char buf[4096];
+
+    // Читаем до конца заголовков (\r\n\r\n)
+    while (true) {
+        int received = recv(client, buf, sizeof(buf), 0);
+        if (received <= 0) break;
+        request.append(buf, received);
+        if (request.find("\r\n\r\n") != std::string::npos) break;
+    }
+
+    // Определяем Content-Length и дочитываем тело
+    auto hdrEnd = request.find("\r\n\r\n");
+    if (hdrEnd != std::string::npos) {
+        int contentLen = 0;
+        std::string hdr = request.substr(0, hdrEnd);
+        auto pos = hdr.find("Content-Length:");
+        if (pos == std::string::npos) pos = hdr.find("content-length:");
+        if (pos != std::string::npos) {
+            pos += 15; // strlen("Content-Length:")
+            while (pos < hdr.size() && hdr[pos] == ' ') pos++;
+            contentLen = std::atoi(hdr.c_str() + pos);
+        }
+        size_t bodyStart = hdrEnd + 4;
+        size_t bodyHave  = request.size() - bodyStart;
+        while ((int)bodyHave < contentLen) {
+            int received = recv(client, buf, sizeof(buf), 0);
+            if (received <= 0) break;
+            request.append(buf, received);
+            bodyHave += received;
+        }
+    }
+
     if (!request.empty()) {
         std::string resp = handle_request(request);
         send(client, resp.c_str(), (int)resp.size(), 0);

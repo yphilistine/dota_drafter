@@ -7,7 +7,7 @@
 
 Три фазы:
 1. **DataFetcher** — загрузка данных игрока (OpenDota, STRATZ, PostgreSQL → SQLite)
-2. **GSI-сервер** — приём состояния игры от Dota 2 через Game State Integration (порт 3000)
+2. **GSI-сервер** — приём состояния игры от Dota 2 через Game State Integration (порт 62326)
 3. **Portrait + Picker** — захват портретов HUD + ML-рекомендации (CatBoost)
 
 ---
@@ -156,7 +156,7 @@ GSI HTTP-сервер.
 
 | Функция | Описание |
 |---------|----------|
-| `runGsiServer(gameInfo)` | Запуск HTTP-сервера на порту 3000, приём GSI-данных |
+| `runGsiServer(gameInfo)` | Запуск HTTP-сервера на порту 62326, приём GSI-данных |
 | `parsePhaseStr(s)` | Строка GSI game_state → GamePhase |
 | `handle_request(raw)` | Обработка HTTP: POST / → парсинг GSI, GET /phase → JSON статус |
 
@@ -181,22 +181,20 @@ GSI HTTP-сервер.
 ---
 
 ### dota_picker.cpp
-ML-пикер: CatBoost модели + рекомендации.
+ML-пикер: CatBoost инференс + рекомендации.
 
 | Функция / Класс | Описание |
 |------------------|----------|
-| `FeatureVector` | 20 категориальных + 70 числовых признаков для CatBoost |
-| `buildVector(v, lp, ...)` | Заполнение вектора признаков из LivePick + статистики |
+| `FeatureVector` | 10 категориальных + 72 числовых признака для CatBoost |
+| `buildVector(v, lp, ...)` | Заполнение вектора признаков из LivePick + matchup-данных + статистики игрока |
 | `DB` | RAII: sqlite3_open_v2 (readonly) |
 | `Stmt` | RAII: sqlite3_prepare_v2 / finalize + хелперы |
 | `loadHeroes(db)` | SQLite → map\<id, name\> |
-| `loadProStats(db)` | SQLite → map\<(hero_id,pos), ProStats\> |
+| `loadMatchupData(db)` | SQLite → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr, pick_rates) |
 | `loadImmortalHeroStats(db, pos)` | SQLite → map\<hero_id, ImmortalHeroStats\> (games >= 1000) |
 | `loadPlayerStats(db, account_id)` | SQLite → map\<hero_id, PlayerStats\> |
 | `loadLatestLivePick(db, lp)` | Последняя строка livepicks → LivePick |
-| `StageModels` | RAII: три CatBoost модели (early/mid/late) |
-| `selectModel(models, lp)` | Выбор модели по количеству известных героев (0-4 / 5-7 / 8+) |
-| `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(win) |
+| `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(radiant_win) |
 | `renderToGui(state, lp, ...)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) |
 | `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс |
 
@@ -267,17 +265,43 @@ GUI: ImGui/D3D11 + оркестратор.
 | OpenDota `/api/players/{id}/matches` | Список match_id (90 дней) |
 | STRATZ GraphQL | Батч-запрос деталей матчей |
 | OpenDota `/api/players/{id}` | Профиль игрока (personaname, avatarmedium) |
-| Dota 2 GSI (порт 3000) | Состояние игры в реальном времени |
+| Dota 2 GSI (порт 62326) | Состояние игры в реальном времени |
 
 ---
 
-## ML-модели (CatBoost)
+## ML-модель (CatBoost)
 
-| Модель | Фаза | Известных героев |
-|--------|------|-----------------|
-| `draft_helper_v3_early.cbm` | Начало драфта | 0-4 |
-| `draft_helper_v3_mid.cbm` | Середина | 5-7 |
-| `draft_helper_v3_late.cbm` | Конец | 8-10 |
+Одна модель: `draft_helper_abstract.cbm`.
 
-Вход: 20 категориальных (имена героев + позиции) + 70 числовых (winrate, games, bans).
+Вход: **10 категориальных** (имена героев) + **72 числовых** признака.
 Выход: logit → sigmoid → P(radiant_win).
+
+### Вектор признаков (buildVector)
+
+| Индексы | Группа | Размер | Описание |
+|---------|--------|--------|----------|
+| cat 0-9 | hero_name | 10 cat | Имена героев (localized_name): r1..r5, d1..d5. `"unknown"` для пустых слотов |
+| flt 0-9 | global_wr | 10 | Глобальный винрейт героя (из таблицы `global_wr`). По умолчанию 0.5 |
+| flt 10-19 | vs_adv | 10 | Среднее преимущество героя против вражеской команды: avg(vs_wr − global_wr) |
+| flt 20-29 | with_adv | 10 | Средняя синергия героя с союзниками: avg(with_wr − global_wr) |
+| flt 30 | mastery_wr | 1 | Винрейт нашего игрока на герое-кандидате (Bayesian smoothed, prior=30) |
+| flt 31 | mastery_games | 1 | log1p(количество игр нашего игрока на герое-кандидате) |
+| flt 32-41 | hero_pos_wr | 10 | Винрейт героя на конкретной позиции (из `hero_pos_wr`). По умолчанию 0.5 |
+| flt 42-51 | best_vs | 10 | Лучший матчап героя: max(vs_wr − global_wr) среди врагов |
+| flt 52-61 | worst_vs | 10 | Худший матчап героя: min(vs_wr − global_wr) среди врагов |
+| flt 62-71 | pick_rate | 10 | Pick rate героя (из таблицы `pick_rates`). По умолчанию 0 |
+
+**Итого**: 10 categorical + 72 float = 82 признака.
+
+### Источники данных
+
+| Таблица (matchup DB) | → Признак |
+|-----------------------|-----------|
+| `global_wr` (hero_id, wr) | global_wr, базовая линия для vs_adv/with_adv |
+| `vs_wr` (hero_id, opp_hero_id, wr) | vs_adv, best_vs, worst_vs |
+| `with_wr` (hero_id, ally_hero_id, wr) | with_adv |
+| `modal_pos` (hero_id, pos) | Позиция врагов при отсутствии OCR |
+| `hero_pos_wr` (hero_id, pos, wr) | hero_pos_wr |
+| `pick_rates` (hero_id, rate) | pick_rate |
+| `playerheroes` (player DB) | mastery_wr, mastery_games |
+| `immortalherostats` (player DB) | Фильтрация пула кандидатов (games ≥ 1000 на позиции) |

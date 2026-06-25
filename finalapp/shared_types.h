@@ -78,7 +78,6 @@ struct PickRowGui {
     int   rank      = 0;
     int   gamesPlayer = 0;
     float wrPlayer  = 0.f;   // винрейт [0..1]
-    int   gamesPro  = 0;
     int   gamesImm  = 0;
     float wrImm     = 0.f;
 };
