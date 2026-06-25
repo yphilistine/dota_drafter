@@ -39,6 +39,7 @@ Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\Dota_Drafter.exe"; Dest
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\catboostmodel.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract_data.db"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract.cbm"; DestDir: "{app}"; Flags: ignoreversion
 
 Source: "C:\Users\ANDREY\Documents\dota_drafter\installer\gamestate_integration_dota2.cfg"; DestDir: "C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"; Flags: ignoreversion
 
