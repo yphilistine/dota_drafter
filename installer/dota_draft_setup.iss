@@ -1,0 +1,49 @@
+#define appname "Dota_Drafter"
+#define version "1.0"
+#define url "https://github.com/yphilistine/dota_drafter"
+#define exename "Dota_Drafter.exe"
+
+[Setup]
+
+AppId={{F8CC8F61-22AA-49A3-A0F3-920B96F2BE00}
+AppName={#appname}
+AppVersion={#version}
+AppPublisherUrl={#url}
+AppSupportUrl={#url}
+AppUpdatesUrl={#url}
+
+DefaultDirName={localappdata}\{#appname}
+PrivilegesRequired=lowest
+DefaultGroupName={#appname}
+
+OutputDir=C:\Users\ANDREY\Documents\dota_drafter\installer
+OutputBaseFileName=dota_drafter_setup
+
+SetupIconFile=C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico
+
+Compression=lzma
+SolidCompression=yes
+
+[Languages]
+
+Name: "english"; MessagesFile: "compiler:Default.isl";
+
+[Tasks]
+
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "quicklaunchicon"; Description: "Create Quick Launch shortcut"; GroupDescription: "{cm:AdditionalIcons}"
+
+[Files]
+
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\Dota_Drafter.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\catboostmodel.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract_data.db"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+
+Source: "C:\Users\ANDREY\Documents\dota_drafter\installer\gamestate_integration_dota2.cfg"; DestDir: "C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"; Flags: ignoreversion
+
+[Icons]
+
+Name: "{group}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"
+Name: "{commondesktop}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: quicklaunchicon
