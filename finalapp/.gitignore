@@ -2,7 +2,6 @@ build/
 logs/
 *.obj
 *.exe
-*.dll
 *.pdb
 *.ilk
 *.db
