@@ -41,10 +41,34 @@ Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract_d
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract.cbm"; DestDir: "{app}"; Flags: ignoreversion
 
-Source: "C:\Users\ANDREY\Documents\dota_drafter\installer\gamestate_integration_dota2.cfg"; DestDir: "C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\installer\gamestate_integration_dota2.cfg"; DestDir: "{code:GetDotaCfgPath}"; Flags: ignoreversion; Check: DotaCfgPathExists
 
 [Icons]
 
 Name: "{group}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"
-Name: "{commondesktop}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
+Name: "{userdesktop}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: quicklaunchicon
+
+[UninstallDelete]
+
+Type: filesandordirs; Name: "{app}"
+
+[Code]
+
+function GetDotaCfgPath(Param: String): String;
+var
+  SteamPath: String;
+begin
+  Result := '';
+  if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Valve\Steam', 'InstallPath', SteamPath) or
+     RegQueryStringValue(HKEY_CURRENT_USER, 'SOFTWARE\Valve\Steam', 'SteamPath', SteamPath) then
+  begin
+    StringChangeEx(SteamPath, '/', '\', True);
+    Result := SteamPath + '\steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration';
+  end;
+end;
+
+function DotaCfgPathExists(): Boolean;
+begin
+  Result := DirExists(GetDotaCfgPath(''));
+end;
