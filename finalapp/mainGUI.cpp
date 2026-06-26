@@ -939,7 +939,7 @@ static void DrawDraftPanel(float panelW) {
         dl->AddRect      (cp, {cp.x+aW, cp.y+aH}, C(kBorder));
 
         const char* line1 = "Waiting for a game...";
-        const char* line2 = (phase == GamePhase::IDLE) ? "GSI server: listening on :3000" : phaseName(phase);
+        const char* line2 = (phase == GamePhase::IDLE) ? "GSI server: listening on :62326" : phaseName(phase);
 
         ImVec2 ts1 = ImGui::CalcTextSize(line1);
         ImVec2 ts2 = ImGui::CalcTextSize(line2);
