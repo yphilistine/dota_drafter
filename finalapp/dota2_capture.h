@@ -200,6 +200,7 @@ public:
     Resolution gameResolution()  const { return res_; }
     bool       isWindowFound()  const { return hwnd_ != nullptr; }
     HWND       gameWindowHandle() const { return hwnd_; }
+    bool       refreshResolution();
 
     // Захват всего окна без обрезки (для отладки)
     Bitmap captureFullWindow();

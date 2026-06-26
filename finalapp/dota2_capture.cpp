@@ -120,6 +120,34 @@ bool Dota2Capture::findGameWindow() {
     return true;
 }
 
+bool Dota2Capture::refreshResolution() {
+    if (!hwnd_ || !IsWindow(hwnd_)) return false;
+    RECT cr{};
+    GetClientRect(hwnd_, &cr);
+    int w = cr.right - cr.left;
+    int h = cr.bottom - cr.top;
+
+    HDC wdc = GetDC(hwnd_);
+    int phys_w = GetDeviceCaps(wdc, DESKTOPHORZRES);
+    int phys_h = GetDeviceCaps(wdc, DESKTOPVERTRES);
+    ReleaseDC(hwnd_, wdc);
+
+    int desk_w = GetSystemMetrics(SM_CXSCREEN);
+    int desk_h = GetSystemMetrics(SM_CYSCREEN);
+    int newW = (desk_w > 0 && desk_h > 0) ? MulDiv(w, phys_w, desk_w) : w;
+    int newH = (desk_w > 0 && desk_h > 0) ? MulDiv(h, phys_h, desk_h) : h;
+
+    if (newW == res_.width && newH == res_.height) return false;
+    if (newW < 640 || newH < 480) return false;
+
+    res_.width  = newW;
+    res_.height = newH;
+    layout_ = selectStrategyLayout(newW, newH);
+    computeRegions();
+    std::printf("[capture] Resolution changed: %dx%d\n", newW, newH);
+    return true;
+}
+
 void Dota2Capture::computeRegions() {
     regions_.clear();
     const int W = res_.width;

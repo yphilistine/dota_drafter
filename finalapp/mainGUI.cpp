@@ -494,12 +494,28 @@ static void orchestratorMain() {
             }
             g_pickerState.reset();
             phase3EndPending = false;
-            // Обновляем accountId в livepicks если матч уже идёт
             if (!matchId.empty()) {
                 try {
                     long long mid = std::stoll(matchId);
                     initLivePicksRow(db, mid, accountId, ourSide, ourSlot);
                 } catch (...) {}
+            }
+            // Перезапуск потоков если идёт HERO_SELECTION
+            if (isHeroSel && accountId != 0) {
+                g_pickerRunning.store(true);
+                g_pickerThread = std::thread([]{
+                    runPickerGui(MODEL_PATH, DB_PATH,
+                                 g_pickerRunning, &g_pickerState, &g_portraitState);
+                });
+                g_portraitRunning.store(true);
+                {
+                    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+                    g_portraitState.active = true;
+                }
+                g_portraitThread = std::thread([]{
+                    runPortraitCapture(g_gameInfo, DB_PATH,
+                                       g_portraitRunning, g_portraitState);
+                });
             }
         }
 

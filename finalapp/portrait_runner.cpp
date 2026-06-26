@@ -490,6 +490,8 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 continue;
             }
 
+            cap.refreshResolution();
+
             int captured = cap.capturePortraits();
             if (captured <= 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
