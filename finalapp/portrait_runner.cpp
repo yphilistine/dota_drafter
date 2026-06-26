@@ -1,8 +1,9 @@
 /*
- * portrait_runner.cpp — захват портретов + overlay-кнопка [D].
+ * portrait_runner.cpp — захват портретов + позиций + overlay-кнопка [D].
  *
- * Портреты: захват каждые 500мс → распознавание (Pearson ≥ 0.5) → запись в livepicks.
- * Кнопка [D]: прозрачный overlay поверх Dota 2, клик переключает фокус.
+ * Портреты: захват каждые 500мс → распознавание героев и позиций → запись в livepicks.
+ * Позиции: своя команда = manualPos override > screen capture > 0. Враг = 0.
+ * Работает без accountId. Кнопка [D]: overlay поверх Dota 2, клик переключает фокус.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN

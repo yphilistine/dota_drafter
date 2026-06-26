@@ -1,5 +1,6 @@
 /*
- * dota2_capture.cpp — реализация захвата окна Dota 2 через PrintWindow/GDI.
+ * dota2_capture.cpp — захват окна Dota 2 через PrintWindow/GDI.
+ * Портреты героев + индикаторы позиций. refreshResolution() для смены разрешения.
  */
 
 #include "dota2_capture.h"

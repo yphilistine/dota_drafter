@@ -132,11 +132,11 @@ int  runDataFetcher(long long accountId, const std::string& stratzToken);
 // Фаза 2: GSI HTTP-сервер на порту 62326 (localhost), обновляет gameInfo.
 void runGsiServer(GameInfo& gameInfo);
 
-// Захват портретов HUD каждые 500мс, запись в livepicks.
+// Захват портретов + позиций HUD каждые 500мс, запись в livepicks. Без accountId.
 void runPortraitCapture(GameInfo& gameInfo, const std::string& dbPath,
                         std::atomic<bool>& running, SharedPortraitState& out);
 
-// ML-пикер: читает livepicks, пишет рекомендации в guiState.
+// ML-пикер: читает livepicks + matchup data, пишет рекомендации в guiState. Требует accountId.
 int  runPickerGui(const char* modelPath, const char* dbPath,
                   std::atomic<bool>& running,
                   GuiPickerState* guiState,

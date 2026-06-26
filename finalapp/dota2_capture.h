@@ -1,10 +1,11 @@
 #pragma once
 
 /*
- * dota2_capture.h — захват портретов героев из HUD Dota 2.
+ * dota2_capture.h — захват портретов героев и индикаторов позиций из HUD Dota 2.
  *
  * Использует Windows GDI (PrintWindow) для захвата окна.
  * Поддержка разрешений: 4:3, 16:10, 16:9, 21:9 + DPI-масштабирование.
+ * refreshResolution() — пересчёт регионов при смене разрешения на лету.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN

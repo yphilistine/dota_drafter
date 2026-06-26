@@ -3,11 +3,12 @@
  *
  * Потоковая модель:
  *   GUI-поток      — WinMain / message loop / ImGui render
- *   Оркестратор    — управление portrait + picker потоками по состоянию GameInfo
- *   GSI-поток      — runGsiServer (постоянно после ввода Steam ID)
- *   Фаза 1         — runDataFetcher (однократно при смене игрока)
- *   Portrait        — runPortraitCapture (HERO_SELECTION + 5с хвост)
- *   Picker          — runPickerGui (HERO_SELECTION + 5с хвост)
+ *   Оркестратор    — управление потоками, portrait→GUI sync, one-shot inference
+ *   GSI-поток      — runGsiServer (постоянно)
+ *   Фаза 1a        — runDataFetcherInit (при старте, без accountId)
+ *   Фаза 1b        — runDataFetcher (при вводе Friend ID)
+ *   Portrait        — runPortraitCapture (HERO_SELECTION + 5с хвост, без accountId)
+ *   Picker          — runPickerGui (HERO_SELECTION/DRAFT + 5с хвост, требует accountId)
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -1098,7 +1099,7 @@ static void DrawPicksPanel(float panelW) {
 
         bool hasPlayer_ = false;
         { std::lock_guard<std::mutex> lk(g_player.mtx); hasPlayer_ = g_player.hasPlayer; }
-        const char* msg  = hasPlayer_ ? "Waiting for a game..." : "Enter Steam ID";
+        const char* msg  = hasPlayer_ ? "Waiting for a game..." : "Enter Friend ID";
         const char* msg2 = hasPlayer_ ? "" : "to start recommendations";
 
         ImVec2 ts  = ImGui::CalcTextSize(msg);
@@ -1223,7 +1224,7 @@ static void DrawPicksPanel(float panelW) {
             { std::lock_guard<std::mutex> lk(g_player.mtx); hasPlayer_ = g_player.hasPlayer; }
             ImGui::TextColored(kMuted, hasPlayer_
                 ? "  Computing recommendations..."
-                : "  Enter Steam ID for recommendations");
+                : "  Enter Friend ID for recommendations");
         }
     }
 
@@ -1324,7 +1325,7 @@ static void DrawStatusBar(float fullW) {
     ImGui::Dummy({fullW, H});
 }
 
-// ─── Шапка: логотип [D] + заголовок + карточка игрока / ввод Steam ID ─────────
+// ─── Шапка: логотип [D] + заголовок + карточка игрока / ввод Friend ID ────────
 static void DrawHeader(float fullW) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      hs  = ImGui::GetCursorScreenPos();
@@ -1390,7 +1391,7 @@ static void DrawHeader(float fullW) {
         dl->AddText({cx+8+(AVS-avts.x)/2.f, avY+(AVS-avts.y)/2.f},
                     C(kMuted), "ID");
 
-        dl->AddText({cx+52.f, avY}, C(kMuted), "Enter Steam ID (32-bit):");
+        dl->AddText({cx+52.f, avY}, C(kMuted), "Enter Friend ID:");
 
         // InputText + Set button
         ImGui::SetCursorScreenPos({cx+52.f, avY+lh+4.f});

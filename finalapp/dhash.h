@@ -1,6 +1,6 @@
 #pragma once
 /*
- * dhash.h — распознавание героев по Pearson-корреляции серых 8x8 матриц.
+ * dhash.h — распознавание героев и позиций по Pearson-корреляции серых 8x8 матриц.
  *
  * Референсные (build_hero_db) и query (live capture) изображения
  * из одного пайплайна (PrintWindow → BitBlt), поэтому серая 8x8 +

@@ -1,9 +1,10 @@
 /*
  * dota_picker.cpp — ML-пикер: CatBoost инференс + рекомендации героев.
  *
- * Модель: draft_helper_abstract.cbm (одна модель, 10 cat + 72 float).
- * Фичи: 10 hero names, 10 global_wr, 10 vs_adv, 10 with_adv,
- *        2 mastery, 10 hero_pos_wr, 10 best_vs, 10 worst_vs, 10 pick_rate.
+ * Модель: draft_helper_abstract.cbm (одна, все фазы драфта).
+ * Данные: draft_helper_abstract_data.db (matchup, modal_pos, hero_pos_wr, immortalherostats).
+ * Фичи: 10 cat (hero names) + 42 float (30 matchup + 2 mastery + 10 hero_pos_wr).
+ * Требует accountId для mastery-фич.
  */
 
 #define WIN32_LEAN_AND_MEAN

@@ -5,10 +5,16 @@
 Приложение — Dota 2 Draft Assistant с ImGui/D3D11 GUI.
 Потоковая модель: GUI-поток, оркестратор, GSI-сервер, DataFetcher, Portrait capture, Picker.
 
-Три фазы:
-1. **DataFetcher** — загрузка данных игрока (OpenDota, STRATZ, PostgreSQL → SQLite)
-2. **GSI-сервер** — приём состояния игры от Dota 2 через Game State Integration (порт 62326)
-3. **Portrait + Picker** — захват портретов HUD + ML-рекомендации (CatBoost)
+Фазы запуска:
+1. **DataFetcherInit** (фаза 1a) — создание таблиц + справочник героев (без accountId)
+2. **DataFetcher** (фаза 1b) — загрузка данных игрока (OpenDota, STRATZ → SQLite), требует accountId
+3. **GSI-сервер** — приём состояния игры от Dota 2 через Game State Integration
+4. **Portrait capture** — захват портретов HUD + распознавание героев и позиций (без accountId)
+5. **Picker** — ML-рекомендации CatBoost (требует accountId для mastery)
+
+Ключевой принцип: portrait capture и отображение драфта работают **без accountId**.
+Picker (модель + рекомендации) запускается только при наличии accountId.
+GSI-таймаут: если нет обновлений > 5с — сброс на IDLE (Dota 2 закрыта).
 
 ---
 
@@ -21,14 +27,14 @@
 |-----|----------|
 | `GamePhase` | Enum: IDLE, DRAFT, INGAME, POSTGAME |
 | `phaseName(GamePhase)` | Возвращает строковое имя фазы |
-| `GameInfo` | Состояние матча от GSI (mutex-protected) |
+| `GameInfo` | Состояние матча от GSI (mutex-protected, lastUpdate для таймаута) |
 | `PortraitResult` | Результат распознавания одного портрета (имя, id, score) |
-| `SharedPortraitState` | 10 слотов портретов + флаг active (mutex-protected) |
+| `SharedPortraitState` | 10 слотов портретов + manualPos[10] для GUI-позиций + флаг active |
 | `HeroSlotGui` | Данные одного слота для отрисовки в GUI |
 | `PickRowGui` | Строка рекомендации: герой, winProb, статистика |
-| `GuiPickerState` | Полное состояние пикера для GUI (radiant/dire, рекомендации, winProb) |
+| `GuiPickerState` | Полное состояние пикера для GUI + inferenceGen (атомарный счётчик) |
 
-Декларации: `runDataFetcher`, `runGsiServer`, `runPortraitCapture`, `runPickerGui`.
+Декларации: `runDataFetcherInit`, `runDataFetcher`, `runGsiServer`, `runPortraitCapture`, `runPickerGui`.
 
 ---
 
@@ -51,20 +57,6 @@
 | `LOG_INFO/WARN/ERR(msg)` | Макросы логирования через ostringstream |
 
 Глобалы: `g_logMutex`, `g_dbWriteMutex`, `g_logFile`, `g_curlDebugFile`.
-
----
-
-### clouddatafetcher.h / clouddatafetcher.cpp
-Синхронизация PostgreSQL → SQLite.
-
-| Функция / Класс | Описание |
-|------------------|----------|
-| `PgConnection` | RAII: PQconnectdb / PQfinish |
-| `PgResult` | RAII: PGresult / PQclear |
-| `ProHeroStats` | Структура: hero_id, pos, games, wins, bans |
-| `ImmortalHeroStats` | Структура: hero_id, pos, games, wins, bans |
-| `fetchAndStoreProHeroStats(db, connStr)` | PG → SQLite таблица `proherostats` |
-| `fetchAndStoreImmortalHeroStats(db, connStr)` | PG `recentimmortalmatches` → SQLite `immortalherostats` (агрегация по hero_id+pos) |
 
 ---
 
@@ -102,11 +94,12 @@
 ---
 
 ### datafetcher.cpp
-Оркестратор фазы 1.
+Оркестратор фазы 1 (разделён на две подфазы).
 
 | Функция | Описание |
 |---------|----------|
-| `runDataFetcher(accountId, stratzToken)` | Загрузка всех данных: герои, статистика, матчи, PG-синхронизация. Возвращает 0 при успехе |
+| `runDataFetcherInit()` | Фаза 1a: справочник героев + создание таблиц. Не требует accountId. Запускается при старте приложения |
+| `runDataFetcher(accountId, stratzToken)` | Фаза 1b: загрузка данных игрока (статистика героев, матчи). Требует accountId |
 
 ---
 
@@ -118,24 +111,28 @@
 | `Resolution` | Ширина и высота окна |
 | `Bitmap` | BGRA пиксели + размеры |
 | `PortraitRegion` | Слот 0-9 + RECT координаты |
-| `HudLayout` | Относительные координаты портретов (дроби 0..1) |
+| `HudLayout` | Относительные координаты портретов и позиций (доли 0..1) |
 | `selectStrategyLayout(w, h)` | Выбор HUD-раскладки по соотношению сторон (4:3, 16:10, 16:9, 21:9) |
 | `GdiplusSession` | RAII: GDI+ Startup / Shutdown |
 | `Dota2Capture` | Основной класс захвата |
 | `.findGameWindow()` | Поиск окна "Dota 2" (SDL_app / Valve001), определение разрешения и раскладки |
-| `.capturePortraits()` | Захват всех портретов из одного кадра (PrintWindow → BitBlt по регионам) |
+| `.refreshResolution()` | Проверка смены разрешения → пересчёт регионов (вызывается перед каждым capturePortraits) |
+| `.capturePortraits()` | Захват портретов + позиций из одного кадра (PrintWindow → BitBlt по регионам) |
+| `.portraits()` | Последние захваченные портреты героев (10 Bitmap) |
+| `.posPortraits()` | Последние захваченные индикаторы позиций (10 Bitmap) |
 | `.captureFullWindow()` | Захват всего окна (для отладки) |
 | `.saveBitmapAsPng(bmp, path)` | Сохранение Bitmap как PNG через GDI+ |
 | `.savePortraits(dir)` | Сохранение всех портретов как PNG |
 | `.runLoop(interval_ms)` | Цикл захвата с заданным интервалом |
 | `ListAllWindows()` | Диагностика: вывод всех видимых окон |
 
+HudLayout содержит координаты портретов (radiant_x_start, portrait_w, ...) и позиций (pos_x_start, pos_w, ...).
 Раскладки: `STRATEGY_LAYOUT_16_9`, `_16_10`, `_21_9`, `_4_3`.
 
 ---
 
 ### dhash.h
-Распознавание героев по Pearson-корреляции 8x8 серых матриц.
+Распознавание героев и позиций по Pearson-корреляции 8x8 серых матриц.
 
 | Тип / Функция | Описание |
 |---------------|----------|
@@ -145,9 +142,21 @@
 | `pearson(a, b)` | Корреляция Пирсона двух Matrix8 (dot / 63) |
 | `computeMatrix(bgra, w, h)` | BGRA-пиксели → Matrix8 (greyscale → bilinear 8x8 → нормализация) |
 | `HeroRecognizer` | Поиск ближайшего героя по базе хешей |
-| `.recognize(bgra/bmp)` | Распознавание: computeMatrix → findNearest → HeroMatch |
+| `PosHashEntry` | Пара: номер позиции (0-5) + Matrix8 |
+| `PosMatch` | Результат: pos, score. `confident()` при score >= 0.80 |
+| `PosRecognizer` | Поиск ближайшей позиции по базе хешей |
 
 Порог уверенности: score >= 0.80 (same hero ~0.99, different ~0.0).
+
+---
+
+### hero_hashes.h / pos_hashes.h
+Данные хешей для распознавания.
+
+| Файл | Содержимое |
+|------|-----------|
+| `hero_hashes.h` | `g_hero_db[]` — Matrix8 для каждого героя (~130 записей) |
+| `pos_hashes.h` | `g_pos_db[]` — Matrix8 для позиций 0-5 (5 вариантов NULL + 5 позиций) |
 
 ---
 
@@ -156,47 +165,52 @@ GSI HTTP-сервер.
 
 | Функция | Описание |
 |---------|----------|
-| `runGsiServer(gameInfo)` | Запуск HTTP-сервера на порту 62326, приём GSI-данных |
+| `runGsiServer(gameInfo)` | Запуск HTTP-сервера, приём GSI-данных |
 | `parsePhaseStr(s)` | Строка GSI game_state → GamePhase |
-| `handle_request(raw)` | Обработка HTTP: POST / → парсинг GSI, GET /phase → JSON статус |
+| `handle_request(raw)` | Обработка HTTP: POST / → парсинг GSI + обновление lastUpdate, GET /phase → JSON статус |
 
 ---
 
 ### portrait_runner.h / portrait_runner.cpp
-Захват и распознавание портретов + overlay-кнопка [D].
+Захват и распознавание портретов + позиций + overlay-кнопка [D].
 
 | Функция | Описание |
 |---------|----------|
 | `startDotaOverlay()` | Запуск прозрачной кнопки [D] поверх Dota 2 (один раз при старте) |
-| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата портретов каждые 500мс → распознавание → запись в livepicks |
-| `updateSlot(db, slot, heroId)` | Обновление одного слота в таблице livepicks |
-| `clearHeroSlots(db)` | Обнуление всех hero-слотов в livepicks |
-| `clearHeroSlot(db, slot)` | Обнуление одного слота |
+| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 500мс → распознавание героев и позиций → запись в livepicks |
+| `updateSlot(db, slot, heroId)` | Обновление hero в слоте livepicks |
+| `updateSlotPos(db, slot, pos)` | Обновление позиции в слоте livepicks |
+| `clearHeroSlots(db)` | Обнуление всех hero + pos слотов в livepicks |
+| `clearHeroSlot(db, slot)` | Обнуление одного hero-слота |
 | `overlayProc(hwnd, msg, wp, lp)` | WndProc overlay: таймер позиционирования + клик-переключение |
-| `paintLayeredButton(hwnd)` | Per-pixel alpha отрисовка [D] серым цветом (как шестерёнка HUD) через UpdateLayeredWindow |
-| `selectOverlayPos(w, h)` | Выбор позиции кнопки по аспекту: 4:3 / 16:10 / 16:9 / 21:9 |
+| `paintLayeredButton(hwnd)` | Per-pixel alpha отрисовка [D] серым цветом через UpdateLayeredWindow |
+| `selectOverlayPos(w, h)` | Выбор позиции кнопки по аспекту |
 | `bringAppToFront()` | Вывод главного окна приложения на передний план |
 | `bringDotaToFront(cap)` | Вывод окна Dota 2 на передний план |
+
+Распознавание позиций: только для своей команды (manualPos override > screen capture > 0). Вражеские позиции = 0.
 
 ---
 
 ### dota_picker.cpp
-ML-пикер: CatBoost инференс + рекомендации.
+ML-пикер: CatBoost инференс + рекомендации героев.
 
 | Функция / Класс | Описание |
 |------------------|----------|
-| `FeatureVector` | 10 категориальных + 72 числовых признака для CatBoost |
-| `buildVector(v, lp, ...)` | Заполнение вектора признаков из LivePick + matchup-данных + статистики игрока |
+| `FeatureVector` | 10 категориальных + 42 числовых признака для CatBoost |
+| `buildVector(v, lp, ...)` | Заполнение вектора признаков из LivePick + matchup-данных + mastery |
 | `DB` | RAII: sqlite3_open_v2 (readonly) |
 | `Stmt` | RAII: sqlite3_prepare_v2 / finalize + хелперы |
 | `loadHeroes(db)` | SQLite → map\<id, name\> |
-| `loadMatchupData(db)` | SQLite → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr, pick_rates) |
-| `loadImmortalHeroStats(db, pos)` | SQLite → map\<hero_id, ImmortalHeroStats\> (games >= 1000) |
-| `loadPlayerStats(db, account_id)` | SQLite → map\<hero_id, PlayerStats\> |
+| `loadMatchupData(dataDb)` | Data DB → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr) |
+| `loadImmortalHeroStats(dataDb, pos)` | Data DB → map\<hero_id, ImmortalHeroStats\> (games >= 1000) |
+| `loadPlayerStats(db, account_id)` | Player DB → map\<hero_id, PlayerStats\> |
 | `loadLatestLivePick(db, lp)` | Последняя строка livepicks → LivePick |
 | `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(radiant_win) |
-| `renderToGui(state, lp, ...)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) |
+| `renderToGui(state, lp, ...)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) + inferenceGen++ |
 | `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс |
+
+Данные модели читаются из `{modelPath}_data.db` (отдельная БД).
 
 ---
 
@@ -208,23 +222,31 @@ GUI: ImGui/D3D11 + оркестратор.
 | `InitD3D(hwnd)` | Инициализация D3D11 device + swap chain |
 | `CleanupD3D()` | Освобождение D3D11 ресурсов |
 | `ApplyStyle()` | Тёмная тема ImGui с масштабированием 1.25x |
-| `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Steam ID |
+| `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Friend ID |
 | `DrawStatusBar(fullW)` | Полоса статуса: Data (fetching/ready/error), Game (phase), match ID |
 | `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb |
 | `DrawPicksPanel(panelW)` | Правая панель: рекомендации top-10 / выбранный герой |
-| `DrawHeroSlot(rowW, h, ...)` | Отрисовка одного слота героя (портрет, имя, позиция) |
-| `DrawPortrait(dl, p, sz, ...)` | Отрисовка квадрата портрета: PNG-текстура из assets/ (если есть) или инициалы |
-| `loadHeroPortraits()` | Загрузка PNG из assets/ → кэш `g_heroPortraits` (localized_name → D3D11 текстура) |
+| `DrawHeroSlot(rowW, h, ...)` | Отрисовка слота героя с кликабельным popup позиции (1-5, свап) |
+| `DrawPortrait(dl, p, sz, ...)` | Отрисовка квадрата портрета: PNG-текстура или инициалы |
+| `loadHeroPortraits()` | Загрузка PNG из assets/ → кэш `g_heroPortraits` |
 | `DrawBar(dl, p, w, h, frac, fill)` | Горизонтальный прогресс-бар |
 | `WinColor(w)` | Цвет по win probability (green/amber/red) |
 | `RenderFrame()` | Главный кадр: root window → Header → StatusBar → Draft + Picks |
-| `orchestratorMain()` | Фоновый цикл: GSI → portrait → picker (управление потоками) |
-| `startPhase1(accountId)` | Запуск DataFetcher + STRATZ имя в фоновом потоке |
-| `fetchOpenDotaProfile(accountId)` | OpenDota /api/players/{id} → имя + аватар (avatarmedium) |
+| `orchestratorMain()` | Фоновый цикл: GSI → portrait → picker + portrait→GUI sync + one-shot inference |
+| `startPhase1(accountId)` | Запуск DataFetcher (1b) + имя игрока в фоновом потоке |
+| `fetchOpenDotaProfile(accountId)` | OpenDota /api/players/{id} → имя + аватар |
 | `createTextureFromImageData(data, size)` | JPEG/PNG байты → D3D11 текстура через GDI+ |
-| `WinMain(hInst, ...)` | Точка входа: D3D11, ImGui, окно, оркестратор, message loop |
+| `WinMain(hInst, ...)` | Точка входа: D3D11, ImGui, окно, фаза 1a, оркестратор, message loop |
 
-Палитра: `kBg`, `kCard`, `kText`, `kMuted`, `kGreen`, `kRed`, `kAmber`, `kBlue`.
+Оркестратор:
+- Portrait capture стартует при HERO_SELECTION **без accountId**
+- Picker стартует при HERO_SELECTION/DRAFT **с accountId**
+- Portrait→GUI sync: когда portrait работает но picker нет — показывает драфт из g_portraitState
+- GSI таймаут: 5с без обновлений → IDLE
+- One-shot: при смене позиции в GUI вне фазы 3 → запись в DB + запуск пикера до первого inferenceGen
+- При idChanged: обновляется только accountId в livepicks, portrait capture не останавливается
+
+Палитра: `kBg`, `kCard`, `kText`, `kMuted`, `kGreen`, `kRed`, `kAmber`.
 
 ---
 
@@ -238,21 +260,32 @@ GUI: ImGui/D3D11 + оркестратор.
 
 ---
 
-## Таблицы SQLite (playerandlivestats.db)
+## Базы данных
+
+### playerandlivestats.db — данные игрока и runtime
 
 | Таблица | Ключ | Описание |
 |---------|------|----------|
-| `heroes` | id | Справочник героев (name, localized_name) |
+| `heroes` | id | Справочник героев (name, localized_name). Заполняется фазой 1a |
 | `playerheroes` | (account_id, hero_id) | Статистика героев игрока (все режимы) |
 | `playerheroesranked` | (account_id, hero_id) | Статистика героев (только ranked) |
 | `playerrecentmatches` | (match_id, account_id) | История матчей с пиками/позициями |
 | `relevantplayerherobyposstats` | (account_id, heroId, position) | Агрегат героя+позиции из матчей |
 | `playerherovsherobyposstats` | (account_id, hero_id, pos, vs_hero_id, vs_pos) | Статистика hero vs hero |
 | `playerherowithherobyposstats` | (account_id, hero_id, pos, with_hero_id, with_pos) | Статистика hero with hero |
-| `proherostats` | (hero_id, pos) | Про-статистика (из PostgreSQL) |
-| `immortalherostats` | (hero_id, pos) | Immortal-статистика (агрегат recentimmortalmatches) |
-| `livepicks` | single row | Текущий драфт: 10 hero-слотов + метаданные матча |
-| `player_info` | account_id | Сохранённый Steam ID + имя |
+| `livepicks` | single row | Текущий драфт: 10 hero-слотов + 10 pos-слотов + метаданные матча |
+| `player_info` | account_id | Сохранённый Friend ID + имя |
+
+### draft_helper_abstract_data.db — данные модели (статичные)
+
+| Таблица | Ключ | Описание |
+|---------|------|----------|
+| `global_wr` | hero_id | Smoothed winrate героя (prior=100) |
+| `vs_wr` | (hero_id, opp_hero_id) | Пайрвайзный winrate hero vs hero (prior=20) |
+| `with_wr` | (hero_id, ally_hero_id) | Пайрвайзный winrate hero with hero (prior=20) |
+| `modal_pos` | hero_id | Модальная позиция героя (1-5) |
+| `hero_pos_wr` | (hero_id, pos) | Winrate героя на позиции (prior=50) |
+| `immortalherostats` | (hero_id, pos) | Immortal-статистика для фильтрации пула кандидатов |
 
 ---
 
@@ -260,48 +293,44 @@ GUI: ImGui/D3D11 + оркестратор.
 
 | API | Использование |
 |-----|---------------|
-| OpenDota `/api/heroes` | Справочник героев |
-| OpenDota `/api/players/{id}/heroes` | Статистика героев игрока |
-| OpenDota `/api/players/{id}/matches` | Список match_id (90 дней) |
-| STRATZ GraphQL | Батч-запрос деталей матчей |
-| OpenDota `/api/players/{id}` | Профиль игрока (personaname, avatarmedium) |
-| Dota 2 GSI (порт 62326) | Состояние игры в реальном времени |
+| OpenDota `/api/heroes` | Справочник героев (фаза 1a, без accountId) |
+| OpenDota `/api/players/{id}/heroes` | Статистика героев игрока (фаза 1b) |
+| OpenDota `/api/players/{id}/matches` | Список match_id (90 дней, ranked) (фаза 1b) |
+| STRATZ GraphQL | Батч-запрос деталей матчей (фаза 1b) |
+| OpenDota `/api/players/{id}` | Профиль игрока: personaname, avatarmedium (фаза 1b) |
+| Dota 2 GSI | Состояние игры в реальном времени |
 
 ---
 
 ## ML-модель (CatBoost)
 
 Одна модель: `draft_helper_abstract.cbm`.
+Данные модели: `draft_helper_abstract_data.db`.
 
-Вход: **10 категориальных** (имена героев) + **72 числовых** признака.
+Вход: **10 категориальных** (имена героев) + **42 числовых** признака.
 Выход: logit → sigmoid → P(radiant_win).
 
 ### Вектор признаков (buildVector)
 
 | Индексы | Группа | Размер | Описание |
 |---------|--------|--------|----------|
-| cat 0-9 | hero_name | 10 cat | Имена героев (localized_name): r1..r5, d1..d5. `"unknown"` для пустых слотов |
-| flt 0-9 | global_wr | 10 | Глобальный винрейт героя (из таблицы `global_wr`). По умолчанию 0.5 |
-| flt 10-19 | vs_adv | 10 | Среднее преимущество героя против вражеской команды: avg(vs_wr − global_wr) |
-| flt 20-29 | with_adv | 10 | Средняя синергия героя с союзниками: avg(with_wr − global_wr) |
-| flt 30 | mastery_wr | 1 | Винрейт нашего игрока на герое-кандидате (Bayesian smoothed, prior=30) |
-| flt 31 | mastery_games | 1 | log1p(количество игр нашего игрока на герое-кандидате) |
-| flt 32-41 | hero_pos_wr | 10 | Винрейт героя на конкретной позиции (из `hero_pos_wr`). По умолчанию 0.5 |
-| flt 42-51 | best_vs | 10 | Лучший матчап героя: max(vs_wr − global_wr) среди врагов |
-| flt 52-61 | worst_vs | 10 | Худший матчап героя: min(vs_wr − global_wr) среди врагов |
-| flt 62-71 | pick_rate | 10 | Pick rate героя (из таблицы `pick_rates`). По умолчанию 0 |
+| cat 0-4 | r_hero | 5 cat | Имена героев Radiant. `"unknown"` для пустых |
+| cat 5-9 | d_hero | 5 cat | Имена героев Dire |
+| flt 0-29 | matchup | 30 | По 3 на слот: global_wr, avg_vs, avg_with |
+| flt 30 | mastery_wr | 1 | Smoothed WR игрока на герое-кандидате (prior=30) |
+| flt 31 | mastery_games | 1 | log1p(games) игрока на кандидате |
+| flt 32-41 | hero_pos_wr | 10 | WR героя на позиции. Своя команда = из livepicks, враг = modal_pos |
 
-**Итого**: 10 categorical + 72 float = 82 признака.
+**Итого**: 10 categorical + 42 float = 52 признака.
 
-### Источники данных
+### Matchup-фичи (per slot)
 
-| Таблица (matchup DB) | → Признак |
-|-----------------------|-----------|
-| `global_wr` (hero_id, wr) | global_wr, базовая линия для vs_adv/with_adv |
-| `vs_wr` (hero_id, opp_hero_id, wr) | vs_adv, best_vs, worst_vs |
-| `with_wr` (hero_id, ally_hero_id, wr) | with_adv |
-| `modal_pos` (hero_id, pos) | Позиция врагов при отсутствии OCR |
-| `hero_pos_wr` (hero_id, pos, wr) | hero_pos_wr |
-| `pick_rates` (hero_id, rate) | pick_rate |
-| `playerheroes` (player DB) | mastery_wr, mastery_games |
-| `immortalherostats` (player DB) | Фильтрация пула кандидатов (games ≥ 1000 на позиции) |
+- `global_wr`: smoothed winrate героя из `global_wr` таблицы
+- `avg_vs`: среднее vs_wr против раскрытых врагов (из `vs_wr` таблицы)
+- `avg_with`: среднее with_wr с раскрытыми союзниками (из `with_wr` таблицы)
+- Для пустых слотов: все значения = 0.5
+
+### Позиции
+
+- Своя команда: из livepicks (screen capture или GUI manual override)
+- Вражеская команда: из `modal_pos` таблицы (модальная позиция героя)
