@@ -2,7 +2,8 @@
 #include "playerdatafetcher.h"
 #include "shared_types.h"
 
-int runDataFetcher(long long accountId, const std::string& stratzToken) {
+// Фаза 1a: таблицы + справочник героев (без accountId)
+int runDataFetcherInit() {
     try {
         std::string heroesJson = fetchHeroesList();
         auto HeroesList = parseHeroesList(heroesJson);
@@ -18,6 +19,20 @@ int runDataFetcher(long long accountId, const std::string& stratzToken) {
         createPlayerHeroVsHeroByPosTableIfNotExists(db.get());
         createPlayerHeroWithHeroByPosTableIfNotExists(db.get());
         storeHeroTable(db.get(), HeroesList);
+        createIndexesIfNotExist(db.get());
+
+        LOG_INFO("Таблицы и справочник героев готовы");
+    } catch (const std::exception& ex) {
+        LOG_ERR("DataFetcherInit: " << ex.what());
+        return 1;
+    }
+    return 0;
+}
+
+// Фаза 1b: данные игрока (требует accountId)
+int runDataFetcher(long long accountId, const std::string& stratzToken) {
+    try {
+        SqliteDB db("playerandlivestats.db");
 
         {
             auto execDel = [&](const std::string& sql) {
@@ -56,9 +71,7 @@ int runDataFetcher(long long accountId, const std::string& stratzToken) {
         storePlayerHeroStatsTable(db.get(), accountId, PlayerHeroes,       "playerheroes");
         storePlayerHeroStatsTable(db.get(), accountId, PlayerHeroesRanked, "playerheroesranked");
 
-        createIndexesIfNotExist(db.get());
-        LOG_INFO("Данные сохранены в playerandlivestats.db");
-
+        LOG_INFO("Данные игрока сохранены в playerandlivestats.db");
     } catch (const std::exception& ex) {
         LOG_ERR("Критическая ошибка DataFetcher: " << ex.what());
         return 1;

@@ -123,7 +123,10 @@ struct GuiPickerState {
 
 // ─── Декларации функций модулей ───────────────────────────────────────────────
 
-// Фаза 1: загрузка данных игрока. Возвращает 0 при успехе.
+// Фаза 1a: создание таблиц + справочник героев (не требует accountId).
+int  runDataFetcherInit();
+
+// Фаза 1b: загрузка данных игрока. Возвращает 0 при успехе.
 int  runDataFetcher(long long accountId, const std::string& stratzToken);
 
 // Фаза 2: GSI HTTP-сервер на порту 62326 (localhost), обновляет gameInfo.

@@ -483,38 +483,28 @@ static void orchestratorMain() {
             }
         }
         if (idChanged) {
+            // Пикер зависит от accountId — перезапускаем
             if (g_pickerRunning.load()) {
                 g_pickerRunning.store(false);
                 if (g_pickerThread.joinable()) g_pickerThread.join();
             }
-            if (g_portraitRunning.load()) {
-                g_portraitRunning.store(false);
-                if (g_portraitThread.joinable()) g_portraitThread.join();
-                g_portraitState.clear();
-            }
-            g_pickerState.reset();
-            phase3EndPending = false;
+            // НЕ сбрасываем pickerState — драфт остаётся видимым
+
+            // Обновить только accountId в livepicks (НЕ пересоздавать строку)
             if (!matchId.empty()) {
-                try {
-                    long long mid = std::stoll(matchId);
-                    initLivePicksRow(db, mid, accountId, ourSide, ourSlot);
-                } catch (...) {}
+                sqlite3_exec(db,
+                    ("UPDATE livepicks SET our_account_id="
+                     + std::to_string(accountId) + ";").c_str(),
+                    nullptr, nullptr, nullptr);
+                lastMatchId = matchId;
             }
-            // Перезапуск потоков если идёт HERO_SELECTION
-            if (isHeroSel && accountId != 0) {
+
+            // Запустить пикер если есть accountId и идёт драфт
+            if (phase == GamePhase::DRAFT && accountId != 0 && !g_pickerRunning.load()) {
                 g_pickerRunning.store(true);
                 g_pickerThread = std::thread([]{
                     runPickerGui(MODEL_PATH, DB_PATH,
                                  g_pickerRunning, &g_pickerState, &g_portraitState);
-                });
-                g_portraitRunning.store(true);
-                {
-                    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
-                    g_portraitState.active = true;
-                }
-                g_portraitThread = std::thread([]{
-                    runPortraitCapture(g_gameInfo, DB_PATH,
-                                       g_portraitRunning, g_portraitState);
                 });
             }
         }
@@ -562,15 +552,7 @@ static void orchestratorMain() {
         } else if (isHeroSel) {
             phase3EndPending = false;
 
-            // Запустить пикер сразу при HERO_SELECTION
-            if (!g_pickerRunning.load() && accountId != 0) {
-                g_pickerRunning.store(true);
-                g_pickerThread = std::thread([]{
-                    runPickerGui(MODEL_PATH, DB_PATH,
-                                 g_pickerRunning, &g_pickerState, &g_portraitState);
-                });
-            }
-            // Запустить портреты
+            // Portrait capture — всегда при HERO_SELECTION (заполняет livepicks)
             if (!g_portraitRunning.load()) {
                 g_portraitRunning.store(true);
                 g_portraitState.clear();
@@ -581,6 +563,15 @@ static void orchestratorMain() {
                 g_portraitThread = std::thread([]{
                     runPortraitCapture(g_gameInfo, DB_PATH,
                                        g_portraitRunning, g_portraitState);
+                });
+            }
+
+            // Picker — только при наличии accountId
+            if (!g_pickerRunning.load() && accountId != 0) {
+                g_pickerRunning.store(true);
+                g_pickerThread = std::thread([]{
+                    runPickerGui(MODEL_PATH, DB_PATH,
+                                 g_pickerRunning, &g_pickerState, &g_portraitState);
                 });
             }
 
@@ -602,6 +593,38 @@ static void orchestratorMain() {
                     phase3EndPending = false;
                 }
             }
+        }
+
+        // ── Portrait → GUI: показываем драфт без пикера ─────────────────────
+        if (g_portraitRunning.load() && !g_pickerRunning.load()) {
+            PortraitResult snap[10];
+            {
+                std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+                for (int i = 0; i < 10; ++i) snap[i] = g_portraitState.slots[i];
+            }
+            std::lock_guard<std::mutex> lk(g_pickerState.mtx);
+            g_pickerState.gameStarted = true;
+            g_pickerState.isRadiant   = (ourSide == 1);
+            g_pickerState.ourSlot     = ourSlot;
+            for (int i = 0; i < 5; ++i) {
+                HeroSlotGui& s = g_pickerState.radiant[i];
+                s.heroId = snap[i].heroId;
+                s.filled = snap[i].valid();
+                s.isYou  = (ourSide == 1 && i == ourSlot - 1);
+                if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s", snap[i].heroName.c_str());
+                else s.name[0] = '\0';
+            }
+            for (int i = 0; i < 5; ++i) {
+                HeroSlotGui& s = g_pickerState.dire[i];
+                s.heroId = snap[5+i].heroId;
+                s.filled = snap[5+i].valid();
+                s.isYou  = (ourSide == 0 && i == ourSlot - 1);
+                if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s", snap[5+i].heroName.c_str());
+                else s.name[0] = '\0';
+            }
+            g_pickerState.recCount     = 0;
+            g_pickerState.ourHeroPicked = false;
+            g_pickerState.winProb      = 0.f;
         }
 
         // ── One-shot: ручная смена позиции вне фазы 3 → запись в DB + инференс ──
@@ -914,13 +937,8 @@ static void DrawDraftPanel(float panelW) {
         dl->AddRectFilled(cp, {cp.x+aW, cp.y+aH}, Ca(kCard2, 0.4f));
         dl->AddRect      (cp, {cp.x+aW, cp.y+aH}, C(kBorder));
 
-        bool hasPlayer_ = false;
-        { std::lock_guard<std::mutex> lk(g_player.mtx); hasPlayer_ = g_player.hasPlayer; }
-
-        const char* line1 = hasPlayer_ ? "Waiting for a game..." : "Enter Steam ID";
-        const char* line2 = hasPlayer_
-            ? (phase == GamePhase::IDLE ? "GSI server: listening on :62326" : phaseName(phase))
-            : "Enter your 32-bit Steam ID in the top-right corner";
+        const char* line1 = "Waiting for a game...";
+        const char* line2 = (phase == GamePhase::IDLE) ? "GSI server: listening on :3000" : phaseName(phase);
 
         ImVec2 ts1 = ImGui::CalcTextSize(line1);
         ImVec2 ts2 = ImGui::CalcTextSize(line2);
@@ -1201,7 +1219,11 @@ static void DrawPicksPanel(float panelW) {
                         r.gamesPlayer, r.wrPlayer, r.gamesImm, r.wrImm);
         }
         if (recCount == 0) {
-            ImGui::TextColored(kMuted, "  Computing recommendations...");
+            bool hasPlayer_ = false;
+            { std::lock_guard<std::mutex> lk(g_player.mtx); hasPlayer_ = g_player.hasPlayer; }
+            ImGui::TextColored(kMuted, hasPlayer_
+                ? "  Computing recommendations..."
+                : "  Enter Steam ID for recommendations");
         }
     }
 
@@ -1609,10 +1631,13 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         }
     }
 
+    // ── Фаза 1a: таблицы + справочник героев (фоновый поток) ────────────
+    std::thread([]{ runDataFetcherInit(); }).detach();
+
     // ── Start orchestrator thread ─────────────────────────────────────────
     g_orchestratorThread = std::thread(orchestratorMain);
 
-    // Запуск фазы 1 (за пределами мьютекса во избежание deadlock)
+    // Запуск фазы 1b (данные игрока, если сохранён)
     {
         long long savedId  = 0;
         bool      hasPlayer = false;
