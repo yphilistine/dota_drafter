@@ -2,6 +2,7 @@
 setlocal enabledelayedexpansion
 :: release_app.bat VERSION
 :: Example: release_app.bat 1.2.0
+:: Run from repo root (dota_drafter\)
 
 set "VER=%~1"
 if "%VER%"=="" (
@@ -17,15 +18,10 @@ for /f "tokens=1,2,3 delims=." %%a in ("%VER%") do (
 
 :: ── 1. Update version.h ─────────────────────────────────────────────────
 echo [1/6] Updating version.h to %VER%...
-set "VFILE=finalapp\version.h"
-set "VTMP=%VFILE%.tmp"
-> "%VTMP%" (
-    for /f "usebackq delims=" %%L in ("%VFILE%") do (
-        set "LINE=%%L"
-        echo !LINE:kAppVersion      = "1.0.0"=kAppVersion      = "%VER%"!
-    )
-)
-move /y "%VTMP%" "%VFILE%" >nul
+set "PS1=%TEMP%\dd_update_ver.ps1"
+> "%PS1%" echo (Get-Content 'finalapp\version.h' -Raw -Encoding utf8) -replace 'kAppVersion\s*=\s*"[^"]*"', ('kAppVersion      = "' + '%VER%' + '"') ^| Set-Content 'finalapp\version.h' -Encoding utf8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
+del "%PS1%" >nul 2>&1
 
 :: ── 2. Build ─────────────────────────────────────────────────────────────
 echo [2/6] Building app...
@@ -36,26 +32,21 @@ popd
 
 :: ── 3. Update .iss and build installer ───────────────────────────────────
 echo [3/6] Building installer...
-set "ISSFILE=installer\dota_draft_setup.iss"
-set "ISSTMP=%ISSFILE%.tmp"
-> "%ISSTMP%" (
-    for /f "usebackq delims=" %%L in ("%ISSFILE%") do (
-        set "LINE=%%L"
-        set "CHECK=!LINE:~0,16!"
-        if "!CHECK!"=="#define version " (
-            echo #define version "%VER%"
-        ) else (
-            echo !LINE!
-        )
+set "PS2=%TEMP%\dd_update_iss.ps1"
+> "%PS2%" echo (Get-Content 'installer\dota_draft_setup.iss' -Raw -Encoding utf8) -replace '#define version "[^"]*"', ('#define version "' + '%VER%' + '"') ^| Set-Content 'installer\dota_draft_setup.iss' -Encoding utf8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS2%"
+del "%PS2%" >nul 2>&1
+
+where "ISCC.exe" >nul 2>&1 && (
+    ISCC.exe "installer\dota_draft_setup.iss"
+) || (
+    if exist "C:\Program Files\Inno Setup 7\ISCC.exe" (
+        "C:\Program Files\Inno Setup 7\ISCC.exe" "installer\dota_draft_setup.iss"
+    ) else (
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\dota_draft_setup.iss"
     )
 )
-move /y "%ISSTMP%" "%ISSFILE%" >nul
-
-"C:\Program Files\Inno Setup 7\ISCC.exe" "%ISSFILE%"
-if %ERRORLEVEL% neq 0 (
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "%ISSFILE%"
-    if %ERRORLEVEL% neq 0 ( echo [FAIL] Installer build failed & exit /b 1 )
-)
+if %ERRORLEVEL% neq 0 ( echo [FAIL] Installer build failed & exit /b 1 )
 
 :: ── 4. SHA-256 ───────────────────────────────────────────────────────────
 echo [4/6] Computing SHA-256...
@@ -74,17 +65,16 @@ gh release create "v%VER%" installer\dota_drafter_setup.exe --title "v%VER%" --n
 :: ── 6. Update manifest.json ──────────────────────────────────────────────
 echo [6/6] Updating manifest.json...
 set "URL=https://github.com/yphilistine/dota_drafter/releases/download/v%VER%/dota_drafter_setup.exe"
-
-set "PSSCRIPT=%TEMP%\update_manifest.ps1"
-> "%PSSCRIPT%" (
+set "PS3=%TEMP%\dd_update_manifest.ps1"
+> "%PS3%" (
     echo $m = Get-Content 'manifest.json' -Raw ^| ConvertFrom-Json
     echo $m.app.version = '%VER%'
     echo $m.app.sha256 = '%SHA%'
     echo $m.app.url = '%URL%'
     echo $m ^| ConvertTo-Json -Depth 10 ^| Set-Content 'manifest.json' -Encoding utf8
 )
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PSSCRIPT%"
-del "%PSSCRIPT%" >nul 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS3%"
+del "%PS3%" >nul 2>&1
 
 git add manifest.json finalapp\version.h installer\dota_draft_setup.iss
 git commit -m "Release app v%VER%"
