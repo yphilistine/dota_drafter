@@ -1669,9 +1669,6 @@ static LRESULT CALLBACK UpdateWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         static HBRUSH bg = CreateSolidBrush(RGB(20, 20, 20));
         return (LRESULT)bg;
     }
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
     }
     return DefWindowProcW(h, msg, wp, lp);
 }
