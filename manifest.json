@@ -1,22 +1,22 @@
-{
-  "app": {
-    "version": "1.0.0",
-    "url": "https://github.com/yphilistine/dota_drafter/releases/download/v1.0.0/dota_drafter_setup.exe",
-    "sha256": "",
-    "mandatory": false
-  },
-  "data": {
-    "version": "2025.06.27",
-    "schema": 1,
-    "files": {
-      "draft_helper_abstract.cbm": {
-        "url": "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract.cbm",
-        "sha256": "e87fe38768e3b50cd7f45980f29877aba02471e0fb98a901679bb3dcf017407a"
-      },
-      "draft_helper_abstract_data.db": {
-        "url": "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract_data.db",
-        "sha256": "86e9ce2681e7cd9863b48871ae7bf215fcd638c79e2b95c3f65416429fbe415c"
-      }
-    }
-  }
+﻿{
+    "app":  {
+                "version":  "0.0.1",
+                "url":  "https://github.com/yphilistine/dota_drafter/releases/download/v0.0.1/dota_drafter_setup.exe",
+                "sha256":  "8de1056d4006260f4169027083f1d309ebc5e79c0ec2431aa579484e115ff281",
+                "mandatory":  false
+            },
+    "data":  {
+                 "version":  "2025.06.27",
+                 "schema":  1,
+                 "files":  {
+                               "draft_helper_abstract.cbm":  {
+                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract.cbm",
+                                                                 "sha256":  "e87fe38768e3b50cd7f45980f29877aba02471e0fb98a901679bb3dcf017407a"
+                                                             },
+                               "draft_helper_abstract_data.db":  {
+                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract_data.db",
+                                                                     "sha256":  "86e9ce2681e7cd9863b48871ae7bf215fcd638c79e2b95c3f65416429fbe415c"
+                                                                 }
+                           }
+             }
 }
