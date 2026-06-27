@@ -2,6 +2,7 @@
 setlocal enabledelayedexpansion
 :: pack_data.bat DATA_VERSION SCHEMA_VERSION
 :: Example: pack_data.bat 2025.07.01 1
+:: Run from repo root (dota_drafter\)
 
 set "DVER=%~1"
 set "SCHEMA=%~2"
@@ -38,20 +39,21 @@ gh release create "data-%DVER%" finalapp\draft_helper_abstract.cbm finalapp\draf
 :: ── 4. Update manifest.json ──────────────────────────────────────────────
 echo [4/5] Updating manifest.json...
 set "BASE_URL=https://github.com/yphilistine/dota_drafter/releases/download/data-%DVER%"
-
-set "PSSCRIPT=%TEMP%\update_data_manifest.ps1"
-> "%PSSCRIPT%" (
-    echo $m = Get-Content 'manifest.json' -Raw ^| ConvertFrom-Json
+set "PS1=%TEMP%\dd_update_data_manifest.ps1"
+(
+    echo $j = Get-Content 'manifest.json' -Raw
+    echo $m = ConvertFrom-Json $j
     echo $m.data.version = '%DVER%'
     echo $m.data.schema = [int]%SCHEMA%
     echo $m.data.files.'draft_helper_abstract.cbm'.url = '%BASE_URL%/draft_helper_abstract.cbm'
     echo $m.data.files.'draft_helper_abstract.cbm'.sha256 = '%SHA_CBM%'
     echo $m.data.files.'draft_helper_abstract_data.db'.url = '%BASE_URL%/draft_helper_abstract_data.db'
     echo $m.data.files.'draft_helper_abstract_data.db'.sha256 = '%SHA_DB%'
-    echo $m ^| ConvertTo-Json -Depth 10 ^| Set-Content 'manifest.json' -Encoding utf8
-)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PSSCRIPT%"
-del "%PSSCRIPT%" >nul 2>&1
+    echo $out = ConvertTo-Json $m -Depth 10
+    echo Set-Content 'manifest.json' $out -Encoding utf8
+) > "%PS1%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
+del "%PS1%" >nul 2>&1
 
 :: ── 5. Commit ────────────────────────────────────────────────────────────
 echo [5/5] Committing manifest.json...

@@ -19,7 +19,11 @@ for /f "tokens=1,2,3 delims=." %%a in ("%VER%") do (
 :: ── 1. Update version.h ─────────────────────────────────────────────────
 echo [1/6] Updating version.h to %VER%...
 set "PS1=%TEMP%\dd_update_ver.ps1"
-> "%PS1%" echo (Get-Content 'finalapp\version.h' -Raw -Encoding utf8) -replace 'kAppVersion\s*=\s*"[^"]*"', ('kAppVersion      = "' + '%VER%' + '"') ^| Set-Content 'finalapp\version.h' -Encoding utf8
+(
+    echo $c = Get-Content 'finalapp\version.h' -Raw -Encoding utf8
+    echo $c = $c -replace 'kAppVersion\s*=\s*"[^"]*"', 'kAppVersion      = "%VER%"'
+    echo Set-Content 'finalapp\version.h' $c -Encoding utf8 -NoNewline
+) > "%PS1%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
 del "%PS1%" >nul 2>&1
 
@@ -33,7 +37,11 @@ popd
 :: ── 3. Update .iss and build installer ───────────────────────────────────
 echo [3/6] Building installer...
 set "PS2=%TEMP%\dd_update_iss.ps1"
-> "%PS2%" echo (Get-Content 'installer\dota_draft_setup.iss' -Raw -Encoding utf8) -replace '#define version "[^"]*"', ('#define version "' + '%VER%' + '"') ^| Set-Content 'installer\dota_draft_setup.iss' -Encoding utf8
+(
+    echo $c = Get-Content 'installer\dota_draft_setup.iss' -Raw -Encoding utf8
+    echo $c = $c -replace '#define version "[^"]*"', '#define version "%VER%"'
+    echo Set-Content 'installer\dota_draft_setup.iss' $c -Encoding utf8 -NoNewline
+) > "%PS2%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS2%"
 del "%PS2%" >nul 2>&1
 
@@ -66,13 +74,16 @@ gh release create "v%VER%" installer\dota_drafter_setup.exe --title "v%VER%" --n
 echo [6/6] Updating manifest.json...
 set "URL=https://github.com/yphilistine/dota_drafter/releases/download/v%VER%/dota_drafter_setup.exe"
 set "PS3=%TEMP%\dd_update_manifest.ps1"
-> "%PS3%" (
-    echo $m = Get-Content 'manifest.json' -Raw ^| ConvertFrom-Json
-    echo $m.app.version = '%VER%'
-    echo $m.app.sha256 = '%SHA%'
-    echo $m.app.url = '%URL%'
-    echo $m ^| ConvertTo-Json -Depth 10 ^| Set-Content 'manifest.json' -Encoding utf8
-)
+(
+    echo $m = Get-Content 'manifest.json' -Raw
+    echo $m = $m -replace '"version":\s*"[^"]*"(,\s*$)', '"version": "%VER%"$1'
+    echo $j = ConvertFrom-Json $m
+    echo $j.app.version = '%VER%'
+    echo $j.app.sha256 = '%SHA%'
+    echo $j.app.url = '%URL%'
+    echo $out = ConvertTo-Json $j -Depth 10
+    echo Set-Content 'manifest.json' $out -Encoding utf8
+) > "%PS3%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS3%"
 del "%PS3%" >nul 2>&1
 
