@@ -24,6 +24,9 @@
 #include "common.h"
 #include "playerdatafetcher.h"
 #include "portrait_runner.h"
+#include "version.h"
+#include "version_utils.h"
+#include "updater.h"
 
 #include <thread>
 #include <atomic>
@@ -139,6 +142,9 @@ static std::map<std::string, ID3D11ShaderResourceView*> g_heroPortraits;
 
 // Конфигурация (из переменных окружения / умолчаний, затем read-only)
 static std::string g_stratzToken;
+
+// Баннер обновления: данные требуют более новую версию приложения
+static bool g_schemaBannerNeeded = false;
 static const char* DB_PATH    = "playerandlivestats.db";
 static const char* MODEL_PATH = "draft_helper_abstract";
 // Портреты + пикер: активны HERO_SELECTION + 5с. GUI показывает результат до конца игры.
@@ -1547,6 +1553,29 @@ static void RenderFrame() {
     DrawStatusBar(FULL);
     ImGui::Spacing();
 
+    // ── Баннеры совместимости ────────────────────────────────────────────
+    {
+        bool schemaErr = false;
+        char msg[256] = {};
+        {
+            std::lock_guard<std::mutex> lk(g_pickerState.mtx);
+            schemaErr = g_pickerState.schemaError;
+            if (schemaErr) std::memcpy(msg, g_pickerState.schemaMsg, sizeof(msg));
+        }
+        if (schemaErr) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f,0.8f,0.f,1.f));
+            ImGui::TextWrapped("%s", msg);
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+        if (g_schemaBannerNeeded) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f,0.8f,0.f,1.f));
+            ImGui::TextWrapped("A newer data version is available but requires an app update.");
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+    }
+
     float usedH    = ImGui::GetCursorPosY();
     float contentH = H - usedH - PAD;
     float leftW    = FULL * 0.575f;
@@ -1611,6 +1640,115 @@ static HICON CreateDIcon(int sz) {
     return icon;
 }
 
+// ─── Окно обновления (до D3D11/ImGui) ────────────────────────────────────────
+
+static HWND  g_updateWnd      = nullptr;
+static HWND  g_updateLabel    = nullptr;
+static HWND  g_updateBtn      = nullptr;
+static bool  g_retryClicked   = false;
+static constexpr int IDC_RETRY_BTN = 101;
+
+static LRESULT CALLBACK UpdateWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_COMMAND:
+        if (LOWORD(wp) == IDC_RETRY_BTN) g_retryClicked = true;
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(h, &ps);
+        HBRUSH br = CreateSolidBrush(RGB(20, 20, 20));
+        FillRect(hdc, &ps.rcPaint, br);
+        DeleteObject(br);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = (HDC)wp;
+        SetTextColor(hdc, RGB(220, 220, 220));
+        SetBkColor(hdc, RGB(20, 20, 20));
+        static HBRUSH bg = CreateSolidBrush(RGB(20, 20, 20));
+        return (LRESULT)bg;
+    }
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static void CreateUpdateWindow(HINSTANCE hInst) {
+    WNDCLASSEXW wc = {sizeof(wc)};
+    wc.lpfnWndProc   = UpdateWndProc;
+    wc.hInstance      = hInst;
+    wc.lpszClassName  = L"DotaDrafterUpdate";
+    wc.hbrBackground  = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wc.hCursor        = LoadCursor(nullptr, IDC_ARROW);
+    RegisterClassExW(&wc);
+
+    int sw = GetSystemMetrics(SM_CXSCREEN);
+    int sh = GetSystemMetrics(SM_CYSCREEN);
+    int w = 420, h = 130;
+
+    g_updateWnd = CreateWindowExW(WS_EX_TOPMOST,
+        L"DotaDrafterUpdate", L"Dota Drafter",
+        WS_POPUP | WS_BORDER,
+        (sw - w) / 2, (sh - h) / 2, w, h,
+        nullptr, nullptr, hInst, nullptr);
+
+    BOOL dark = TRUE;
+    DwmSetWindowAttribute(g_updateWnd, 20, &dark, sizeof(dark));
+
+    g_updateLabel = CreateWindowW(L"STATIC",
+        L"Checking for updates...",
+        WS_CHILD | WS_VISIBLE | SS_CENTER,
+        10, 20, w - 20, 40, g_updateWnd, nullptr, hInst, nullptr);
+
+    HFONT font = CreateFontW(18, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    SendMessage(g_updateLabel, WM_SETFONT, (WPARAM)font, TRUE);
+
+    g_updateBtn = CreateWindowW(L"BUTTON",
+        L"Try again",
+        WS_CHILD | BS_PUSHBUTTON | BS_FLAT,
+        (w - 140) / 2, 75, 140, 35,
+        g_updateWnd, (HMENU)(INT_PTR)IDC_RETRY_BTN, hInst, nullptr);
+    SendMessage(g_updateBtn, WM_SETFONT, (WPARAM)font, TRUE);
+
+    ShowWindow(g_updateWnd, SW_SHOW);
+    UpdateWindow(g_updateWnd);
+}
+
+static void SetUpdateStatus(const wchar_t* text) {
+    if (g_updateLabel) SetWindowTextW(g_updateLabel, text);
+    MSG msg;
+    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg); DispatchMessage(&msg);
+    }
+}
+
+static void ShowRetryButton(bool show) {
+    if (g_updateBtn) ShowWindow(g_updateBtn, show ? SW_SHOW : SW_HIDE);
+    g_retryClicked = false;
+}
+
+static void DestroyUpdateWindow() {
+    if (g_updateWnd) { DestroyWindow(g_updateWnd); g_updateWnd = nullptr; }
+    g_updateLabel = nullptr;
+    g_updateBtn   = nullptr;
+}
+
+static bool WaitForRetryClick() {
+    g_retryClicked = false;
+    MSG msg;
+    while (!g_retryClicked) {
+        if (GetMessage(&msg, nullptr, 0, 0) <= 0) return false;
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+        if (msg.message == WM_QUIT) return false;
+    }
+    return true;
+}
+
 // ─── Точка входа ─────────────────────────────────────────────────────────────
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     // Рабочая директория = папка с моделью (exe dir или parent, если exe в build/)
@@ -1641,6 +1779,102 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     Gdiplus::GdiplusStartupInput gdipInput;
     ULONG_PTR gdipToken = 0;
     Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);
+
+    // ── Update check (blocking, before any threads) ────────────────────────
+    {
+        checkPendingSwap();
+        cleanupStaging();
+
+        auto localVer = loadLocalVersion();
+        if (localVer.appVersion.empty()) {
+            localVer.appVersion = kAppVersion;
+            saveLocalVersion(localVer);
+        }
+
+        CreateUpdateWindow(hInst);
+
+        ManifestInfo manifest;
+        bool fetched = false;
+
+        // Retry loop: app requires internet
+        while (true) {
+            SetUpdateStatus(L"Checking for updates...");
+            ShowRetryButton(false);
+            fetched = fetchManifest(manifest);
+            if (fetched) break;
+
+            SetUpdateStatus(L"Failed to check for updates");
+            ShowRetryButton(true);
+            if (!WaitForRetryClick()) {
+                DestroyUpdateWindow();
+                Gdiplus::GdiplusShutdown(gdipToken);
+                return 0;
+            }
+        }
+
+        UpdateAction action = checkForUpdates(manifest, localVer);
+
+        if (action == UpdateAction::APP_UPDATE) {
+            SetUpdateStatus(L"Downloading app update...");
+            CreateDirectoryA("staging", nullptr);
+            std::string stagingPath = "staging\\dota_drafter_setup.exe";
+
+            bool ok = downloadToStaging(manifest.appUrl, manifest.appSha256,
+                stagingPath, [](size_t done, size_t total) {
+                    wchar_t buf[128];
+                    if (total > 0)
+                        swprintf_s(buf, L"Downloading update... %d%%",
+                                   (int)(done * 100 / total));
+                    else
+                        swprintf_s(buf, L"Downloading update... %zu KB", done / 1024);
+                    SetUpdateStatus(buf);
+                });
+
+            if (ok) {
+                DestroyUpdateWindow();
+                STARTUPINFOA si = {sizeof(si)};
+                PROCESS_INFORMATION pi = {};
+                char cmdLine[512];
+                std::snprintf(cmdLine, sizeof(cmdLine),
+                    "\"%s\" /SILENT /SUPPRESSMSGBOXES", stagingPath.c_str());
+                CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
+                    CREATE_NEW_CONSOLE | DETACHED_PROCESS,
+                    nullptr, nullptr, &si, &pi);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                Gdiplus::GdiplusShutdown(gdipToken);
+                return 0;
+            }
+            LOG_WARN("App update download failed, continuing with current version");
+        }
+
+        if (action == UpdateAction::DATA_UPDATE) {
+            SetUpdateStatus(L"Downloading data update...");
+            bool staged = downloadAndStageData(manifest,
+                [](size_t done, size_t total) {
+                    wchar_t buf[128];
+                    if (total > 0)
+                        swprintf_s(buf, L"Downloading data... %d%%",
+                                   (int)(done * 100 / total));
+                    else
+                        swprintf_s(buf, L"Downloading data... %zu KB", done / 1024);
+                    SetUpdateStatus(buf);
+                });
+            if (staged) {
+                SetUpdateStatus(L"Applying data update...");
+                if (swapDataFiles(manifest))
+                    LOG_INFO("Data updated to version " << manifest.dataVersion);
+                else
+                    LOG_ERR("Data swap failed, using existing data");
+            }
+        }
+
+        if (action == UpdateAction::SCHEMA_TOO_NEW) {
+            g_schemaBannerNeeded = true;
+        }
+
+        DestroyUpdateWindow();
+    }
 
     // ── Config from environment ───────────────────────────────────────────
     if (const char* e = std::getenv("STRATZ_API_KEY")) g_stratzToken = e;
@@ -1697,8 +1931,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     int winX = (sw - winW) / 2;
     int winY = (std::max)(0, (sh - winH) / 2);
 
+    wchar_t titleBuf[128];
+    swprintf_s(titleBuf, L"Dota_Drafter v%S - Dota 2 Draft Analyzer", kAppVersion);
     HWND hwnd = CreateWindowW(L"Dota_Drafter",
-        L"Dota_Drafter - Dota 2 Draft Analyzer",
+        titleBuf,
         WS_OVERLAPPEDWINDOW, winX, winY, winW, winH,
         nullptr, nullptr, hInst, nullptr);
     g_Hwnd = hwnd;

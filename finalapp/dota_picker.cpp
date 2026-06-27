@@ -11,6 +11,9 @@
 #include <windows.h>
 
 #include "shared_types.h"
+#include "version.h"
+#include "version_utils.h"
+#include "common.h"
 
 #include <string>
 #include <vector>
@@ -539,12 +542,33 @@ int runPickerGui(const char* model_path, const char* db_path,
             return m;
         };
         std::string base(model_path);
+        std::string dataDbPath = base + "_data.db";
+
+        // ── Schema compatibility gate ────────────────────────────────────
+        try {
+            auto dm = readDataDbMeta(dataDbPath);
+            if (dm.schema != kSupportedSchema) {
+                LOG_ERR("[picker] Data schema " << dm.schema
+                        << " != app schema " << kSupportedSchema);
+                if (guiState) {
+                    std::lock_guard<std::mutex> lk(guiState->mtx);
+                    guiState->schemaError = true;
+                    std::snprintf(guiState->schemaMsg, sizeof(guiState->schemaMsg),
+                        "Incompatible data (schema %d, app supports %d). Update the app.",
+                        dm.schema, kSupportedSchema);
+                }
+                return 1;
+            }
+        } catch (const std::exception& ex) {
+            LOG_WARN("[picker] Cannot read data meta: " << ex.what()
+                     << " — proceeding (legacy data)");
+        }
+
         ModelCalcerHandle* model = loadModel(base + ".cbm");
 
         DB db(db_path);
         auto hero_map = loadHeroes(db.get());
 
-        std::string dataDbPath = std::string(model_path) + "_data.db";
         DB dataDb(dataDbPath.c_str());
         auto md = loadMatchupData(dataDb.get());
 

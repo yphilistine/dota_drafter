@@ -91,7 +91,7 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 :: ─────────────────────────────────────────────────────────────────────────────
 
 :: ── Компилируем version.rc → version.res ─────────────────────────────────────
-rc.exe /nologo /fo "%OUT_DIR%\version.res" version.rc
+rc.exe /nologo /dVER_MAJOR=1 /dVER_MINOR=0 /dVER_PATCH=0 /dVER_BUILD=0 /fo "%OUT_DIR%\version.res" version.rc
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] rc.exe: version.rc
     exit /b 1
@@ -120,6 +120,8 @@ cl.exe ^
     livestatsfetcher.cpp ^
     dota_picker.cpp ^
     dota2_capture.cpp ^
+    version_utils.cpp ^
+    updater.cpp ^
     /link ^
     /LIBPATH:"%VCPKG%\lib" ^
     /LIBPATH:"%CATBOOST%" ^

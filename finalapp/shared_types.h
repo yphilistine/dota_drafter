@@ -107,6 +107,10 @@ struct GuiPickerState {
     // Счётчик завершённых циклов инференса (атомарный, без мьютекса)
     std::atomic<int> inferenceGen{0};
 
+    // Ошибка совместимости схемы данных
+    bool schemaError = false;
+    char schemaMsg[256] = {};
+
     void reset() {
         std::lock_guard<std::mutex> lk(mtx);
         gameStarted     = false;
@@ -115,6 +119,8 @@ struct GuiPickerState {
         ourPosition     = 0;
         recCount        = 0;
         ourHeroName[0]  = '\0';
+        schemaError     = false;
+        schemaMsg[0]    = '\0';
         for (auto& s : radiant) s = {};
         for (auto& s : dire)    s = {};
         for (auto& r : recs)    r = {};
