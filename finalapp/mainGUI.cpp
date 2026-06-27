@@ -1684,32 +1684,52 @@ static void CreateUpdateWindow(HINSTANCE hInst) {
 
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
-    int w = 420, h = 130;
+    int w = 480, h = 180;
 
-    g_updateWnd = CreateWindowExW(WS_EX_TOPMOST,
-        L"DotaDrafterUpdate", L"Dota Drafter",
-        WS_POPUP | WS_BORDER,
+    g_updateWnd = CreateWindowExW(0,
+        L"DotaDrafterUpdate", L"Dota Drafter - Update",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         (sw - w) / 2, (sh - h) / 2, w, h,
         nullptr, nullptr, hInst, nullptr);
 
+    // Тёмная тема
     BOOL dark = TRUE;
     DwmSetWindowAttribute(g_updateWnd, 20, &dark, sizeof(dark));
+    COLORREF capColor  = RGB(12, 12, 12);
+    COLORREF textColor = RGB(240, 240, 240);
+    COLORREF borColor  = RGB(99, 199, 118);
+    DwmSetWindowAttribute(g_updateWnd, 35, &capColor,  sizeof(capColor));
+    DwmSetWindowAttribute(g_updateWnd, 36, &textColor, sizeof(textColor));
+    DwmSetWindowAttribute(g_updateWnd, 34, &borColor,  sizeof(borColor));
+
+    // Иконка
+    HICON iconSm = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON, 16, 16, 0);
+    HICON iconBg = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON, 32, 32, 0);
+    if (iconSm) SendMessage(g_updateWnd, WM_SETICON, ICON_SMALL, (LPARAM)iconSm);
+    if (iconBg) SendMessage(g_updateWnd, WM_SETICON, ICON_BIG,   (LPARAM)iconBg);
+
+    RECT cr;
+    GetClientRect(g_updateWnd, &cr);
+    int cw = cr.right - cr.left;
+    int ch = cr.bottom - cr.top;
 
     g_updateLabel = CreateWindowW(L"STATIC",
         L"Checking for updates...",
         WS_CHILD | WS_VISIBLE | SS_CENTER,
-        10, 20, w - 20, 40, g_updateWnd, nullptr, hInst, nullptr);
+        10, 25, cw - 20, 50, g_updateWnd, nullptr, hInst, nullptr);
 
-    HFONT font = CreateFontW(18, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+    HFONT font = CreateFontW(24, 0, 0, 0, FW_NORMAL, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
     SendMessage(g_updateLabel, WM_SETFONT, (WPARAM)font, TRUE);
 
+    HFONT btnFont = CreateFontW(20, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
     g_updateBtn = CreateWindowW(L"BUTTON",
         L"Try again",
         WS_CHILD | BS_PUSHBUTTON | BS_FLAT,
-        (w - 140) / 2, 75, 140, 35,
+        (cw - 160) / 2, ch - 55, 160, 40,
         g_updateWnd, (HMENU)(INT_PTR)IDC_RETRY_BTN, hInst, nullptr);
-    SendMessage(g_updateBtn, WM_SETFONT, (WPARAM)font, TRUE);
+    SendMessage(g_updateBtn, WM_SETFONT, (WPARAM)btnFont, TRUE);
 
     ShowWindow(g_updateWnd, SW_SHOW);
     UpdateWindow(g_updateWnd);
