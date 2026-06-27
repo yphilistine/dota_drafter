@@ -17,24 +17,58 @@
 #include "portrait_runner.h"
 #include "dota2_capture.h"
 #include "dhash.h"
-
-#if __has_include("hero_hashes.h")
-#  include "hero_hashes.h"
-#  define HERO_DB_LOADED 1
-#endif
-
 #include "pos_ocr.h"
 
 #include <map>
 #include <string>
+#include <vector>
 #include <algorithm>
 #include <chrono>
 #include <thread>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <sqlite3.h>
 
 using namespace dota2;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Загрузка hero_hashes.dat (бинарный формат: uint32 count, затем записи)
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct HeroHashFile {
+    std::vector<std::string>          names;
+    std::vector<dota2::HeroHashEntry> entries;
+    bool loaded = false;
+};
+
+static HeroHashFile loadHeroHashes(const char* path) {
+    HeroHashFile result;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return result;
+
+    uint32_t count = 0;
+    f.read(reinterpret_cast<char*>(&count), 4);
+    if (!f || count > 10000) return result;
+
+    result.names.resize(count);
+    result.entries.resize(count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        uint16_t nameLen = 0;
+        f.read(reinterpret_cast<char*>(&nameLen), 2);
+        if (!f) return result;
+
+        result.names[i].resize(nameLen);
+        f.read(result.names[i].data(), nameLen);
+        f.read(reinterpret_cast<char*>(result.entries[i].mat.v), 64 * sizeof(float));
+        if (!f) return result;
+
+        result.entries[i].name = result.names[i].c_str();
+    }
+    result.loaded = true;
+    return result;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Утилиты
@@ -437,12 +471,14 @@ void runPortraitCapture(GameInfo&           gameInfo,
     auto nameToId = loadHeroNameToId(db);
     std::printf("[portrait] Справочник героев: %zu записей\n", nameToId.size());
 
-#ifdef HERO_DB_LOADED
-    HeroRecognizer recognizer(g_hero_db, g_hero_db_size);
-    std::printf("[portrait] Hash-база: %zu героев\n", recognizer.size());
-#else
-    std::puts("[portrait] ВНИМАНИЕ: hero_hashes.h не найден");
-#endif
+    auto hashFile = loadHeroHashes("hero_hashes.dat");
+    HeroRecognizer recognizer(nullptr, 0);
+    if (hashFile.loaded) {
+        recognizer = HeroRecognizer(hashFile.entries.data(), hashFile.entries.size());
+        std::printf("[portrait] Hash-база: %zu героев\n", recognizer.size());
+    } else {
+        std::puts("[portrait] ВНИМАНИЕ: hero_hashes.dat не найден");
+    }
 
     PosOcrRecognizer posRecognizer;
     if (!posRecognizer.isAvailable())
@@ -505,14 +541,12 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 const Bitmap& bmp = portraits[slot];
                 if (bmp.empty()) continue;
 
-#ifdef HERO_DB_LOADED
                 HeroMatch m = recognizer.recognize(bmp);
-                if (!m.name || m.score < 0.5f) continue;  // ниже порога
+                if (!m.name || m.score < 0.5f) continue;
 
                 bool isNullHero  = (std::strcmp(m.name, "NULL") == 0);
                 int  detectedId  = isNullHero ? 0 : lookupHeroId(nameToId, m.name);
 
-                // Обновляем SharedPortraitState (для не-NULL)
                 if (!isNullHero && detectedId > 0) {
                     std::lock_guard<std::mutex> lk(out.mtx);
                     out.slots[slot].heroName = m.name;
@@ -521,18 +555,13 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 }
 
                 if (detectedId != lastHeroId[slot]) {
-                    // Правила замены:
-                    // • слот пуст (NULL/0) → герой заполняет при любой score >= 0.5
-                    // • слот занят героем → замена (другим героем или NULL)
-                    //   только если новая уверенность ВЫШЕ сохранённой
                     bool slotEmpty   = (lastHeroId[slot] == 0);
                     bool shouldUpdate = slotEmpty
-                        ? (detectedId > 0)               // герой всегда заполняет пустой слот
-                        : (m.score > lastScore[slot]);   // замена только с большей уверенностью
+                        ? (detectedId > 0)
+                        : (m.score > lastScore[slot]);
 
                     if (shouldUpdate) {
                         if (detectedId == 0) {
-                            // NULL с большей уверенностью → очищаем
                             clearHeroSlot(db, slot);
                             {
                                 std::lock_guard<std::mutex> lk(out.mtx);
@@ -555,7 +584,6 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 } else if (m.score > lastScore[slot]) {
                     lastScore[slot] = m.score;
                 }
-#endif
             }
 
             // ── Распознавание позиций (только своя команда) ──────────────

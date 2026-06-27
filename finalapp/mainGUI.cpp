@@ -29,6 +29,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <vector>
 #include <map>
 #include <cstdio>
 #include <cstring>
@@ -296,15 +297,47 @@ static ID3D11ShaderResourceView* createTextureFromImageData(
     return result;
 }
 
-// ─── Загрузка портретов героев (встроены в exe) ──────────────────────────────
-#include "hero_portraits_data.h"
+// ─── Загрузка портретов героев из папки assets/ ──────────────────────────────
 
 static void loadHeroPortraits() {
-    for (size_t i = 0; i < g_embeddedPortraitsCount; ++i) {
-        auto& ep = g_embeddedPortraits[i];
-        auto* srv = createTextureFromImageData(ep.data, ep.size);
-        if (srv) g_heroPortraits[ep.name] = srv;
-    }
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(L"assets\\*.png", &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+
+        wchar_t path[MAX_PATH];
+        _snwprintf_s(path, MAX_PATH, L"assets\\%s", fd.cFileName);
+
+        HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ,
+                                   nullptr, OPEN_EXISTING, 0, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) continue;
+
+        DWORD sz = GetFileSize(hFile, nullptr);
+        if (sz == 0 || sz == INVALID_FILE_SIZE) { CloseHandle(hFile); continue; }
+
+        std::vector<uint8_t> buf(sz);
+        DWORD bytesRead = 0;
+        ReadFile(hFile, buf.data(), sz, &bytesRead, nullptr);
+        CloseHandle(hFile);
+        if (bytesRead != sz) continue;
+
+        auto* srv = createTextureFromImageData(buf.data(), buf.size());
+        if (!srv) continue;
+
+        // Имя героя = имя файла без .png
+        int len = WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1,
+                                      nullptr, 0, nullptr, nullptr);
+        std::string name(len - 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1,
+                            name.data(), len, nullptr, nullptr);
+        if (name.size() > 4) name.resize(name.size() - 4); // strip ".png"
+
+        g_heroPortraits[name] = srv;
+    } while (FindNextFileW(hFind, &fd));
+
+    FindClose(hFind);
 }
 
 // ─── OpenDota: получение имени и аватара игрока (фоновый поток) ───────────────

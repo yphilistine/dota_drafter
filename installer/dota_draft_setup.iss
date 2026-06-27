@@ -40,6 +40,8 @@ Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\catboostmodel.dll"; Des
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract_data.db"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract.cbm"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\hero_hashes.dat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\assets\*.png"; DestDir: "{app}\assets"; Flags: ignoreversion
 
 Source: "C:\Users\ANDREY\Documents\dota_drafter\installer\gamestate_integration_dota2.cfg"; DestDir: "{code:GetDotaCfgPath}"; Flags: ignoreversion; Check: DotaCfgPathExists
 
