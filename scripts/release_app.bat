@@ -87,7 +87,7 @@ set "PS3=%TEMP%\dd_update_manifest.ps1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS3%"
 del "%PS3%" >nul 2>&1
 
-git add manifest.json finalapp\version.h installer\dota_draft_setup.iss
+git add manifest.json finalapp\version.h installer\dota_draft_setup.iss installer\dota_drafter_setup.exe
 git commit -m "Release app v%VER%"
 git push
 
