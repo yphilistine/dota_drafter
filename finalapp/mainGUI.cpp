@@ -1603,7 +1603,7 @@ static void RenderFrame() {
 
     DrawHeader(FULL);
 
-    ImGui::Spacing();
+    ImGui::Dummy({0, 6.f});
     DrawStatusBar(FULL);
     ImGui::Spacing();
 
