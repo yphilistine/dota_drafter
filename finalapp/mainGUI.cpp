@@ -1350,7 +1350,7 @@ static void DrawStatusBar(float fullW) {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(1,1,1,0.2f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btnSz * 0.5f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
-        if (ImGui::Button("\xe2\x86\xbb##refresh", {btnSz, btnSz})) {
+        if (ImGui::Button("R##refresh", {btnSz, btnSz})) {
             long long aid = 0;
             { std::lock_guard<std::mutex> lk(g_player.mtx); aid = g_player.accountId; }
             if (aid > 0) startPhase1(aid);
@@ -1875,11 +1875,20 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                 saveLocalVersion(localVer);
 
                 SetUpdateStatus(L"Installing update...");
+
+                // Запуск через cmd с задержкой — даём процессу время на выход,
+                // иначе Inno не сможет перезаписать залоченный exe
+                char fullStagingPath[MAX_PATH];
+                GetFullPathNameA(stagingPath.c_str(), MAX_PATH, fullStagingPath, nullptr);
+
                 STARTUPINFOA si = {sizeof(si)};
+                si.dwFlags = STARTF_USESHOWWINDOW;
+                si.wShowWindow = SW_HIDE;
                 PROCESS_INFORMATION pi = {};
-                char cmdLine[512];
+                char cmdLine[1024];
                 std::snprintf(cmdLine, sizeof(cmdLine),
-                    "\"%s\" /SILENT /SUPPRESSMSGBOXES", stagingPath.c_str());
+                    "cmd.exe /c \"timeout /t 3 /nobreak >nul & \"%s\" /SILENT /SUPPRESSMSGBOXES\"",
+                    fullStagingPath);
                 if (CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
                         CREATE_NEW_CONSOLE | DETACHED_PROCESS,
                         nullptr, nullptr, &si, &pi)) {
