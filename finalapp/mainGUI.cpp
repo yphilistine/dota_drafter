@@ -1876,21 +1876,27 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
                 SetUpdateStatus(L"Installing update...");
 
-                // Запуск через cmd с задержкой — даём процессу время на выход,
-                // иначе Inno не сможет перезаписать залоченный exe
+                // Написать .bat который ждёт выхода процесса, потом запускает инсталлятор
                 char fullStagingPath[MAX_PATH];
                 GetFullPathNameA(stagingPath.c_str(), MAX_PATH, fullStagingPath, nullptr);
+
+                std::string batPath = std::string(fullStagingPath) + ".bat";
+                {
+                    std::ofstream bat(batPath, std::ios::trunc);
+                    bat << "@echo off\n";
+                    bat << "ping -n 4 127.0.0.1 >nul\n";
+                    bat << "\"" << fullStagingPath << "\" /SILENT /SUPPRESSMSGBOXES\n";
+                    bat << "del \"%~f0\"\n";
+                }
 
                 STARTUPINFOA si = {sizeof(si)};
                 si.dwFlags = STARTF_USESHOWWINDOW;
                 si.wShowWindow = SW_HIDE;
                 PROCESS_INFORMATION pi = {};
                 char cmdLine[1024];
-                std::snprintf(cmdLine, sizeof(cmdLine),
-                    "cmd.exe /c \"timeout /t 3 /nobreak >nul & \"%s\" /SILENT /SUPPRESSMSGBOXES\"",
-                    fullStagingPath);
+                std::snprintf(cmdLine, sizeof(cmdLine), "cmd.exe /c \"%s\"", batPath.c_str());
                 if (CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
-                        CREATE_NEW_CONSOLE | DETACHED_PROCESS,
+                        CREATE_NO_WINDOW | DETACHED_PROCESS,
                         nullptr, nullptr, &si, &pi)) {
                     CloseHandle(pi.hProcess);
                     CloseHandle(pi.hThread);
