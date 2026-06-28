@@ -51,6 +51,11 @@ Name: "{group}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\a
 Name: "{userdesktop}\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#appname}"; Filename: "{app}\{#exename}"; IconFilename: "{app}\app_icon.ico"; Tasks: quicklaunchicon
 
+[Run]
+
+Filename: "{app}\{#exename}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#exename}"; Flags: nowait skipifdoesntexist; Check: IsSilentInstall
+
 [UninstallDelete]
 
 Type: filesandordirs; Name: "{app}"
@@ -73,4 +78,9 @@ end;
 function DotaCfgPathExists(): Boolean;
 begin
   Result := DirExists(GetDotaCfgPath(''));
+end;
+
+function IsSilentInstall(): Boolean;
+begin
+  Result := WizardSilent();
 end;

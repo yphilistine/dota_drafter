@@ -1757,6 +1757,8 @@ static void CreateUpdateWindow(HINSTANCE hInst) {
 
 static void SetUpdateStatus(const wchar_t* text) {
     if (g_updateLabel) SetWindowTextW(g_updateLabel, text);
+    if (g_updateWnd) RedrawWindow(g_updateWnd, nullptr, nullptr,
+                                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     MSG msg;
     while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg); DispatchMessage(&msg);
@@ -1868,21 +1870,29 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                 });
 
             if (ok) {
-                DestroyUpdateWindow();
+                // Обновить version.json чтобы при следующем запуске не качать снова
+                localVer.appVersion = manifest.appVersion;
+                saveLocalVersion(localVer);
+
+                SetUpdateStatus(L"Installing update...");
                 STARTUPINFOA si = {sizeof(si)};
                 PROCESS_INFORMATION pi = {};
                 char cmdLine[512];
                 std::snprintf(cmdLine, sizeof(cmdLine),
                     "\"%s\" /SILENT /SUPPRESSMSGBOXES", stagingPath.c_str());
-                CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
-                    CREATE_NEW_CONSOLE | DETACHED_PROCESS,
-                    nullptr, nullptr, &si, &pi);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
+                if (CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
+                        CREATE_NEW_CONSOLE | DETACHED_PROCESS,
+                        nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                }
+                DestroyUpdateWindow();
                 Gdiplus::GdiplusShutdown(gdipToken);
                 return 0;
             }
-            LOG_WARN("App update download failed, continuing with current version");
+            LOG_WARN("App update download/verify failed — sha256 mismatch or network error");
+            SetUpdateStatus(L"Update failed, starting current version...");
+            Sleep(2000);
         }
 
         if (action == UpdateAction::DATA_UPDATE) {
