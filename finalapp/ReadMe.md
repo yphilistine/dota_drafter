@@ -19,20 +19,24 @@
 
 **GUI** — ImGui/D3D11 окно с двумя панелями: состояние драфта (Radiant/Dire) и рекомендации top-10.
 
+**Автообновление** — при запуске проверяет manifest.json на GitHub, скачивает и устанавливает обновления приложения и данных.
+
 ---
 
 ## Возможности
 
 - **Графический интерфейс** — ImGui/D3D11 окно
+- **Автообновление** — проверка обновлений при старте, скачивание app/data, silent install + перезапуск
 - **Ввод Friend ID прямо в интерфейсе** — без аргументов командной строки
 - **Карточка игрока** — аватар и имя из OpenDota профиля
 - **Панель драфта** — 10 слотов с портретами и кликабельными позициями
 - **Панель рекомендаций** — топ-10 героев с winrate и статистикой
-- **Win probability bar** — цветовая индикация (зелёный ≥55%, жёлтый 50–55%, красный <50%)
+- **Win probability bar** — цветовая индикация (зелёный >=55%, жёлтый 50-55%, красный <50%)
 - **Overlay-кнопка [D]** — прозрачная кнопка поверх Dota 2, переключает фокус
 - **Распознавание героев и позиций** — захват портретов каждые 500мс
 - **Ручной выбор позиций** — кликабельный popup с автоматическим свапом
 - **Драфт без Friend ID** — портреты распознаются и отображаются без ввода ID
+- **Кнопка Refresh** — перезагрузка данных игрока без перезапуска
 - **Поддержка прокси** — SOCKS5 / HTTP для доступа к OpenDota
 - **Многопоточность** — GUI, оркестратор, GSI-сервер, портреты, пикер работают параллельно
 - **DPI-масштабирование** — 125%, 150%, 200% автоматически
@@ -47,16 +51,46 @@ Dota_Drafter.exe                    Исполняемый файл (ImGui GUI)
 catboostmodel.dll                   CatBoost runtime
 
 draft_helper_abstract.cbm           ML-модель (одна, все фазы драфта)
-draft_helper_abstract_data.db       Matchup-данные модели (SQLite)
+draft_helper_abstract_data.db       Matchup-данные модели (SQLite, содержит meta-таблицу)
 
-hero_hashes.h                       База хешей портретов героев
-pos_hashes.h                        База хешей индикаторов позиций
-hero_portraits_data.h               Встроенные PNG-портреты героев
+hero_hashes.dat                     База хешей портретов героев (бинарный)
+assets/*.png                        PNG-портреты героев для GUI
 playerandlivestats.db               Данные игрока (создаётся автоматически)
+version.json                        Локальное состояние версий (hidden, создаётся автоматически)
 
-gamestate_integration_dota2.cfg     Конфигурация GSI (скопировать один раз):
-    → ..\dota 2 beta\game\dota\cfg\gamestate_integration\
+gamestate_integration_dota2.cfg     Конфигурация GSI (устанавливается инсталлятором)
 ```
+
+---
+
+## Система обновлений
+
+### Как работает
+
+При каждом запуске приложение проверяет `manifest.json` на GitHub:
+1. Если нет подключения — показывает окно "Failed to check for updates" с кнопкой "Try again"
+2. Если есть обновление приложения — скачивает инсталлятор, проверяет SHA-256, запускает silent install
+3. Если есть обновление данных — скачивает .cbm и _data.db, проверяет SHA-256, подменяет файлы
+4. Гейт совместимости — если schema данных не совпадает с поддерживаемой приложением, показывает баннер
+
+### Версионирование
+
+| Версия | Формат | Когда меняется |
+|--------|--------|----------------|
+| `app_version` | `MAJOR.MINOR.PATCH` | Новый билд приложения |
+| `data_version` | `YYYY.MM.DD` | Ретрейн модели или обновление данных |
+| `schema` | Целое число | Изменение формата данных (таблицы, buildVector) |
+
+### Правила релиза
+
+- **schema++** + `app.mandatory=true`: изменена раскладка фич/таблиц или buildVector
+- Только **data_version++**: чистый ретрейн на тех же фичах
+- Только **app_version++**: изменения в UI/логике без изменения формата данных
+
+### Релиз через VS Code
+
+- **Release App**: Tasks → "Release App" → ввести версию (напр. `1.0.1`)
+- **Release Data**: Tasks → "Release Data" → ввести версию данных и схему
 
 ---
 
@@ -67,116 +101,60 @@ gamestate_integration_dota2.cfg     Конфигурация GSI (скопиро
 | `catboostmodel.dll` | CatBoost C API runtime |
 | vcpkg | libcurl, sqlite3, openssl, lz4, zlib, nlohmann-json (static) |
 | ImGui | Встроена как `imgui.lib` (D3D11 backend) |
-| Windows SDK | d3d11, dxgi, d3dcompiler, dwmapi, gdiplus |
+| Windows SDK | d3d11, dxgi, d3dcompiler, dwmapi, gdiplus, bcrypt |
 
 ---
 
 ## Установка
 
-1. **CatBoost** — положить `catboostmodel.dll` и `catboostmodel.lib` в `C:\catboost`
+Скачать `dota_drafter_setup.exe` из [GitHub Releases](https://github.com/yphilistine/dota_drafter/releases) и запустить. Инсталлятор:
+- Устанавливает в `%LOCALAPPDATA%\Dota_Drafter` (без прав админа)
+- Копирует GSI-конфигурацию в папку Dota 2
+- Создаёт ярлыки
 
-2. **GSI** — скопировать `gamestate_integration_dota2.cfg` в папку Dota 2:
-   ```
-   C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\
-     game\dota\cfg\gamestate_integration\
-   ```
-
-3. **Модель** — положить рядом с exe:
-   ```
-   draft_helper_abstract.cbm
-   draft_helper_abstract_data.db
-   ```
-
-4. **Переменные окружения** (опционально):
-   ```
-   set STRATZ_API_KEY=eyJ...
-   set DOTA_PROXY=socks5://127.0.0.1:7890
-   ```
+Переменные окружения (опционально):
+```
+set STRATZ_API_KEY=eyJ...
+set DOTA_PROXY=socks5://127.0.0.1:7890
+```
 
 ---
 
 ## Запуск
 
 ```
-build\Dota_Drafter.exe
+Dota_Drafter.exe
 ```
 
-Приложение работает сразу — драфт отображается без ввода ID.
-Для рекомендаций ввести Friend ID в интерфейсе (верхний правый угол).
+При первом запуске ввести Friend ID в интерфейсе (верхний правый угол).
+Обновления проверяются автоматически.
 
-> **Friend ID** — числовой ID из Dota 2 профиля.
-> Пример: `1261660135`
+> **Friend ID** — числовой ID из Dota 2 профиля. Пример: `1261660135`
 
 ---
 
 ## Фазы работы
 
-### Фаза 1a — Инициализация (при старте, без ID)
+### Фаза 0 — Обновление (при старте)
+
+Проверяет manifest.json на GitHub, скачивает обновления app/data если доступны.
+Без интернета — приложение не запускается (кнопка "Try again").
+
+### Фаза 1a — Инициализация (без ID)
 
 Загружает справочник героев из OpenDota, создаёт таблицы SQLite.
-Необходима для распознавания героев portrait capture.
 
 ### Фаза 1b — Данные игрока (при вводе Friend ID)
 
-Загружает из OpenDota и STRATZ:
-- Статистика игрока по героям (все режимы + ranked)
-- История матчей за 90 дней (STRATZ GraphQL батчами)
-
-Статус отображается в GUI: спиннер → зелёная точка "Ready" / красная "Error".
+Загружает из OpenDota и STRATZ. Кнопка Refresh в статус-баре позволяет перезагрузить.
 
 ### Фаза 2 — Ожидание матча
 
-GSI-сервер слушает порт. Ждёт подключения Dota 2 и начала матча.
-Статус игры: Waiting / Draft / In Game / Post Game.
-Таймаут: если GSI не присылает данные 5 секунд → сброс на IDLE.
+GSI-сервер слушает порт 62326. Статус игры в статус-баре.
 
 ### Фаза 3 — HERO_SELECTION
 
-**Portrait Capture** (работает без Friend ID):
-- Захватывает портреты и позиции HUD каждые 500мс
-- Распознаёт героев (Pearson ≥ 0.80) и позиции
-- Записывает в `livepicks` и `SharedPortraitState`
-- Результаты отображаются в GUI через portrait→GUI sync
-
-**ML Picker** (требует Friend ID):
-- Читает `livepicks` каждые 500мс
-- Если наш слот пустой — показывает топ-10 рекомендаций
-- Если наш герой выбран — показывает P(win)
-
-Оба потока продолжают работать 5 секунд после окончания HERO_SELECTION.
-
----
-
-## Интерфейс
-
-### Шапка
-- Логотип **[D]** + заголовок
-- Карточка игрока: аватар, имя, Friend ID (кликабельно для редактирования)
-
-### StatusBar
-- **Data** — статус загрузки данных игрока
-- **Game** — фаза матча (Waiting / Draft / In Game / Post Game)
-- **Match ID** — ID текущего матча
-
-### Панель драфта (левая, 57.5%)
-- 5 слотов Radiant + 5 слотов Dire
-- Портрет героя, имя, кликабельная позиция (для своей команды)
-- Позиции: клик → popup 1-5, автоматический свап занятых позиций
-- Win probability bar с цветовой индикацией
-
-### Панель рекомендаций (правая, 42.5%)
-- Без Friend ID: "Enter Friend ID for recommendations"
-- С Friend ID: топ-10 героев с winrate и статистикой
-- После выбора героя: наш герой + P(win)
-
----
-
-## Overlay-кнопка [D]
-
-Прозрачная кнопка **[D]** поверх Dota 2 HUD (WS_EX_LAYERED с per-pixel alpha).
-- Позиция подстраивается под разрешение и аспект (4:3 / 16:10 / 16:9 / 21:9)
-- Клик переключает фокус между Dota 2 и приложением
-- Видна только когда Dota 2 или приложение на переднем плане
+Portrait capture + ML Picker работают параллельно. Schema gate проверяет совместимость данных.
 
 ---
 
@@ -185,7 +163,7 @@ GSI-сервер слушает порт. Ждёт подключения Dota 2
 | Поток | Функция | Описание |
 |-------|---------|----------|
 | GUI | `WinMain` | ImGui/D3D11 рендер-цикл |
-| Оркестратор | `orchestratorMain` | Управление потоками, portrait→GUI sync, one-shot inference |
+| Оркестратор | `orchestratorMain` | Управление потоками, portrait->GUI sync |
 | GSI-сервер | `runGsiServer` | HTTP-сервер для GSI-данных Dota 2 |
 | Portrait capture | `runPortraitCapture` | Захват и распознавание героев + позиций |
 | Picker | `runPickerGui` | CatBoost инференс + рекомендации |
@@ -195,18 +173,11 @@ GSI-сервер слушает порт. Ждёт подключения Dota 2
 ## ML-модель (CatBoost)
 
 Одна модель: `draft_helper_abstract.cbm`
-Данные: `draft_helper_abstract_data.db`
+Данные: `draft_helper_abstract_data.db` (содержит meta-таблицу с schema_version и data_version)
 
 **Вход:** 10 категориальных (имена героев) + 42 числовых (matchup + mastery + hero_pos_wr)
 
-**Выход:** logit → sigmoid → P(radiant_win)
-
-| Признаки | Размер | Описание |
-|----------|--------|----------|
-| hero_name | 10 cat | Имена героев r1..r5, d1..d5 |
-| matchup | 30 float | global_wr + avg_vs + avg_with (×10 слотов) |
-| mastery | 2 float | WR и log1p(games) нашего игрока на кандидате |
-| hero_pos_wr | 10 float | WR героя на позиции (своя = из livepicks, враг = modal) |
+**Выход:** logit -> sigmoid -> P(radiant_win)
 
 ---
 
@@ -220,9 +191,6 @@ GSI-сервер слушает порт. Ждёт подключения Dota 2
 | `playerheroes` | Статистика героев игрока (все режимы) |
 | `playerheroesranked` | Статистика героев (ranked) |
 | `playerrecentmatches` | История матчей |
-| `relevantplayerherobyposstats` | Агрегат героя + позиции |
-| `playerherovsherobyposstats` | Hero vs hero |
-| `playerherowithherobyposstats` | Hero with hero |
 | `livepicks` | Текущий драфт: 10 hero + 10 pos слотов |
 | `player_info` | Сохранённый Friend ID + имя |
 
@@ -230,26 +198,13 @@ GSI-сервер слушает порт. Ждёт подключения Dota 2
 
 | Таблица | Описание |
 |---------|----------|
+| `meta` | Метаданные: schema_version, data_version |
 | `global_wr` | Smoothed winrate героя |
 | `vs_wr` | Пайрвайзный winrate hero vs hero |
 | `with_wr` | Пайрвайзный winrate hero with hero |
 | `modal_pos` | Модальная позиция героя |
 | `hero_pos_wr` | Winrate героя на позиции |
 | `immortalherostats` | Immortal-статистика для фильтрации пула |
-
----
-
-## Поддерживаемые разрешения
-
-| Аспект | Разрешения |
-|--------|-----------|
-| 16:9 | 1280×720, 1920×1080, 2560×1440, 3840×2160 |
-| 16:10 | 1920×1200, 2560×1600 |
-| 21:9 | 2560×1080, 3440×1440 |
-| 4:3 | 1024×768, 1280×960 |
-
-DPI-масштабирование (125%, 150%, 200%) поддерживается.
-При смене разрешения во время захвата — автоматический пересчёт регионов.
 
 ---
 
@@ -267,25 +222,54 @@ build_unified.bat           :: release
 build_unified.bat debug     :: debug (/Od /Zi)
 ```
 
-**Результат:** `build\Dota_Drafter.exe` + `catboostmodel.dll`
-
 **Исходные файлы:**
 
 | Файл | Описание |
 |------|----------|
-| `mainGUI.cpp` | ImGui/D3D11 GUI + оркестратор |
+| `mainGUI.cpp` | ImGui/D3D11 GUI + оркестратор + окно обновления |
 | `shared_types.h` | Общие типы (GameInfo, SharedPortraitState, GuiPickerState) |
 | `common.cpp / .h` | Логирование, HTTP (curl), SQLite RAII |
+| `version.h` | Константы версии: kAppVersion, kSupportedSchema, kManifestUrl |
+| `version_utils.cpp / .h` | Чтение/запись version.json, чтение meta из _data.db |
+| `updater.cpp / .h` | Система обновлений: manifest, download, sha256, swap, rollback |
 | `datafetcher.cpp` | Фаза 1a (init) + 1b (player data) |
 | `livestatsfetcher.cpp` | GSI HTTP-сервер |
 | `portrait_runner.cpp / .h` | Захват портретов + позиций + overlay [D] |
-| `dota_picker.cpp` | ML-пикер CatBoost |
+| `dota_picker.cpp` | ML-пикер CatBoost + schema gate |
 | `dota2_capture.cpp / .h` | Захват окна Dota 2 (PrintWindow + GDI) |
-| `dhash.h` | Pearson-корреляция 8×8 для распознавания героев и позиций |
-| `hero_hashes.h` | База хешей портретов героев |
-| `pos_hashes.h` | База хешей индикаторов позиций |
-| `hero_portraits_data.h` | Встроенные PNG-портреты для GUI |
+| `dhash.h` | Pearson-корреляция 8x8 для распознавания |
 | `playerdatafetcher.cpp / .h` | OpenDota / STRATZ запросы |
+
+---
+
+## Производительность
+
+### Затраты системы обновлений на старте
+
+| Операция | Время | Когда |
+|----------|-------|-------|
+| Fetch manifest.json (~1KB) | 0.5-2с | Каждый запуск |
+| SHA-256 проверка (BCrypt) | <50мс | При скачивании |
+| Скачивание app (~10MB) | 2-10с | Только при обновлении |
+| Скачивание data (~5.6MB) | 1-5с | Только при обновлении |
+| File swap (MoveFileEx) | <5мс | Только при обновлении data |
+| Schema gate (2 SQL запроса) | <5мс | Один раз при старте picker |
+| version.json read/write | <1мс | При старте |
+
+**Итого**: +0.5-2с к запуску (online, без обновления). Без влияния на производительность во время игры.
+
+### Затраты основного приложения
+
+| Компонент | CPU | RAM | Диск |
+|-----------|-----|-----|------|
+| GUI (ImGui/D3D11, 60fps) | ~2-5% | ~30MB | - |
+| Portrait capture (500мс) | ~1-3% (кратковременно) | ~5MB | - |
+| CatBoost инференс (500мс) | ~5-10% (кратковременно) | ~40MB (модель) | - |
+| GSI HTTP-сервер | <0.1% | <1MB | - |
+| SQLite (WAL mode) | <0.5% | ~2MB cache | ~1MB DB |
+| HTTP запросы (фаза 1b) | ~1% | ~5MB | ~100KB логи |
+| **Итого idle** | **~3%** | **~80MB** | - |
+| **Итого в драфте** | **~10-15%** | **~80MB** | - |
 
 ---
 

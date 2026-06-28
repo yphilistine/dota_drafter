@@ -211,32 +211,79 @@ ML-пикер: CatBoost инференс + рекомендации героев
 | `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс |
 
 Данные модели читаются из `{modelPath}_data.db` (отдельная БД).
+Schema gate: перед загрузкой модели проверяет `meta.schema_version == kSupportedSchema`.
+
+---
+
+### version.h
+Константы версии приложения.
+
+| Константа | Описание |
+|-----------|----------|
+| `kAppVersion` | Версия приложения (напр. "0.1.2") |
+| `kSupportedSchema` | Поддерживаемая версия схемы данных |
+| `kManifestUrl` | URL manifest.json на raw.githubusercontent.com |
+
+---
+
+### version_utils.h / version_utils.cpp
+Чтение/запись локального состояния версий.
+
+| Функция / Тип | Описание |
+|----------------|----------|
+| `LocalVersionInfo` | Структура: appVersion, dataVersion, schema |
+| `DataMeta` | Структура: schema, dataVersion (из _data.db) |
+| `loadLocalVersion()` | Читает version.json; при ошибке реконструирует из _data.db meta + kAppVersion |
+| `saveLocalVersion(v)` | Атомарная запись: .tmp + MoveFileEx + FILE_ATTRIBUTE_HIDDEN |
+| `readDataDbMeta(path)` | Читает schema_version и data_version из meta-таблицы _data.db |
+
+---
+
+### updater.h / updater.cpp
+Система авто-обновлений.
+
+| Функция / Тип | Описание |
+|----------------|----------|
+| `UpdateAction` | Enum: NONE, APP_UPDATE, DATA_UPDATE, SCHEMA_TOO_NEW |
+| `ManifestInfo` | Структура: версии app/data, URL, SHA-256, mandatory, dataFiles |
+| `fetchManifest(out)` | GET manifest.json с SSL verify, connect 5с, total 10с |
+| `checkForUpdates(manifest, local)` | Сравнение версий → UpdateAction |
+| `downloadToStaging(url, sha256, path, progress)` | Скачивание в .part + SHA-256 через BCrypt + rename |
+| `fileSha256(path)` | SHA-256 файла через BCrypt API (64KB чанки) |
+| `downloadAndStageData(manifest, progress)` | Скачивание всех data-файлов в staging/ |
+| `swapDataFiles(manifest)` | Backup (.bak) + MoveFileEx + update version.json + cleanup |
+| `rollbackDataFiles()` | Восстановление из .bak при ошибке swap |
+| `checkPendingSwap()` | Проверка swap.lock при старте → rollback если найден |
+| `cleanupStaging()` | Удаление orphan .part файлов |
+| `compareVersions(a, b)` | Посегментное числовое сравнение версий |
+
+SSL verification включена (CURLSSLOPT_NATIVE_CA). Не использует общий applyCurlNetworkOpts.
 
 ---
 
 ### mainGUI.cpp
-GUI: ImGui/D3D11 + оркестратор.
+GUI: ImGui/D3D11 + оркестратор + система обновлений.
 
 | Функция | Описание |
 |---------|----------|
 | `InitD3D(hwnd)` | Инициализация D3D11 device + swap chain |
 | `CleanupD3D()` | Освобождение D3D11 ресурсов |
 | `ApplyStyle()` | Тёмная тема ImGui с масштабированием 1.25x |
+| `CreateUpdateWindow(hInst)` | Win32 окно обновления (до D3D11/ImGui): статус + процент + кнопка retry |
+| `SetUpdateStatus(text)` | Обновление текста статуса в окне обновления |
+| `SetUpdateProgress(label, percent)` | Обновление только процента (без мерцания) |
+| `WaitForRetryClick()` | Message loop до нажатия "Try again" |
 | `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Friend ID |
-| `DrawStatusBar(fullW)` | Полоса статуса: Data (fetching/ready/error), Game (phase), match ID |
+| `DrawStatusBar(fullW)` | Полоса статуса: Player data (no ID/pending/fetching/ready/error) + Refresh + Game phase + match ID |
 | `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb |
 | `DrawPicksPanel(panelW)` | Правая панель: рекомендации top-10 / выбранный герой |
 | `DrawHeroSlot(rowW, h, ...)` | Отрисовка слота героя с кликабельным popup позиции (1-5, свап) |
 | `DrawPortrait(dl, p, sz, ...)` | Отрисовка квадрата портрета: PNG-текстура или инициалы |
 | `loadHeroPortraits()` | Загрузка PNG из assets/ → кэш `g_heroPortraits` |
-| `DrawBar(dl, p, w, h, frac, fill)` | Горизонтальный прогресс-бар |
-| `WinColor(w)` | Цвет по win probability (green/amber/red) |
-| `RenderFrame()` | Главный кадр: root window → Header → StatusBar → Draft + Picks |
+| `RenderFrame()` | Главный кадр: root window → Header → StatusBar → баннеры → Draft + Picks |
 | `orchestratorMain()` | Фоновый цикл: GSI → portrait → picker + portrait→GUI sync + one-shot inference |
 | `startPhase1(accountId)` | Запуск DataFetcher (1b) + имя игрока в фоновом потоке |
-| `fetchOpenDotaProfile(accountId)` | OpenDota /api/players/{id} → имя + аватар |
-| `createTextureFromImageData(data, size)` | JPEG/PNG байты → D3D11 текстура через GDI+ |
-| `WinMain(hInst, ...)` | Точка входа: D3D11, ImGui, окно, фаза 1a, оркестратор, message loop |
+| `WinMain(hInst, ...)` | Точка входа: CWD → curl → GDI+ → **update check** → config → DB → фазы → D3D11 → ImGui → loop |
 
 Оркестратор:
 - Portrait capture стартует при HERO_SELECTION **без accountId**
@@ -276,16 +323,56 @@ GUI: ImGui/D3D11 + оркестратор.
 | `livepicks` | single row | Текущий драфт: 10 hero-слотов + 10 pos-слотов + метаданные матча |
 | `player_info` | account_id | Сохранённый Friend ID + имя |
 
-### draft_helper_abstract_data.db — данные модели (статичные)
+### draft_helper_abstract_data.db — данные модели
 
 | Таблица | Ключ | Описание |
 |---------|------|----------|
+| `meta` | key | Метаданные: `schema_version`, `data_version` |
 | `global_wr` | hero_id | Smoothed winrate героя (prior=100) |
 | `vs_wr` | (hero_id, opp_hero_id) | Пайрвайзный winrate hero vs hero (prior=20) |
 | `with_wr` | (hero_id, ally_hero_id) | Пайрвайзный winrate hero with hero (prior=20) |
 | `modal_pos` | hero_id | Модальная позиция героя (1-5) |
 | `hero_pos_wr` | (hero_id, pos) | Winrate героя на позиции (prior=50) |
 | `immortalherostats` | (hero_id, pos) | Immortal-статистика для фильтрации пула кандидатов |
+
+---
+
+## Система обновлений
+
+### Поток запуска (WinMain)
+
+```
+CWD → curl_global_init → GDI+
+  → checkPendingSwap() + cleanupStaging()
+  → loadLocalVersion()
+  → CreateUpdateWindow()
+  → retry loop: fetchManifest() или "Failed to check" + "Try again"
+  → checkForUpdates():
+      APP_UPDATE  → download → sha256 → update version.json → bat(3s delay + installer /SILENT) → exit
+      DATA_UPDATE → download → sha256 → swapDataFiles() → continue
+      SCHEMA_TOO_NEW → banner flag
+  → DestroyUpdateWindow()
+  → config → DB → Phase 1a → orchestrator → Phase 1b → D3D11 → ImGui → loop
+```
+
+### Файлы версионирования
+
+| Файл | Расположение | Описание |
+|------|-------------|----------|
+| `manifest.json` | GitHub repo root (raw.githubusercontent) | Источник правды: версии, URL, SHA-256 |
+| `version.json` | Рядом с exe (hidden) | Локальное состояние: app_version, data_version, schema |
+| `version.h` | Исходный код | Компилируемые константы: kAppVersion, kSupportedSchema |
+| `version.rc` | Исходный код | RC-ресурс с параметризованной версией (VER_MAJOR/MINOR/PATCH) |
+| `meta` таблица | _data.db | schema_version + data_version внутри пакета данных |
+
+### Скрипты релиза
+
+| Скрипт | Описание |
+|--------|----------|
+| `scripts/release_app.bat VERSION` | Обновить version.h → build → installer → gh release → manifest.json |
+| `scripts/pack_data.bat DVER SCHEMA` | meta в _data.db → gh release → manifest.json |
+
+VS Code Tasks: "Release App", "Release Data" (с prompt для версии).
 
 ---
 
