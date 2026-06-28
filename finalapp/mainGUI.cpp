@@ -1603,6 +1603,8 @@ static void RenderFrame() {
 
     DrawHeader(FULL);
 
+    // Зафиксировать позицию после шапки (InvisibleButton в шапке сдвигает курсор)
+    ImGui::SetCursorPos({PAD, PAD + 60.f + 2.f});
     DrawStatusBar(FULL);
     ImGui::Dummy({0, 2.f});
 
