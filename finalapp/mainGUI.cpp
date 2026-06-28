@@ -1357,40 +1357,32 @@ static void DrawStatusBar(float fullW) {
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(3);
 
-        // Иконка: два полукруга с наконечниками
-        float r = btnSz * 0.32f;
-        ImU32 col = ImGui::IsItemHovered() ? C(ImVec4(1,1,1,0.9f)) : C(kMuted);
+        // Иконка refresh: две дуги + наконечники
         constexpr float PI = 3.14159265f;
-        // Верхняя дуга (от 220° до 340°) — правая половина
-        int N = 10;
-        for (int i = 0; i < N; ++i) {
-            float a0 = PI * (220.f + 120.f * i / N) / 180.f;
-            float a1 = PI * (220.f + 120.f * (i+1) / N) / 180.f;
-            dl->AddLine({cx+r*cosf(a0), cy+r*sinf(a0)},
-                        {cx+r*cosf(a1), cy+r*sinf(a1)}, col, 1.8f);
-        }
-        // Нижняя дуга (от 40° до 160°) — левая половина
-        for (int i = 0; i < N; ++i) {
-            float a0 = PI * (40.f + 120.f * i / N) / 180.f;
-            float a1 = PI * (40.f + 120.f * (i+1) / N) / 180.f;
-            dl->AddLine({cx+r*cosf(a0), cy+r*sinf(a0)},
-                        {cx+r*cosf(a1), cy+r*sinf(a1)}, col, 1.8f);
-        }
-        // Стрелка на конце верхней дуги (при 340°)
-        float a1e = PI * 340.f / 180.f;
-        float tip1x = cx + r*cosf(a1e), tip1y = cy + r*sinf(a1e);
-        float arr = r * 0.45f;
-        dl->AddTriangleFilled(
-            {tip1x, tip1y},
-            {tip1x + arr*cosf(a1e + 2.2f), tip1y + arr*sinf(a1e + 2.2f)},
-            {tip1x + arr*cosf(a1e + 0.7f), tip1y + arr*sinf(a1e + 0.7f)}, col);
-        // Стрелка на конце нижней дуги (при 160°)
-        float a2e = PI * 160.f / 180.f;
-        float tip2x = cx + r*cosf(a2e), tip2y = cy + r*sinf(a2e);
-        dl->AddTriangleFilled(
-            {tip2x, tip2y},
-            {tip2x + arr*cosf(a2e + 2.2f), tip2y + arr*sinf(a2e + 2.2f)},
-            {tip2x + arr*cosf(a2e + 0.7f), tip2y + arr*sinf(a2e + 0.7f)}, col);
+        float r = btnSz * 0.34f;
+        ImU32 col = ImGui::IsItemHovered() ? IM_COL32(220,220,220,255) : C(kMuted);
+
+        // Дуга 1: верх (10 → 2 часа по часовой)
+        dl->PathArcTo({cx,cy}, r, 200.f*PI/180.f, 340.f*PI/180.f, 12);
+        dl->PathStroke(col, 0, 2.f);
+        // Дуга 2: низ (4 → 8 часов по часовой)
+        dl->PathArcTo({cx,cy}, r, 20.f*PI/180.f, 160.f*PI/180.f, 12);
+        dl->PathStroke(col, 0, 2.f);
+
+        // Наконечник на 2 часа (конец дуги 1)
+        auto drawArrow = [&](float angleDeg) {
+            float ae  = angleDeg * PI / 180.f;
+            float dir = ae + PI * 0.5f;
+            float tx  = cx + r * cosf(ae);
+            float tty = cy + r * sinf(ae);
+            float len = r * 0.5f, hw = len * 0.45f;
+            float bx  = tx - len * cosf(dir), by = tty - len * sinf(dir);
+            dl->AddTriangleFilled({tx, tty},
+                {bx + hw*cosf(dir+PI/2.f), by + hw*sinf(dir+PI/2.f)},
+                {bx + hw*cosf(dir-PI/2.f), by + hw*sinf(dir-PI/2.f)}, col);
+        };
+        drawArrow(340.f);
+        drawArrow(160.f);
 
         if (clicked) {
             long long aid = 0;
