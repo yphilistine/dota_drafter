@@ -1603,9 +1603,8 @@ static void RenderFrame() {
 
     DrawHeader(FULL);
 
-    ImGui::Dummy({0, 6.f});
     DrawStatusBar(FULL);
-    ImGui::Spacing();
+    ImGui::Dummy({0, 2.f});
 
     // ── Баннеры совместимости ────────────────────────────────────────────
     {
