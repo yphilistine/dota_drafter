@@ -1323,7 +1323,7 @@ static void DrawStatusBar(float fullW) {
 
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      sp  = ImGui::GetCursorScreenPos();
-    const float H   = 22.f;
+    const float H   = 26.f;
     const float lh  = ImGui::GetTextLineHeight();
     const float ty  = sp.y + (H-lh)*0.5f;
 
@@ -1343,11 +1343,11 @@ static void DrawStatusBar(float fullW) {
     float refreshEndX = 0.f;
     ImVec2 p1sz = ImGui::CalcTextSize(p1buf);
     if (!phase1Running && hasPlayer) {
-        float btnSz = H - 4.f;
-        float btnX = sp.x + 18.f + p1sz.x + 6.f;
-        float btnCX = btnX + btnSz * 0.5f;
-        float btnCY = sp.y + H * 0.5f;
-        ImGui::SetCursorScreenPos({btnX, sp.y + 2.f});
+        float btnSz = H - 2.f;
+        float btnX = sp.x + 18.f + p1sz.x + 4.f;
+        float cx = btnX + btnSz * 0.5f;
+        float cy = sp.y + H * 0.5f;
+        ImGui::SetCursorScreenPos({btnX, sp.y + 1.f});
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0,0,0,0));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(1,1,1,0.1f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(1,1,1,0.2f));
@@ -1357,27 +1357,40 @@ static void DrawStatusBar(float fullW) {
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(3);
 
-        // Две стрелки по кругу
-        float r = btnSz * 0.3f;
-        ImU32 col = C(kMuted);
-        for (int arc = 0; arc < 2; ++arc) {
-            float startA = arc * 3.14159f;
-            int N = 8;
-            for (int i = 0; i < N; ++i) {
-                float a0 = startA + (float)i / N * 2.8f;
-                float a1 = startA + (float)(i+1) / N * 2.8f;
-                dl->AddLine({btnCX + r*cosf(a0), btnCY + r*sinf(a0)},
-                            {btnCX + r*cosf(a1), btnCY + r*sinf(a1)}, col, 1.5f);
-            }
-            float ae = startA + 2.8f;
-            float ax = btnCX + r*cosf(ae), ay = btnCY + r*sinf(ae);
-            float ad = ae + 0.4f, ab = ae - 0.8f;
-            float as = r * 0.4f;
-            dl->AddTriangleFilled(
-                {ax, ay},
-                {ax + as*cosf(ad), ay + as*sinf(ad)},
-                {ax + as*cosf(ab), ay + as*sinf(ab)}, col);
+        // Иконка: два полукруга с наконечниками
+        float r = btnSz * 0.32f;
+        ImU32 col = ImGui::IsItemHovered() ? C(ImVec4(1,1,1,0.9f)) : C(kMuted);
+        constexpr float PI = 3.14159265f;
+        // Верхняя дуга (от 220° до 340°) — правая половина
+        int N = 10;
+        for (int i = 0; i < N; ++i) {
+            float a0 = PI * (220.f + 120.f * i / N) / 180.f;
+            float a1 = PI * (220.f + 120.f * (i+1) / N) / 180.f;
+            dl->AddLine({cx+r*cosf(a0), cy+r*sinf(a0)},
+                        {cx+r*cosf(a1), cy+r*sinf(a1)}, col, 1.8f);
         }
+        // Нижняя дуга (от 40° до 160°) — левая половина
+        for (int i = 0; i < N; ++i) {
+            float a0 = PI * (40.f + 120.f * i / N) / 180.f;
+            float a1 = PI * (40.f + 120.f * (i+1) / N) / 180.f;
+            dl->AddLine({cx+r*cosf(a0), cy+r*sinf(a0)},
+                        {cx+r*cosf(a1), cy+r*sinf(a1)}, col, 1.8f);
+        }
+        // Стрелка на конце верхней дуги (при 340°)
+        float a1e = PI * 340.f / 180.f;
+        float tip1x = cx + r*cosf(a1e), tip1y = cy + r*sinf(a1e);
+        float arr = r * 0.45f;
+        dl->AddTriangleFilled(
+            {tip1x, tip1y},
+            {tip1x + arr*cosf(a1e + 2.2f), tip1y + arr*sinf(a1e + 2.2f)},
+            {tip1x + arr*cosf(a1e + 0.7f), tip1y + arr*sinf(a1e + 0.7f)}, col);
+        // Стрелка на конце нижней дуги (при 160°)
+        float a2e = PI * 160.f / 180.f;
+        float tip2x = cx + r*cosf(a2e), tip2y = cy + r*sinf(a2e);
+        dl->AddTriangleFilled(
+            {tip2x, tip2y},
+            {tip2x + arr*cosf(a2e + 2.2f), tip2y + arr*sinf(a2e + 2.2f)},
+            {tip2x + arr*cosf(a2e + 0.7f), tip2y + arr*sinf(a2e + 0.7f)}, col);
 
         if (clicked) {
             long long aid = 0;
@@ -1807,15 +1820,23 @@ static void SetUpdateStatus(const wchar_t* text) {
 }
 
 static void SetUpdateProgress(const wchar_t* label, int percent) {
-    if (g_updateLabel) SetWindowTextW(g_updateLabel, label);
-    if (g_updatePercent) {
-        wchar_t buf[32];
-        swprintf_s(buf, L"%d%%", percent);
-        SetWindowTextW(g_updatePercent, buf);
-        ShowWindow(g_updatePercent, SW_SHOW);
+    static int lastPercent = -1;
+    static const wchar_t* lastLabel = nullptr;
+
+    // Обновить заголовок только если изменился
+    if (label != lastLabel) {
+        lastLabel = label;
+        if (g_updateLabel) SetWindowTextW(g_updateLabel, label);
     }
-    if (g_updateWnd) RedrawWindow(g_updateWnd, nullptr, nullptr,
-                                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+    if (g_updatePercent) {
+        ShowWindow(g_updatePercent, SW_SHOW);
+        if (percent != lastPercent) {
+            lastPercent = percent;
+            wchar_t buf[32];
+            swprintf_s(buf, L"%d%%", percent);
+            SetWindowTextW(g_updatePercent, buf);
+        }
+    }
     PumpMessages();
 }
 
