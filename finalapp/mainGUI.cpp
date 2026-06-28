@@ -1415,7 +1415,9 @@ static void DrawStatusBar(float fullW) {
         dl->AddText({sp.x+fullW-mts.x-8.f, ty}, Ca(kMuted,0.6f), mbuf);
     }
 
-    ImGui::Dummy({fullW, H});
+    // Зафиксировать курсор после статус-бара (Button внутри сдвигает layout)
+    ImGui::SetCursorScreenPos({sp.x, sp.y + H});
+    ImGui::Dummy({fullW, 0.f});
 }
 
 // ─── Шапка: логотип [D] + заголовок + карточка игрока / ввод Friend ID ────────
@@ -1603,10 +1605,12 @@ static void RenderFrame() {
 
     DrawHeader(FULL);
 
-    // Зафиксировать позицию после шапки (InvisibleButton в шапке сдвигает курсор)
-    ImGui::SetCursorPos({PAD, PAD + 60.f + 2.f});
+    // Единый отступ между секциями
+    const float GAP = PAD;
+
+    ImGui::SetCursorPos({PAD, PAD + 60.f + GAP});
     DrawStatusBar(FULL);
-    ImGui::Dummy({0, 2.f});
+    ImGui::SetCursorPos({PAD, PAD + 60.f + GAP + 26.f + GAP});
 
     // ── Баннеры совместимости ────────────────────────────────────────────
     {

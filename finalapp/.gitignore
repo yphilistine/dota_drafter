@@ -8,6 +8,7 @@ logs/
 *.db-shm
 *.db-wal
 cookies.txt
+version.json
 allheroes/
 liveheroes/
 .vscode/

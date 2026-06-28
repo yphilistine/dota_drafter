@@ -51,6 +51,7 @@ void saveLocalVersion(const LocalVersionInfo& v) {
         f << j.dump(2);
     }
     MoveFileExA(tmp.c_str(), VERSION_FILE, MOVEFILE_REPLACE_EXISTING);
+    SetFileAttributesA(VERSION_FILE, FILE_ATTRIBUTE_HIDDEN);
 }
 
 // ─── readDataDbMeta ──────────────────────────────────────────────────────────
