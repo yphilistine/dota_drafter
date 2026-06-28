@@ -1,8 +1,8 @@
 ﻿{
     "app":  {
-                "version":  "0.0.12",
-                "url":  "https://github.com/yphilistine/dota_drafter/releases/download/v0.0.12/dota_drafter_setup.exe",
-                "sha256":  "5e68ee45bf211b1713d6ad2ff280614b89da92c554985ec67abfe2cde1c12b04",
+                "version":  "0.0.13",
+                "url":  "https://github.com/yphilistine/dota_drafter/releases/download/v0.0.13/dota_drafter_setup.exe",
+                "sha256":  "11c69127092736fdc201da1ec42636ab1ffbadb8e98c0e50237f945bb1b13fbd",
                 "mandatory":  false
             },
     "data":  {
