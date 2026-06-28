@@ -4,6 +4,9 @@ setlocal enabledelayedexpansion
 :: Example: pack_data.bat 2025.07.01 1
 :: Run from repo root (dota_drafter\)
 
+:: gh CLI may not be in inherited PATH
+set "PATH=%PATH%;%LOCALAPPDATA%\gh-cli\bin"
+
 set "DVER=%~1"
 set "SCHEMA=%~2"
 if "%DVER%"=="" ( echo Usage: pack_data.bat DATA_VERSION SCHEMA_VERSION & exit /b 1 )

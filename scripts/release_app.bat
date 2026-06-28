@@ -4,6 +4,9 @@ setlocal enabledelayedexpansion
 :: Example: release_app.bat 1.2.0
 :: Run from repo root (dota_drafter\)
 
+:: gh CLI may not be in inherited PATH
+set "PATH=%PATH%;%LOCALAPPDATA%\gh-cli\bin"
+
 set "VER=%~1"
 if "%VER%"=="" (
     echo Usage: release_app.bat MAJOR.MINOR.PATCH
