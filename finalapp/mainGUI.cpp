@@ -1319,8 +1319,6 @@ static void DrawStatusBar(float fullW) {
         matchId = g_gameInfo.matchId;
     }
 
-    if (!hasPlayer) return;
-
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      sp  = ImGui::GetCursorScreenPos();
     const float H   = 26.f;
@@ -1329,22 +1327,27 @@ static void DrawStatusBar(float fullW) {
 
     dl->AddRectFilled(sp,{sp.x+fullW,sp.y+H},Ca(kCard2,0.5f));
 
-    // Player data dot + text (точки на уровне середины текста)
     const float dotR  = 4.f;
     const float dotCY = ty + lh * 0.5f;
-    ImVec4 dot1col = phase1Error ? kRed : (phase1Done ? kGreen : (phase1Running ? kAmber : kMuted));
-    dl->AddCircleFilled({sp.x+10.f, dotCY}, dotR, C(dot1col));
-    char p1buf[64];
-    std::snprintf(p1buf, sizeof(p1buf), " Player data: %s",
-                  phase1Running ? "fetching..." : (phase1Done ? "ready" : (phase1Error ? "error" : "pending")));
-    dl->AddText({sp.x+18.f, ty}, C(kMuted), p1buf);
 
-    // Refresh button (visible when not fetching and player exists)
+    // Player data dot + text
     float refreshEndX = 0.f;
-    ImVec2 p1sz = ImGui::CalcTextSize(p1buf);
+    float playerEndX = sp.x + 10.f;
+    {
+        ImVec4 dot1col = !hasPlayer ? kMuted :
+            (phase1Error ? kRed : (phase1Done ? kGreen : (phase1Running ? kAmber : kMuted)));
+        dl->AddCircleFilled({sp.x+10.f, dotCY}, dotR, C(dot1col));
+        char p1buf[64];
+        const char* p1status = !hasPlayer ? "no ID" :
+            (phase1Running ? "fetching..." : (phase1Done ? "ready" : (phase1Error ? "error" : "pending")));
+        std::snprintf(p1buf, sizeof(p1buf), " Player data: %s", p1status);
+        dl->AddText({sp.x+18.f, ty}, C(kMuted), p1buf);
+        ImVec2 p1sz = ImGui::CalcTextSize(p1buf);
+        playerEndX = sp.x + 18.f + p1sz.x;
+    }
     if (!phase1Running && hasPlayer) {
         float btnSz = H - 2.f;
-        float btnX = sp.x + 18.f + p1sz.x + 4.f;
+        float btnX = playerEndX + 4.f;
         float cx = btnX + btnSz * 0.5f;
         float cy = sp.y + H * 0.5f;
         ImGui::SetCursorScreenPos({btnX, sp.y + 1.f});
@@ -1398,7 +1401,7 @@ static void DrawStatusBar(float fullW) {
                       phase == GamePhase::POSTGAME? kMuted  : kMuted);
     float x2 = refreshEndX > 0.f
         ? refreshEndX + 12.f
-        : sp.x + 18.f + p1sz.x + 16.f;
+        : playerEndX + 12.f;
     dl->AddCircleFilled({x2+4.f, dotCY}, dotR, C(dot2col));
     const char* phaseStr = (phase == GamePhase::IDLE)     ? "Waiting for game" :
                            (phase == GamePhase::DRAFT)    ? "Draft Phase" :
@@ -1744,7 +1747,7 @@ static void CreateUpdateWindow(HINSTANCE hInst) {
 
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
-    int w = 480, h = 180;
+    int w = 420, h = 170;
 
     g_updateWnd = CreateWindowExW(0,
         L"DotaDrafterUpdate", L"Dota Drafter - Update",
@@ -1773,27 +1776,29 @@ static void CreateUpdateWindow(HINSTANCE hInst) {
     int cw = cr.right - cr.left;
     int ch = cr.bottom - cr.top;
 
-    HFONT font = CreateFontW(24, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+    HFONT font = CreateFontW(30, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT fontPercent = CreateFontW(35, 0, 0, 0, FW_BOLD, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
 
     g_updateLabel = CreateWindowW(L"STATIC",
         L"Checking for updates...",
         WS_CHILD | WS_VISIBLE | SS_CENTER,
-        10, 15, cw - 20, 30, g_updateWnd, nullptr, hInst, nullptr);
+        5, 8, cw - 10, 40, g_updateWnd, nullptr, hInst, nullptr);
     SendMessage(g_updateLabel, WM_SETFONT, (WPARAM)font, TRUE);
 
     g_updatePercent = CreateWindowW(L"STATIC",
         L"",
         WS_CHILD | SS_CENTER,
-        10, 45, cw - 20, 30, g_updateWnd, nullptr, hInst, nullptr);
-    SendMessage(g_updatePercent, WM_SETFONT, (WPARAM)font, TRUE);
+        5, 45, cw - 10, 50, g_updateWnd, nullptr, hInst, nullptr);
+    SendMessage(g_updatePercent, WM_SETFONT, (WPARAM)fontPercent, TRUE);
 
-    HFONT btnFont = CreateFontW(20, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+    HFONT btnFont = CreateFontW(24, 0, 0, 0, FW_NORMAL, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
     g_updateBtn = CreateWindowW(L"BUTTON",
         L"Try again",
         WS_CHILD | BS_PUSHBUTTON | BS_FLAT,
-        (cw - 160) / 2, ch - 55, 160, 40,
+        (cw - 180) / 2, ch - 50, 180, 42,
         g_updateWnd, (HMENU)(INT_PTR)IDC_RETRY_BTN, hInst, nullptr);
     SendMessage(g_updateBtn, WM_SETFONT, (WPARAM)btnFont, TRUE);
 
