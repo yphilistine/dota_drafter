@@ -1664,6 +1664,7 @@ static HICON CreateDIcon(int sz) {
 
 static HWND  g_updateWnd      = nullptr;
 static HWND  g_updateLabel    = nullptr;
+static HWND  g_updatePercent  = nullptr;
 static HWND  g_updateBtn      = nullptr;
 static bool  g_retryClicked   = false;
 static constexpr int IDC_RETRY_BTN = 101;
@@ -1733,14 +1734,20 @@ static void CreateUpdateWindow(HINSTANCE hInst) {
     int cw = cr.right - cr.left;
     int ch = cr.bottom - cr.top;
 
+    HFONT font = CreateFontW(24, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+
     g_updateLabel = CreateWindowW(L"STATIC",
         L"Checking for updates...",
         WS_CHILD | WS_VISIBLE | SS_CENTER,
-        10, 25, cw - 20, 50, g_updateWnd, nullptr, hInst, nullptr);
-
-    HFONT font = CreateFontW(24, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        10, 15, cw - 20, 30, g_updateWnd, nullptr, hInst, nullptr);
     SendMessage(g_updateLabel, WM_SETFONT, (WPARAM)font, TRUE);
+
+    g_updatePercent = CreateWindowW(L"STATIC",
+        L"",
+        WS_CHILD | SS_CENTER,
+        10, 45, cw - 20, 30, g_updateWnd, nullptr, hInst, nullptr);
+    SendMessage(g_updatePercent, WM_SETFONT, (WPARAM)font, TRUE);
 
     HFONT btnFont = CreateFontW(20, 0, 0, 0, FW_NORMAL, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
@@ -1755,14 +1762,32 @@ static void CreateUpdateWindow(HINSTANCE hInst) {
     UpdateWindow(g_updateWnd);
 }
 
-static void SetUpdateStatus(const wchar_t* text) {
-    if (g_updateLabel) SetWindowTextW(g_updateLabel, text);
-    if (g_updateWnd) RedrawWindow(g_updateWnd, nullptr, nullptr,
-                                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+static void PumpMessages() {
     MSG msg;
     while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg); DispatchMessage(&msg);
     }
+}
+
+static void SetUpdateStatus(const wchar_t* text) {
+    if (g_updateLabel) SetWindowTextW(g_updateLabel, text);
+    if (g_updatePercent) { SetWindowTextW(g_updatePercent, L""); ShowWindow(g_updatePercent, SW_HIDE); }
+    if (g_updateWnd) RedrawWindow(g_updateWnd, nullptr, nullptr,
+                                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+    PumpMessages();
+}
+
+static void SetUpdateProgress(const wchar_t* label, int percent) {
+    if (g_updateLabel) SetWindowTextW(g_updateLabel, label);
+    if (g_updatePercent) {
+        wchar_t buf[32];
+        swprintf_s(buf, L"%d%%", percent);
+        SetWindowTextW(g_updatePercent, buf);
+        ShowWindow(g_updatePercent, SW_SHOW);
+    }
+    if (g_updateWnd) RedrawWindow(g_updateWnd, nullptr, nullptr,
+                                   RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+    PumpMessages();
 }
 
 static void ShowRetryButton(bool show) {
@@ -1772,7 +1797,8 @@ static void ShowRetryButton(bool show) {
 
 static void DestroyUpdateWindow() {
     if (g_updateWnd) { DestroyWindow(g_updateWnd); g_updateWnd = nullptr; }
-    g_updateLabel = nullptr;
+    g_updateLabel   = nullptr;
+    g_updatePercent = nullptr;
     g_updateBtn   = nullptr;
 }
 
@@ -1860,13 +1886,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
             bool ok = downloadToStaging(manifest.appUrl, manifest.appSha256,
                 stagingPath, [](size_t done, size_t total) {
-                    wchar_t buf[128];
                     if (total > 0)
-                        swprintf_s(buf, L"Downloading update... %d%%",
-                                   (int)(done * 100 / total));
+                        SetUpdateProgress(L"Downloading update...", (int)(done * 100 / total));
                     else
-                        swprintf_s(buf, L"Downloading update... %zu KB", done / 1024);
-                    SetUpdateStatus(buf);
+                        SetUpdateProgress(L"Downloading update...", 0);
                 });
 
             if (ok) {
@@ -1896,7 +1919,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                 char cmdLine[1024];
                 std::snprintf(cmdLine, sizeof(cmdLine), "cmd.exe /c \"%s\"", batPath.c_str());
                 if (CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW | DETACHED_PROCESS,
+                        CREATE_NO_WINDOW,
                         nullptr, nullptr, &si, &pi)) {
                     CloseHandle(pi.hProcess);
                     CloseHandle(pi.hThread);
@@ -1914,13 +1937,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
             SetUpdateStatus(L"Downloading data update...");
             bool staged = downloadAndStageData(manifest,
                 [](size_t done, size_t total) {
-                    wchar_t buf[128];
                     if (total > 0)
-                        swprintf_s(buf, L"Downloading data... %d%%",
-                                   (int)(done * 100 / total));
+                        SetUpdateProgress(L"Downloading data...", (int)(done * 100 / total));
                     else
-                        swprintf_s(buf, L"Downloading data... %zu KB", done / 1024);
-                    SetUpdateStatus(buf);
+                        SetUpdateProgress(L"Downloading data...", 0);
                 });
             if (staged) {
                 SetUpdateStatus(L"Applying data update...");
