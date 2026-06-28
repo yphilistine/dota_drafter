@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-constexpr const char* kAppVersion      = "0.0.9";
+constexpr const char* kAppVersion      = "0.0.10";
 constexpr int         kSupportedSchema = 1;
 
 // URL манифеста обновлений
