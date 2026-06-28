@@ -1340,31 +1340,60 @@ static void DrawStatusBar(float fullW) {
     dl->AddText({sp.x+18.f, ty}, C(kMuted), p1buf);
 
     // Refresh button (visible when not fetching and player exists)
+    float refreshEndX = 0.f;
+    ImVec2 p1sz = ImGui::CalcTextSize(p1buf);
     if (!phase1Running && hasPlayer) {
-        ImVec2 p1sz_ = ImGui::CalcTextSize(p1buf);
-        float btnX = sp.x + 18.f + p1sz_.x + 6.f;
         float btnSz = H - 4.f;
+        float btnX = sp.x + 18.f + p1sz.x + 6.f;
+        float btnCX = btnX + btnSz * 0.5f;
+        float btnCY = sp.y + H * 0.5f;
         ImGui::SetCursorScreenPos({btnX, sp.y + 2.f});
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0,0,0,0));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(1,1,1,0.1f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(1,1,1,0.2f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btnSz * 0.5f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
-        if (ImGui::Button("R##refresh", {btnSz, btnSz})) {
+        bool clicked = ImGui::Button("##refresh", {btnSz, btnSz});
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(3);
+
+        // Две стрелки по кругу
+        float r = btnSz * 0.3f;
+        ImU32 col = C(kMuted);
+        for (int arc = 0; arc < 2; ++arc) {
+            float startA = arc * 3.14159f;
+            int N = 8;
+            for (int i = 0; i < N; ++i) {
+                float a0 = startA + (float)i / N * 2.8f;
+                float a1 = startA + (float)(i+1) / N * 2.8f;
+                dl->AddLine({btnCX + r*cosf(a0), btnCY + r*sinf(a0)},
+                            {btnCX + r*cosf(a1), btnCY + r*sinf(a1)}, col, 1.5f);
+            }
+            float ae = startA + 2.8f;
+            float ax = btnCX + r*cosf(ae), ay = btnCY + r*sinf(ae);
+            float ad = ae + 0.4f, ab = ae - 0.8f;
+            float as = r * 0.4f;
+            dl->AddTriangleFilled(
+                {ax, ay},
+                {ax + as*cosf(ad), ay + as*sinf(ad)},
+                {ax + as*cosf(ab), ay + as*sinf(ab)}, col);
+        }
+
+        if (clicked) {
             long long aid = 0;
             { std::lock_guard<std::mutex> lk(g_player.mtx); aid = g_player.accountId; }
             if (aid > 0) startPhase1(aid);
         }
-        ImGui::PopStyleVar(2);
-        ImGui::PopStyleColor(3);
+        refreshEndX = btnX + btnSz;
     }
 
     // Game phase dot + text
     ImVec4 dot2col = (phase == GamePhase::DRAFT   ? kAmber  :
                       phase == GamePhase::INGAME  ? kGreen  :
                       phase == GamePhase::POSTGAME? kMuted  : kMuted);
-    ImVec2 p1sz = ImGui::CalcTextSize(p1buf);
-    float x2 = sp.x + 18.f + p1sz.x + 16.f;
+    float x2 = refreshEndX > 0.f
+        ? refreshEndX + 12.f
+        : sp.x + 18.f + p1sz.x + 16.f;
     dl->AddCircleFilled({x2+4.f, dotCY}, dotR, C(dot2col));
     const char* phaseStr = (phase == GamePhase::IDLE)     ? "Waiting for game" :
                            (phase == GamePhase::DRAFT)    ? "Draft Phase" :
