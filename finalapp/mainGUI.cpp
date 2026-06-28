@@ -1339,6 +1339,26 @@ static void DrawStatusBar(float fullW) {
                   phase1Running ? "fetching..." : (phase1Done ? "ready" : (phase1Error ? "error" : "pending")));
     dl->AddText({sp.x+18.f, ty}, C(kMuted), p1buf);
 
+    // Refresh button (visible when not fetching and player exists)
+    if (!phase1Running && hasPlayer) {
+        ImVec2 p1sz_ = ImGui::CalcTextSize(p1buf);
+        float btnX = sp.x + 18.f + p1sz_.x + 6.f;
+        float btnSz = H - 4.f;
+        ImGui::SetCursorScreenPos({btnX, sp.y + 2.f});
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0,0,0,0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,  ImVec4(1,1,1,0.1f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,   ImVec4(1,1,1,0.2f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btnSz * 0.5f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
+        if (ImGui::Button("\xe2\x86\xbb##refresh", {btnSz, btnSz})) {
+            long long aid = 0;
+            { std::lock_guard<std::mutex> lk(g_player.mtx); aid = g_player.accountId; }
+            if (aid > 0) startPhase1(aid);
+        }
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(3);
+    }
+
     // Game phase dot + text
     ImVec4 dot2col = (phase == GamePhase::DRAFT   ? kAmber  :
                       phase == GamePhase::INGAME  ? kGreen  :
