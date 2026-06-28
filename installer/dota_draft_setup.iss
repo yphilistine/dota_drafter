@@ -1,5 +1,5 @@
 ﻿#define appname "Dota_Drafter"
-#define version "0.1.0"
+#define version "0.1.1"
 #define url "https://github.com/yphilistine/dota_drafter"
 #define exename "Dota_Drafter.exe"
 
