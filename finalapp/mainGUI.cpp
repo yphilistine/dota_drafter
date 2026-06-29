@@ -935,7 +935,7 @@ static void SectionLabel(const char* label) {
 // ─── Панель драфта (слоты Radiant/Dire + winProb) ─────────────────────────────
 static void DrawDraftPanel(float panelW) {
     const float PAD  = 8.f;
-    const float colW = (panelW - PAD*3.f) * 0.5f;
+    const float colW = (panelW - PAD) * 0.5f;
     const float lh   = ImGui::GetTextLineHeight();
 
     // Снимок состояния пикера
@@ -972,7 +972,7 @@ static void DrawDraftPanel(float panelW) {
         ImDrawList* dl  = ImGui::GetWindowDrawList();
         ImVec2      cp  = ImGui::GetCursorScreenPos();
         float       aH  = 300.f;
-        float       aW  = panelW - PAD*2.f;
+        float       aW  = panelW;
 
         dl->AddRectFilled(cp, {cp.x+aW, cp.y+aH}, Ca(kCard2, 0.4f));
         dl->AddRect      (cp, {cp.x+aW, cp.y+aH}, C(kBorder));
@@ -991,7 +991,7 @@ static void DrawDraftPanel(float panelW) {
         ImGui::Spacing();
         ImDrawList* dl2 = ImGui::GetWindowDrawList();
         ImVec2 bp  = ImGui::GetCursorScreenPos();
-        float  bW  = panelW - PAD*2.f;
+        float  bW  = panelW;
         float  bH  = 52.f;
         dl2->AddRectFilled(bp,{bp.x+bW,bp.y+bH},Ca(kCard2,0.4f));
         dl2->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
@@ -1055,7 +1055,7 @@ static void DrawDraftPanel(float panelW) {
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 bp  = ImGui::GetCursorScreenPos();
-    float  bW  = panelW - PAD*2.f;
+    float  bW  = panelW;
     float  bH  = 52.f;
     ImVec4 wc  = WinColor(winProb);
 
@@ -1081,7 +1081,7 @@ static void DrawPicksPanel(float panelW) {
     const float lh        = ImGui::GetTextLineHeight();
     const float WIN_COL_W = 88.f;
     const float BAR_W     = 68.f;
-    const float rW_ref    = panelW - PAD*2.f;
+    const float rW_ref    = panelW;
 
     // Снимок состояния
     bool       gameStarted, ourHeroPicked;
@@ -1114,7 +1114,7 @@ static void DrawPicksPanel(float panelW) {
         ImVec2 ts = ImGui::CalcTextSize(badgeText);
         float  bW = ts.x + 14.f;
         float  bH = lh + 6.f;
-        ImGui::SameLine(panelW - PAD*2.f - bW);
+        ImGui::SameLine(panelW - bW);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 bp = ImGui::GetCursorScreenPos();
         dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
@@ -1646,7 +1646,7 @@ static void RenderFrame() {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
     ImGui::BeginChild("##draft",{leftW,contentH},true,ImGuiWindowFlags_NoScrollbar);
     ImGui::Spacing();
-    DrawDraftPanel(leftW-20.f);
+    DrawDraftPanel(ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
@@ -1655,7 +1655,7 @@ static void RenderFrame() {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
     ImGui::BeginChild("##picks",{rightW,contentH},true);
     ImGui::Spacing();
-    DrawPicksPanel(rightW-12.f);
+    DrawPicksPanel(ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
