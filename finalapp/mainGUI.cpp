@@ -1902,23 +1902,15 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         checkPendingSwap();
         cleanupStaging();
 
-        auto localVer = loadLocalVersion();
-        if (localVer.appVersion.empty()) {
-            localVer.appVersion = kAppVersion;
-            saveLocalVersion(localVer);
-        }
-
         CreateUpdateWindow(hInst);
 
         ManifestInfo manifest;
-        bool fetched = false;
 
         // Retry loop: app requires internet
         while (true) {
             SetUpdateStatus(L"Checking for updates...");
             ShowRetryButton(false);
-            fetched = fetchManifest(manifest);
-            if (fetched) break;
+            if (fetchManifest(manifest)) break;
 
             SetUpdateStatus(L"Failed to check for updates");
             ShowRetryButton(true);
@@ -1929,7 +1921,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
             }
         }
 
-        UpdateAction action = checkForUpdates(manifest, localVer);
+        UpdateAction action = checkForUpdates(manifest);
 
         if (action == UpdateAction::APP_UPDATE) {
             SetUpdateStatus(L"Downloading app update...");
@@ -1945,10 +1937,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                 });
 
             if (ok) {
-                // Обновить version.json чтобы при следующем запуске не качать снова
-                localVer.appVersion = manifest.appVersion;
-                saveLocalVersion(localVer);
-
                 SetUpdateStatus(L"Installing update...");
 
                 // Написать .bat который ждёт выхода процесса, потом запускает инсталлятор

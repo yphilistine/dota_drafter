@@ -1,60 +1,7 @@
 #include "version_utils.h"
-#include "version.h"
-#include "common.h"
-#include <fstream>
-#include <windows.h>
-
-static const char* VERSION_FILE = "version.json";
-static const char* MODEL_PATH_  = "draft_helper_abstract";
-
-// ─── loadLocalVersion ────────────────────────────────────────────────────────
-
-LocalVersionInfo loadLocalVersion() {
-    LocalVersionInfo v;
-    v.appVersion = kAppVersion;
-
-    try {
-        std::ifstream f(VERSION_FILE);
-        if (!f.is_open()) throw std::runtime_error("no file");
-        json j = json::parse(f);
-        v.appVersion  = j.value("app_version",  std::string(kAppVersion));
-        v.dataVersion = j.value("data_version", std::string());
-        v.schema      = j.value("schema",       0);
-    } catch (...) {
-        LOG_WARN("version.json missing or corrupt — reconstructing");
-        v.appVersion = kAppVersion;
-        try {
-            auto dm = readDataDbMeta(std::string(MODEL_PATH_) + "_data.db");
-            v.dataVersion = dm.dataVersion;
-            v.schema      = dm.schema;
-        } catch (...) {
-            v.dataVersion.clear();
-            v.schema = 0;
-        }
-        try { saveLocalVersion(v); } catch (...) {}
-    }
-    return v;
-}
-
-// ─── saveLocalVersion ────────────────────────────────────────────────────────
-
-void saveLocalVersion(const LocalVersionInfo& v) {
-    json j;
-    j["app_version"]  = v.appVersion;
-    j["data_version"] = v.dataVersion;
-    j["schema"]       = v.schema;
-
-    std::string tmp = std::string(VERSION_FILE) + ".tmp";
-    {
-        std::ofstream f(tmp, std::ios::trunc);
-        if (!f.is_open()) throw std::runtime_error("Cannot write " + tmp);
-        f << j.dump(2);
-    }
-    MoveFileExA(tmp.c_str(), VERSION_FILE, MOVEFILE_REPLACE_EXISTING);
-    SetFileAttributesA(VERSION_FILE, FILE_ATTRIBUTE_HIDDEN);
-}
-
-// ─── readDataDbMeta ──────────────────────────────────────────────────────────
+#include <sqlite3.h>
+#include <stdexcept>
+#include <string>
 
 DataMeta readDataDbMeta(const std::string& dataDbPath) {
     sqlite3* db = nullptr;

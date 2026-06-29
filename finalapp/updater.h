@@ -34,8 +34,7 @@ using ProgressCb = std::function<void(size_t done, size_t total)>;
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 bool         fetchManifest(ManifestInfo& out);
-UpdateAction checkForUpdates(const ManifestInfo& manifest,
-                             const LocalVersionInfo& local);
+UpdateAction checkForUpdates(const ManifestInfo& manifest);
 
 bool downloadToStaging(const std::string& url,
                        const std::string& expectedSha256,

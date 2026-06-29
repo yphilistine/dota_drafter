@@ -150,16 +150,31 @@ bool fetchManifest(ManifestInfo& out) {
 
 // ─── checkForUpdates ─────────────────────────────────────────────────────────
 
-UpdateAction checkForUpdates(const ManifestInfo& manifest,
-                             const LocalVersionInfo& local) {
-    if (compareVersions(manifest.appVersion, local.appVersion) > 0)
+UpdateAction checkForUpdates(const ManifestInfo& manifest) {
+    // App: сравнение скомпилированной версии с манифестом
+    if (compareVersions(manifest.appVersion, kAppVersion) > 0)
         return UpdateAction::APP_UPDATE;
 
-    if (compareVersions(manifest.dataVersion, local.dataVersion) > 0) {
-        if (manifest.dataSchema <= kSupportedSchema)
-            return UpdateAction::DATA_UPDATE;
-        else
+    // Data: сравнение SHA-256 локальных файлов с манифестом
+    for (auto& [fname, fe] : manifest.dataFiles) {
+        if (fe.sha256.empty()) continue;
+        if (GetFileAttributesA(fname.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            if (manifest.dataSchema <= kSupportedSchema)
+                return UpdateAction::DATA_UPDATE;
             return UpdateAction::SCHEMA_TOO_NEW;
+        }
+        try {
+            std::string localHash = fileSha256(fname);
+            if (localHash != fe.sha256) {
+                if (manifest.dataSchema <= kSupportedSchema)
+                    return UpdateAction::DATA_UPDATE;
+                return UpdateAction::SCHEMA_TOO_NEW;
+            }
+        } catch (...) {
+            if (manifest.dataSchema <= kSupportedSchema)
+                return UpdateAction::DATA_UPDATE;
+            return UpdateAction::SCHEMA_TOO_NEW;
+        }
     }
     return UpdateAction::NONE;
 }
@@ -283,12 +298,6 @@ bool swapDataFiles(const ManifestInfo& manifest) {
         DeleteFileA(SWAP_LOCK);
         return false;
     }
-
-    // Обновить version.json
-    auto lv = loadLocalVersion();
-    lv.dataVersion = manifest.dataVersion;
-    lv.schema      = manifest.dataSchema;
-    saveLocalVersion(lv);
 
     // Удалить бэкапы и lock
     for (auto& [fname, _] : manifest.dataFiles)
