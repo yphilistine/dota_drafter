@@ -33,6 +33,7 @@ var i18n = {
     inst2: "Приложение установится в %LOCALAPPDATA%\\Dota_Drafter",
     inst3: "GSI-конфигурация установится автоматически",
     inst4: "Запустите через ярлык на рабочем столе",
+    poweredBy: "Данные предоставлены",
     footerRepo: "Репозиторий",
     footerVersion: "v0.2.1"
   },
@@ -70,6 +71,7 @@ var i18n = {
     inst2: "Installs to %LOCALAPPDATA%\\Dota_Drafter",
     inst3: "GSI configuration is set up automatically",
     inst4: "Launch from the desktop shortcut",
+    poweredBy: "Powered by",
     footerRepo: "Repository",
     footerVersion: "v0.2.1"
   }
@@ -98,4 +100,49 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("lang-toggle").addEventListener("click", function () {
     setLang(currentLang === "ru" ? "en" : "ru");
   });
+
+  initCarousel();
 });
+
+function initCarousel() {
+  var track = document.querySelector(".carousel-track");
+  var slides = document.querySelectorAll(".carousel-slide");
+  var dots = document.querySelectorAll(".carousel-dot");
+  var prev = document.querySelector(".carousel-prev");
+  var next = document.querySelector(".carousel-next");
+  if (!track || slides.length === 0) return;
+
+  var current = 0;
+  var total = slides.length;
+
+  function goTo(index) {
+    current = (index + total) % total;
+    track.style.transform = "translateX(-" + (current * 100) + "%)";
+    dots.forEach(function (d, i) {
+      d.classList.toggle("active", i === current);
+    });
+  }
+
+  prev.addEventListener("click", function () { goTo(current - 1); });
+  next.addEventListener("click", function () { goTo(current + 1); });
+  dots.forEach(function (d, i) {
+    d.addEventListener("click", function () { goTo(i); });
+  });
+
+  var touchStartX = 0;
+  var touchDeltaX = 0;
+
+  track.parentElement.addEventListener("touchstart", function (e) {
+    touchStartX = e.touches[0].clientX;
+    touchDeltaX = 0;
+  }, { passive: true });
+
+  track.parentElement.addEventListener("touchmove", function (e) {
+    touchDeltaX = e.touches[0].clientX - touchStartX;
+  }, { passive: true });
+
+  track.parentElement.addEventListener("touchend", function () {
+    if (touchDeltaX < -40) goTo(current + 1);
+    else if (touchDeltaX > 40) goTo(current - 1);
+  });
+}

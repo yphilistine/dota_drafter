@@ -23,7 +23,24 @@
     <div class="container">
       <h1 class="section-title">Dota 2 Draft Analyzer</h1>
       <p class="section-subtitle" data-i18n="heroSubtitle"></p>
-      <div class="screenshot-placeholder" data-i18n="screenshotAlt"></div>
+      <div class="carousel">
+        <div class="carousel-inner">
+          <button class="carousel-btn carousel-prev" aria-label="Previous"></button>
+          <div class="carousel-track-wrap">
+            <div class="carousel-track">
+              <div class="carousel-slide screenshot-placeholder">Screenshot 1</div>
+              <div class="carousel-slide screenshot-placeholder">Screenshot 2</div>
+              <div class="carousel-slide screenshot-placeholder">Screenshot 3</div>
+            </div>
+          </div>
+          <button class="carousel-btn carousel-next" aria-label="Next"></button>
+        </div>
+        <div class="carousel-dots">
+          <span class="carousel-dot active"></span>
+          <span class="carousel-dot"></span>
+          <span class="carousel-dot"></span>
+        </div>
+      </div>
       <a class="btn-download" href="https://github.com/yphilistine/dota_drafter/releases/latest/download/dota_drafter_setup.exe" data-i18n="downloadBtn"></a>
     </div>
   </section>
@@ -111,6 +128,23 @@
           <li data-i18n="inst3"></li>
           <li data-i18n="inst4"></li>
         </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="section powered-section">
+    <div class="container">
+      <p class="powered-label" data-i18n="poweredBy">Данные предоставлены</p>
+      <div class="powered-grid">
+        <a class="powered-card" href="https://www.opendota.com" target="_blank" rel="noopener">
+          <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=opendota.com&sz=64" alt="OpenDota">
+        </a>
+        <a class="powered-card" href="https://stratz.com" target="_blank" rel="noopener">
+          <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=stratz.com&sz=64" alt="STRATZ">
+        </a>
+        <a class="powered-card" href="https://d2pt.gg" target="_blank" rel="noopener">
+          <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=d2pt.gg&sz=64" alt="D2PT">
+        </a>
       </div>
     </div>
   </section>
