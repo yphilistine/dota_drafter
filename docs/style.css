@@ -168,7 +168,9 @@ a:hover {
 
 .carousel-track {
   display: flex;
+  width: 100%;
   transition: transform 0.3s ease;
+  will-change: transform;
 }
 
 .carousel-slide {
@@ -405,6 +407,12 @@ a:hover {
 
 .powered-section {
   text-align: center;
+}
+
+.powered-section .container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .powered-label {
