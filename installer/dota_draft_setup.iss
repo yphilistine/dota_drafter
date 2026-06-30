@@ -20,6 +20,7 @@ OutputDir=C:\Users\ANDREY\Documents\dota_drafter\installer
 OutputBaseFileName=dota_drafter_setup
 
 SetupIconFile=C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico
+LicenseFile=C:\Users\ANDREY\Documents\dota_drafter\LICENSE
 
 Compression=lzma
 SolidCompression=yes
@@ -42,6 +43,7 @@ Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\app_icon.ico"; DestDir:
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\draft_helper_abstract.cbm"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\hero_hashes.dat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\assets\*.png"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "C:\Users\ANDREY\Documents\dota_drafter\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 Source: "C:\Users\ANDREY\Documents\dota_drafter\installer\gamestate_integration_dota2.cfg"; DestDir: "{code:GetDotaCfgPath}"; Flags: ignoreversion; Check: DotaCfgPathExists
 
