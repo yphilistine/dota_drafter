@@ -56,7 +56,6 @@ draft_helper_abstract_data.db       Matchup-данные модели (SQLite, �
 hero_hashes.dat                     База хешей портретов героев (бинарный)
 assets/*.png                        PNG-портреты героев для GUI
 playerandlivestats.db               Данные игрока (создаётся автоматически)
-version.json                        Локальное состояние версий (hidden, создаётся автоматически)
 
 gamestate_integration_dota2.cfg     Конфигурация GSI (устанавливается инсталлятором)
 ```
@@ -70,10 +69,12 @@ gamestate_integration_dota2.cfg     Конфигурация GSI (устанав
 При каждом запуске приложение проверяет `manifest.json` на GitHub (main-ветка, raw.githubusercontent.com):
 1. Если нет подключения — показывает окно "Failed to check for updates" с кнопкой "Try again"
 2. Если есть обновление приложения — скачивает инсталлятор, проверяет SHA-256, запускает silent install
-3. Если есть обновление данных — скачивает изменившиеся файлы из `manifest.data.files`, проверяет SHA-256, подменяет файлы
+3. Если есть обновление данных — точечно скачивает **только** те файлы из `manifest.data.files`, которые реально отличаются (отсутствуют локально или не совпадают по SHA-256); уже актуальные файлы не трогаются и не перекачиваются
 4. Гейт совместимости — если schema данных не совпадает с поддерживаемой приложением, показывает баннер
 
-`manifest.data.files` — не только `.cbm`/`_data.db`, но и `hero_hashes.dat` + каждый `assets/<hero>.png`. Для `.cbm`/`_data.db` `url` указывает на версионированный GitHub Release (`pack_data.bat`); для `hero_hashes.dat`/ассетов — напрямую на `raw.githubusercontent.com/.../main/finalapp/...`, т.е. приложение на каждом старте сверяет свои локальные копии с тем, что прямо сейчас лежит в main-ветке репозитория, без отдельных релизов/версий (см. `scripts/update_assets.ps1`). Несовпадение или отсутствие файла → перекачка; PNG, отсутствующий в манифесте (герой переименован/убран), удаляется (`cleanupObsoleteAssets` в `updater.cpp`).
+`manifest.data.files` — не только `.cbm`/`_data.db`, но и `hero_hashes.dat` + каждый `assets/<hero>.png` (~130 записей). Для `.cbm`/`_data.db` `url` указывает на версионированный GitHub Release (`pack_data.bat`); для `hero_hashes.dat`/ассетов — напрямую на `raw.githubusercontent.com/.../main/finalapp/...`, т.е. приложение на каждом старте сверяет свои локальные копии с тем, что прямо сейчас лежит в main-ветке репозитория, без отдельных релизов/версий (см. `scripts/update_assets.ps1`). Несовпадение или отсутствие файла → перекачка только этого файла; PNG, отсутствующий в манифесте (герой переименован/убран), удаляется (`cleanupObsoleteAssets` в `updater.cpp`).
+
+Прогресс-бар при обновлении данных считается по всей пачке файлов, которые реально нужно скачать, а не по одному файлу за раз: каждая запись в манифесте содержит `size` (байты), из них складывается общий объём докачки, и проценты идут от него — бар не сбрасывается на 0% при переходе к следующему файлу.
 
 Отдельно: полный переустановщик (`installer/dota_draft_setup.iss`) тоже ставит `assets/*.png` и `hero_hashes.dat` напрямую и перед копированием полностью удаляет папку `assets` (секция `[InstallDelete]`) — то же самое "не копить устаревшие файлы", но на случай, когда обновление идёт через новый инсталлятор, а не через фоновый data-канал.
 
@@ -236,8 +237,8 @@ build_unified.bat debug     :: debug (/Od /Zi)
 | `shared_types.h` | Общие типы (GameInfo, SharedPortraitState, GuiPickerState) |
 | `common.cpp / .h` | Логирование, HTTP (curl), SQLite RAII |
 | `version.h` | Константы версии: kAppVersion, kSupportedSchema, kManifestUrl |
-| `version_utils.cpp / .h` | Чтение/запись version.json, чтение meta из _data.db |
-| `updater.cpp / .h` | Система обновлений: manifest, download, sha256, swap, rollback |
+| `version_utils.cpp / .h` | Чтение meta (schema_version/data_version) из _data.db |
+| `updater.cpp / .h` | Система обновлений: manifest, точечная докачка только несовпавших файлов, sha256, swap, rollback, агрегированный прогресс |
 | `datafetcher.cpp` | Фаза 1a (init) + 1b (player data) |
 | `clouddatafetcher.cpp / .h` | PostgreSQL → SQLite sync (proherostats/immortalherostats); dev-инструмент, не вызывается в рантайме приложения |
 | `livestatsfetcher.cpp` | GSI HTTP-сервер |
@@ -257,10 +258,10 @@ build_unified.bat debug     :: debug (/Od /Zi)
 | Операция | Время | Когда |
 |----------|-------|-------|
 | Fetch manifest.json (~30KB, ~130 записей файлов) | 0.5-2с | Каждый запуск |
-| SHA-256 проверка ~130 локальных файлов (cbm/db/hero_hashes.dat/assets) | <100мс | Каждый запуск (checkForUpdates хэширует все файлы манифеста, не только изменившиеся) |
+| SHA-256 проверка ~130 локальных файлов (cbm/db/hero_hashes.dat/assets) | <100мс | Каждый запуск (checkForUpdates хэширует все файлы манифеста, чтобы найти расхождения) |
 | Скачивание app (~10MB) | 2-10с | Только при обновлении |
-| Скачивание data (~5.6MB) | 1-5с | Только при обновлении |
-| File swap (MoveFileEx) | <5мс/файл | Только при обновлении data |
+| Скачивание data | пропорционально объёму изменившихся файлов | Только при обновлении, и только для файлов, реально не совпавших с манифестом (`size` из манифеста → единый прогресс-бар на всю пачку) |
+| File swap (MoveFileEx) | <5мс/файл | Только для реально скачанных файлов при обновлении data |
 | Schema gate (2 SQL запроса) | <5мс | Один раз при старте picker |
 
 **Итого**: +0.5-2с к запуску (online, без обновления). Без влияния на производительность во время игры.
