@@ -175,6 +175,76 @@ static std::string heroDisplayName(int heroId, const char* fallback) {
     auto it = g_heroDisplayNames.find(heroId);
     return it != g_heroDisplayNames.end() ? it->second : (fallback ? fallback : "");
 }
+
+// ─── Meta Heroes: живая стата по героям (таблица `stats`, живой STRATZ heroStats) ─
+// Тот же ленивый паттерн, что и heroDisplayName(): читаем DB_PATH напрямую из GUI-потока,
+// повторяем попытку, пока фаза 1a (фоновый поток) не наполнит таблицу.
+struct MetaHeroRow { char name[64] = {}; int heroId = 0; int games = 0; float winRate = 0.f; };
+// Ключ 0 = агрегат по всем позициям (используется, когда позиция игрока ещё не определена).
+static std::map<int, std::vector<MetaHeroRow>> g_metaHeroStats;
+static bool g_metaHeroStatsLoaded = false;
+
+static void loadMetaHeroStatsIfNeeded() {
+    if (g_metaHeroStatsLoaded) return;
+    sqlite3* db = nullptr;
+    if (sqlite3_open(DB_PATH, &db) != SQLITE_OK) { if (db) sqlite3_close(db); return; }
+    sqlite3_stmt* st = nullptr;
+    bool any = false;
+    if (sqlite3_prepare_v2(db,
+            "SELECT s.hero_id, s.pos, s.games, s.wins, h.localized_name "
+            "FROM stats s JOIN heroes h ON h.id = s.hero_id "
+            "WHERE s.pos BETWEEN 1 AND 5", -1, &st, nullptr) == SQLITE_OK) {
+        struct Raw { int heroId, games, wins; std::string name; };
+        std::map<int, std::vector<Raw>> byPos;      // pos(1-5) -> raw rows
+        std::map<int, std::pair<int,int>> aggByHero; // heroId -> (games, wins) summed over all pos
+        std::map<int, std::string> nameByHero;
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            any = true;
+            int hid  = sqlite3_column_int(st, 0);
+            int pos  = sqlite3_column_int(st, 1);
+            int g    = sqlite3_column_int(st, 2);
+            int w    = sqlite3_column_int(st, 3);
+            const char* nm = (const char*)sqlite3_column_text(st, 4);
+            byPos[pos].push_back({hid, g, w, nm ? nm : ""});
+            auto& agg = aggByHero[hid];
+            agg.first  += g;
+            agg.second += w;
+            nameByHero[hid] = nm ? nm : "";
+        }
+        sqlite3_finalize(st);
+
+        if (any) {
+            auto toRow = [](int hid, int g, int w, const std::string& nm) {
+                MetaHeroRow r;
+                r.heroId  = hid;
+                r.games   = g;
+                r.winRate = g > 0 ? (float)w / g : 0.f;
+                std::snprintf(r.name, sizeof(r.name), "%s", nm.c_str());
+                return r;
+            };
+            for (auto& [pos, rows] : byPos) {
+                long long total = 0;
+                for (auto& r : rows) total += r.games;
+                long long floor = (long long)(total * 0.01);
+                std::vector<MetaHeroRow> kept;
+                for (auto& r : rows) if (r.games >= floor) kept.push_back(toRow(r.heroId, r.games, r.wins, r.name));
+                std::sort(kept.begin(), kept.end(), [](auto&a, auto&b){ return a.games > b.games; });
+                g_metaHeroStats[pos] = std::move(kept);
+            }
+            long long totalAll = 0;
+            for (auto& [hid, gw] : aggByHero) totalAll += gw.first;
+            long long aggFloor = (long long)(totalAll * 0.01);
+            std::vector<MetaHeroRow> aggRows;
+            for (auto& [hid, gw] : aggByHero)
+                if (gw.first >= aggFloor) aggRows.push_back(toRow(hid, gw.first, gw.second, nameByHero[hid]));
+            std::sort(aggRows.begin(), aggRows.end(), [](auto&a, auto&b){ return a.games > b.games; });
+            g_metaHeroStats[0] = std::move(aggRows); // 0 = агрегат по всем позициям (ордер по сумме матчей)
+
+            g_metaHeroStatsLoaded = true;
+        }
+    }
+    sqlite3_close(db);
+}
 // Портреты + пикер: активны HERO_SELECTION + 5с. GUI показывает результат до конца игры.
 static constexpr int PHASE3_TAIL_SEC = 5;
 
@@ -1191,21 +1261,29 @@ static void DrawPicksPanel(float panelW) {
 
     SectionLabel(ourHeroPicked ? "YOUR PICK" : "RECOMMENDED PICKS");
 
-    // Position badge
-    if (ourPosition > 0) {
-        char badgeText[32];
-        std::snprintf(badgeText, sizeof(badgeText),
-                      "[=] Position %d", ourPosition);
-        ImVec2 ts = ImGui::CalcTextSize(badgeText);
-        float  bW = ts.x + 14.f;
-        float  bH = lh + 6.f;
-        ImGui::SameLine(panelW - bW);
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 bp = ImGui::GetCursorScreenPos();
-        dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
-        dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
-        dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
-        ImGui::Dummy({bW,bH});
+    // Position badge — высота строки резервируется всегда (даже без бейджа),
+    // чтобы разделитель совпадал по высоте с соседней панелью Meta Heroes.
+    {
+        float bH = lh + 6.f;
+        if (ourPosition > 0) {
+            char badgeText[32];
+            std::snprintf(badgeText, sizeof(badgeText),
+                          "[=] Position %d", ourPosition);
+            ImVec2 ts = ImGui::CalcTextSize(badgeText);
+            float  bW = ts.x + 14.f;
+            ImGui::SameLine(panelW - bW);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 bp = ImGui::GetCursorScreenPos();
+            dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
+            dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
+            dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
+            ImGui::Dummy({bW,bH});
+        } else {
+            // Без бейджа — держим резервируемую высоту на той же строке, что и заголовок
+            // секции (как и в ветке с бейджем), а не на новой строке ниже него.
+            ImGui::SameLine(panelW - 1.f);
+            ImGui::Dummy({1.f, bH});
+        }
     }
 
     ImGui::Spacing();
@@ -1376,6 +1454,152 @@ static void DrawPicksPanel(float panelW) {
             x += dotSz + 4.f;
             ImVec2 ts = ImGui::CalcTextSize(it.txt);
             dl->AddText({x, fp.y}, Ca(kMuted, 0.8f), it.txt);
+            x += ts.x + gap * 2.f;
+        }
+        ImGui::Dummy({rW_ref, lhL + 4.f});
+    }
+}
+
+// ─── Панель "Meta Heroes" (живая стата по героям из STRATZ, без ML) ───────────
+// Позиция всегда авто: следует за позицией игрока из драфта; если позиция не определена — агрегат по всем.
+static void DrawMetaHeroesPanel(float panelW) {
+    loadMetaHeroStatsIfNeeded();
+
+    const float lh        = ImGui::GetTextLineHeight();
+    const float WIN_COL_W = 88.f;
+    const float BAR_W     = 68.f;
+    const float rW_ref    = panelW;
+
+    int ourPosition = 0;
+    { std::lock_guard<std::mutex> lk(g_pickerState.mtx); ourPosition = g_pickerState.ourPosition; }
+
+    int effectivePos = (ourPosition > 0) ? ourPosition : 0; // 0 = агрегат по всем позициям
+
+    SectionLabel("META HEROES");
+
+    // Position badge — то же оформление, что и в DrawPicksPanel
+    {
+        char badgeText[32];
+        if (effectivePos > 0)
+            std::snprintf(badgeText, sizeof(badgeText), "[=] Position %d", effectivePos);
+        else
+            std::snprintf(badgeText, sizeof(badgeText), "[=] All Positions");
+        ImVec2 ts = ImGui::CalcTextSize(badgeText);
+        float  bW = ts.x + 14.f;
+        float  bH = lh + 6.f;
+        ImGui::SameLine(panelW - bW);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 bp = ImGui::GetCursorScreenPos();
+        dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
+        dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
+        dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
+        ImGui::Dummy({bW,bH});
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    if (!g_metaHeroStatsLoaded) {
+        ImGui::TextColored(kMuted, "  Loading meta stats...");
+        return;
+    }
+
+    auto it = g_metaHeroStats.find(effectivePos);
+    if (it == g_metaHeroStats.end() || it->second.empty()) {
+        ImGui::TextColored(kMuted, "  No data for this position yet");
+        return;
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX()+4.f);
+    ImGui::TextUnformatted("#  Hero");
+    {
+        float colX  = rW_ref - WIN_COL_W;
+        ImVec2 ts   = ImGui::CalcTextSize("Win Rate");
+        float textX = colX + (WIN_COL_W - ts.x)*0.5f;
+        ImGui::SameLine(textX);
+        ImGui::TextUnformatted("Win Rate");
+    }
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    auto DrawMetaRow = [&](int rank, const MetaHeroRow& row) {
+        ImDrawList* dl  = ImGui::GetWindowDrawList();
+        ImVec2      rp  = ImGui::GetCursorScreenPos();
+        const float lh2 = ImGui::GetTextLineHeight();
+        const float RH  = lh2 * 2.9f;
+        const float PSZ = lh2 * 2.0f;
+        const float rW  = rW_ref;
+        ImVec4      wc  = WinColor(row.winRate);
+
+        const float portX  = rp.x + lh2 * 1.8f;
+        const float nameX  = portX + PSZ + lh2 * 0.5f;
+        const float statsX = rp.x + rW * 0.47f;
+        const float winX   = rp.x + rW - WIN_COL_W;
+
+        dl->AddRectFilled(rp,{rp.x+rW,rp.y+RH},C(kCard));
+        dl->AddRect(rp,{rp.x+rW,rp.y+RH},C(kBorder));
+
+        char rb[4]; std::snprintf(rb,sizeof(rb),"%2d",rank);
+        dl->AddText({rp.x+4.f, rp.y+(RH-lh2)*0.5f}, C(kMuted), rb);
+
+        ImVec2 pp  = {portX, rp.y+(RH-PSZ)*0.5f};
+        ImU32  fill = C(kCard2);
+        ImU32  bord = Ca(kText,0.12f);
+        char   ab[3] = {row.name[0], row.name[1] ? row.name[1] : '\0', '\0'};
+        ImTextureID htex = 0;
+        auto hit = g_heroPortraits.find(row.heroId);
+        if (hit != g_heroPortraits.end()) htex = (ImTextureID)hit->second;
+        DrawPortrait(dl, pp, PSZ, fill, bord, ab, htex);
+
+        dl->PushClipRect({nameX, rp.y}, {statsX - 6.f, rp.y+RH}, true);
+        dl->AddText({nameX, rp.y+(RH-lh2)*0.5f}, C(kText), row.name);
+        dl->PopClipRect();
+
+        char sub[32]; std::snprintf(sub,sizeof(sub),"%d games", row.games);
+        dl->PushClipRect({statsX, rp.y}, {winX - 4.f, rp.y+RH}, true);
+        dl->AddText({statsX, rp.y+(RH-lh2)*0.5f}, Ca(kMuted,0.85f), sub);
+        dl->PopClipRect();
+
+        char   wb[8]; std::snprintf(wb,sizeof(wb),"%.1f%%", row.winRate*100.f);
+        ImVec2 wts = ImGui::CalcTextSize(wb);
+        dl->AddText({winX+(WIN_COL_W-wts.x)*0.5f, rp.y+5.f}, C(wc), wb);
+        float barX = winX + (WIN_COL_W-BAR_W)*0.5f;
+        DrawBar(dl, {barX, rp.y+lh2+12.f}, BAR_W, 4.f, row.winRate, C(wc));
+
+        ImGui::Dummy({rW,RH});
+        ImGui::Spacing();
+    };
+
+    auto& rows = it->second;
+    int n = (int)std::min(rows.size(), (size_t)10);
+    for (int i=0;i<n;i++) DrawMetaRow(i+1, rows[i]);
+
+    // Легенда цветов — то же оформление, что и в DrawPicksPanel
+    ImGui::Separator();
+    ImGui::Spacing();
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 fp  = ImGui::GetCursorScreenPos();
+        const float lhL = ImGui::GetTextLineHeight();
+        const float dotSz = lhL * 0.55f;
+        const float dotY  = fp.y + (lhL - dotSz) * 0.5f;
+        const float gap   = lhL * 0.5f;
+
+        struct LegItem { ImVec4 col; const char* txt; };
+        LegItem items[] = {
+            {kGreen, ">=55%"},
+            {kAmber, "50-55%"},
+            {kRed,   "<50%"}
+        };
+
+        float x = fp.x + 4.f;
+        for (auto& li : items) {
+            dl->AddRectFilled({x, dotY}, {x+dotSz, dotY+dotSz}, C(li.col));
+            x += dotSz + 4.f;
+            ImVec2 ts = ImGui::CalcTextSize(li.txt);
+            dl->AddText({x, fp.y}, Ca(kMuted, 0.8f), li.txt);
             x += ts.x + gap * 2.f;
         }
         ImGui::Dummy({rW_ref, lhL + 4.f});
@@ -1725,8 +1949,10 @@ static void RenderFrame() {
 
     float usedH    = ImGui::GetCursorPosY();
     float contentH = H - usedH - PAD;
-    float leftW    = FULL * 0.575f;
-    float rightW   = FULL - leftW - 8.f;
+    float leftW    = FULL * 0.46f;
+    float restW    = FULL - leftW - 16.f;   // 2 gaps of 8px
+    float midW     = restW * 0.5f;
+    float rightW   = restW - midW;
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
     ImGui::BeginChild("##draft",{leftW,contentH},true,ImGuiWindowFlags_NoScrollbar);
@@ -1738,9 +1964,18 @@ static void RenderFrame() {
     ImGui::SameLine(0, 8.f);
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
-    ImGui::BeginChild("##picks",{rightW,contentH},true);
+    ImGui::BeginChild("##picks",{midW,contentH},true);
     ImGui::Spacing();
     DrawPicksPanel(ImGui::GetContentRegionAvail().x);
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(0, 8.f);
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
+    ImGui::BeginChild("##meta",{rightW,contentH},true);
+    ImGui::Spacing();
+    DrawMetaHeroesPanel(ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
@@ -2107,8 +2342,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         }
     }
 
-    // ── Фаза 1a: таблицы + справочник героев (фоновый поток) ────────────
-    std::thread([]{ runDataFetcherInit(); }).detach();
+    // ── Фаза 1a: таблицы + справочник героев + мета-стата (фоновый поток) ───
+    std::thread([]{ runDataFetcherInit(g_stratzToken); }).detach();
 
     // ── Start orchestrator thread ─────────────────────────────────────────
     g_orchestratorThread = std::thread(orchestratorMain);

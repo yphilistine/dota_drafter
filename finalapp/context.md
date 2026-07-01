@@ -88,8 +88,15 @@ GSI-таймаут: если нет обновлений > 5с — сброс н
 | `storeRelevantPlayerByPos(db, accountId, rows)` | INSERT OR REPLACE статистика по позициям |
 | `storePlayerHeroVsHeroByPos(db, accountId, rows)` | INSERT OR REPLACE статистика vs |
 | `storePlayerHeroWithHeroByPos(db, accountId, rows)` | INSERT OR REPLACE статистика with |
+| `lastCompletedWeekTimestamp()` | Понедельник 00:00 UTC последней полностью завершённой недели |
+| `buildHeroStatsQuery(week)` | Формирование GraphQL запроса STRATZ `heroStats.stats` (bracket DIVINE_IMMORTAL, groupByPosition/Bracket) |
+| `sendStratzHeroStats(token, week)` | POST STRATZ GraphQL для heroStats |
+| `parseHeroStatsResponse(response)` | Парсинг ответа → vector\<HeroWeekStat\> (heroId, pos, matchCount, winCount) |
+| `createHeroStatsTableIfNotExists(db)` | Создание таблицы `stats` |
+| `storeHeroStatsTable(db, rows)` | Полная перезапись `stats` (DELETE + INSERT OR REPLACE) |
+| `fetchAndStoreHeroStats(db, token)` | Главная функция: последняя неделя → STRATZ heroStats → SQLite `stats`. Не бросает исключений наружу (мягкий сбой при недоступности STRATZ) |
 
-Структуры: `MatchDraft` (matchId, picks, positions, won), `HeroStats`, `HeroInfo`.
+Структуры: `MatchDraft` (matchId, picks, positions, won), `HeroStats`, `HeroInfo`, `HeroWeekStat`.
 
 ---
 
@@ -98,7 +105,7 @@ GSI-таймаут: если нет обновлений > 5с — сброс н
 
 | Функция | Описание |
 |---------|----------|
-| `runDataFetcherInit()` | Фаза 1a: справочник героев + создание таблиц. Не требует accountId. Запускается при старте приложения |
+| `runDataFetcherInit(stratzToken)` | Фаза 1a: справочник героев + создание таблиц + живая мета-стата героев (`fetchAndStoreHeroStats`, STRATZ `heroStats`, последняя завершённая неделя). Не требует accountId, но требует STRATZ-токен для мета-статы (иначе — мягкий пропуск). Запускается при старте приложения |
 | `runDataFetcher(accountId, stratzToken)` | Фаза 1b: загрузка данных игрока (статистика героев, матчи). Требует accountId |
 
 ---
@@ -112,6 +119,8 @@ GSI-таймаут: если нет обновлений > 5с — сброс н
 | `fetchAndStoreImmortalHeroStats(db, connStr)` | PG `recentimmortalmatches` → агрегация (hero_id, pos) → SQLite `immortalherostats` |
 
 Компилируется в основной exe (см. `build_unified.bat`), линкуется с libpq, но **не вызывается ни из одного рантайм-пути** (нет вызовов в `datafetcher.cpp`/`mainGUI.cpp`). Похоже на офлайн/dev-инструмент разработчика для регенерации `proherostats`/`immortalherostats` перед `scripts/pack_data.bat`, а не часть логики приложения у пользователя.
+
+**Immortal-стата больше не читается из `immortalherostats`**: `dota_picker.cpp` теперь берёт её из живой таблицы `stats` в `playerandlivestats.db` (см. `playerdatafetcher.cpp`/`datafetcher.cpp` выше). Таблица `immortalherostats` удалена из текущего `finalapp/draft_helper_abstract_data.db` (`DROP TABLE`, содержала 635 устаревших строк без автоматического обновления). Код этого файла оставлен нетронутым как есть — при ручном запуске он всё ещё пересоздаст `immortalherostats`/`proherostats` в `data.db`, но ничто в рантайме их больше не прочитает.
 
 ---
 
@@ -227,15 +236,15 @@ ML-пикер: CatBoost инференс + рекомендации героев
 | `Stmt` | RAII: sqlite3_prepare_v2 / finalize + хелперы |
 | `loadHeroes(db)` | SQLite → map\<id, name\> |
 | `loadMatchupData(dataDb)` | Data DB → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr) |
-| `loadImmortalHeroStats(dataDb, pos)` | Data DB → map\<hero_id, ImmortalHeroStats\> (games >= 1000) |
+| `loadImmortalHeroStats(db, pos)` | Player DB, таблица `stats` (живой STRATZ, DIVINE_IMMORTAL) → map\<hero_id, ImmortalHeroStats\>. Порог отсечения — динамический: 1% от суммарных игр на позиции за неделю (не фиксированное число) |
 | `loadPlayerStats(db, account_id)` | Player DB → map\<hero_id, PlayerStats\> |
 | `loadLatestLivePick(db, lp)` | Последняя строка livepicks → LivePick |
 | `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(radiant_win) |
 | `renderToGui(state, lp, ...)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) + inferenceGen++ |
 | `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс |
 
-Данные модели читаются из `{modelPath}_data.db` (отдельная БД).
-Schema gate: перед загрузкой модели проверяет `meta.schema_version == kSupportedSchema`.
+Matchup-данные читаются из `{modelPath}_data.db` (отдельная БД). Immortal/мета-стата — из `playerandlivestats.db` (`stats`), не из data.db.
+Schema gate: перед загрузкой модели проверяет `meta.schema_version == kSupportedSchema` (мета-стата в схему не входит — `buildVector` её не использует).
 
 ---
 
@@ -302,11 +311,13 @@ GUI: ImGui/D3D11 + оркестратор + система обновлений.
 | `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Friend ID |
 | `DrawStatusBar(fullW)` | Полоса статуса: Player data (no ID/pending/fetching/ready/error) + Refresh + Game phase + match ID |
 | `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb |
-| `DrawPicksPanel(panelW)` | Правая панель: рекомендации top-10 / выбранный герой |
+| `DrawPicksPanel(panelW)` | Средняя панель: рекомендации top-10 / выбранный герой (ML) |
+| `loadMetaHeroStatsIfNeeded()` | Ленивая загрузка `stats` из `playerandlivestats.db` в `g_metaHeroStats` (по позиции 1-5 + агрегат по всем под ключом 0), с порогом 1% от суммарных игр, сортировка по сумме матчей (games) убыв. Повторяет попытку каждый кадр, пока таблица пуста (фаза 1a может ещё не завершиться) — тот же паттерн, что `heroDisplayName()` |
+| `DrawMetaHeroesPanel(panelW)` | Правая панель: топ-10 героев по популярности (STRATZ, сумма матчей, без ML), винрейт — вторичная цветная метрика. Оформление как у DrawPicksPanel (position-бейдж, легенда цветов). Позиция всегда авто — следует за позицией игрока из g_pickerState, иначе агрегат по всем позициям (без ручного переключения) |
 | `DrawHeroSlot(rowW, h, ...)` | Отрисовка слота героя с кликабельным popup позиции (1-5, свап) |
 | `DrawPortrait(dl, p, sz, ...)` | Отрисовка квадрата портрета: PNG-текстура или инициалы |
 | `loadHeroPortraits()` | Загрузка PNG из assets/ → кэш `g_heroPortraits` |
-| `RenderFrame()` | Главный кадр: root window → Header → StatusBar → баннеры → Draft + Picks |
+| `RenderFrame()` | Главный кадр: root window → Header → StatusBar → баннеры → Draft + Picks + Meta Heroes (3 колонки) |
 | `orchestratorMain()` | Фоновый цикл: GSI → portrait → picker + portrait→GUI sync + one-shot inference |
 | `startPhase1(accountId)` | Запуск DataFetcher (1b) + имя игрока в фоновом потоке |
 | `WinMain(hInst, ...)` | Точка входа: CWD → curl → GDI+ → **update check** → config → DB → фазы → D3D11 → ImGui → loop |
@@ -357,6 +368,7 @@ Inno Setup скрипт полной установки/апдейта прил�
 | `playerherowithherobyposstats` | (account_id, hero_id, pos, with_hero_id, with_pos) | Статистика hero with hero |
 | `livepicks` | single row | Текущий драфт: 10 hero-слотов + 10 pos-слотов + метаданные матча |
 | `player_info` | account_id | Сохранённый Friend ID + имя |
+| `stats` | (hero_id, pos) | Живая мета-стата героев (STRATZ `heroStats`, bracket DIVINE_IMMORTAL, последняя завершённая неделя). Полная перезапись при каждом старте фазой 1a. Используется `dota_picker.cpp` (фильтрация пула кандидатов + "imm %") и GUI-панелью Meta Heroes |
 
 ### draft_helper_abstract_data.db — данные модели
 
@@ -368,7 +380,8 @@ Inno Setup скрипт полной установки/апдейта прил�
 | `with_wr` | (hero_id, ally_hero_id) | Пайрвайзный winrate hero with hero (prior=20) |
 | `modal_pos` | hero_id | Модальная позиция героя (1-5) |
 | `hero_pos_wr` | (hero_id, pos) | Winrate героя на позиции (prior=50) |
-| `immortalherostats` | (hero_id, pos) | Immortal-статистика для фильтрации пула кандидатов |
+
+`immortalherostats` больше не входит в эту БД — удалена (`DROP TABLE`, была статичной, без автообновления). Immortal/мета-стата теперь живая и лежит в `playerandlivestats.db` (`stats`).
 
 ---
 
@@ -424,6 +437,7 @@ VS Code Tasks: "Release App", "Release Data", "Update Assets".
 | OpenDota `/api/players/{id}/heroes` | Статистика героев игрока (фаза 1b) |
 | OpenDota `/api/players/{id}/matches` | Список match_id (90 дней, ranked) (фаза 1b) |
 | STRATZ GraphQL | Батч-запрос деталей матчей (фаза 1b) |
+| STRATZ GraphQL `heroStats.stats` | Живая мета-стата героев по позициям, bracket DIVINE_IMMORTAL, последняя завершённая неделя (фаза 1a, без accountId) |
 | OpenDota `/api/players/{id}` | Профиль игрока: personaname, avatarmedium (фаза 1b) |
 | Dota 2 GSI | Состояние игры в реальном времени |
 

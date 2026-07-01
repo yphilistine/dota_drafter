@@ -131,8 +131,8 @@ struct GuiPickerState {
 
 // ─── Декларации функций модулей ───────────────────────────────────────────────
 
-// Фаза 1a: создание таблиц + справочник героев (не требует accountId).
-int  runDataFetcherInit();
+// Фаза 1a: создание таблиц + справочник героев + живая мета-стата (не требует accountId).
+int  runDataFetcherInit(const std::string& stratzToken);
 
 // Фаза 1b: загрузка данных игрока. Возвращает 0 при успехе.
 int  runDataFetcher(long long accountId, const std::string& stratzToken);

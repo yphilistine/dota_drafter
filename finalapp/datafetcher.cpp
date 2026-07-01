@@ -2,8 +2,8 @@
 #include "playerdatafetcher.h"
 #include "shared_types.h"
 
-// Фаза 1a: таблицы + справочник героев (без accountId)
-int runDataFetcherInit() {
+// Фаза 1a: таблицы + справочник героев + живая мета-стата (без accountId)
+int runDataFetcherInit(const std::string& stratzToken) {
     try {
         std::string heroesJson = fetchHeroesList();
         auto HeroesList = parseHeroesList(heroesJson);
@@ -22,6 +22,11 @@ int runDataFetcherInit() {
         createIndexesIfNotExist(db.get());
 
         LOG_INFO("Таблицы и справочник героев готовы");
+
+        if (!stratzToken.empty())
+            fetchAndStoreHeroStats(db.get(), stratzToken);
+        else
+            LOG_WARN("HeroStats (meta) пропущен: нет STRATZ токена");
     } catch (const std::exception& ex) {
         LOG_ERR("DataFetcherInit: " << ex.what());
         return 1;

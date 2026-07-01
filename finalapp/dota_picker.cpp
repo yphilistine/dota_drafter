@@ -2,7 +2,9 @@
  * dota_picker.cpp — ML-пикер: CatBoost инференс + рекомендации героев.
  *
  * Модель: draft_helper_abstract.cbm (одна, все фазы драфта).
- * Данные: draft_helper_abstract_data.db (matchup, modal_pos, hero_pos_wr, immortalherostats).
+ * Данные: draft_helper_abstract_data.db (matchup, modal_pos, hero_pos_wr).
+ * Мета-стата (immortal, DIVINE_IMMORTAL): playerandlivestats.db, таблица `stats`
+ * (живой STRATZ heroStats, обновляется фазой 1a при каждом старте — см. datafetcher.cpp).
  * Фичи: 10 cat (hero names) + 42 float (30 matchup + 2 mastery + 10 hero_pos_wr).
  * Требует accountId для mastery-фич.
  */
@@ -328,14 +330,24 @@ static MatchupData loadMatchupData(sqlite3* db) {
     return md;
 }
 
-static constexpr int MIN_IMMORTAL_GAMES = 1000;
-static std::map<int,ImmortalHeroStats> loadImmortalHeroStats(sqlite3* dataDb, int position) {
+// Порог отсечения кандидатов — динамический: 1% от суммарных игр на позиции за неделю
+// (не фиксированное число игр — данные теперь недельный STRATZ-снимок, а не all-time PG-дамп).
+static std::map<int,ImmortalHeroStats> loadImmortalHeroStats(sqlite3* db, int position) {
     std::map<int,ImmortalHeroStats> m;
     if (position <= 0 || position > 5) return m;
     try {
-        Stmt st(dataDb,"SELECT hero_id,games,wins FROM immortalherostats WHERE pos=? AND games>=? ORDER BY games DESC");
-        st.bind_int(1,position); sqlite3_bind_int(st.get(),2,MIN_IMMORTAL_GAMES);
-        while (st.row()) m[st.col_int(0)] = {st.col_int(1), st.col_int(2)};
+        std::vector<std::tuple<int,int,int>> rows; // hero_id, games, wins
+        long long totalGames = 0;
+        Stmt st(db,"SELECT hero_id,games,wins FROM stats WHERE pos=?");
+        st.bind_int(1,position);
+        while (st.row()) {
+            int hid=st.col_int(0), g=st.col_int(1), w=st.col_int(2);
+            rows.emplace_back(hid,g,w);
+            totalGames += g;
+        }
+        long long minGames = (long long)(totalGames * 0.01);
+        for (auto& [hid,g,w] : rows)
+            if (g >= minGames) m[hid] = {g, w};
     } catch (...) {}
     return m;
 }
@@ -610,7 +622,7 @@ int runPickerGui(const char* model_path, const char* db_path,
             if (our_d >= 0 && our_d < 5) our_pos = lp.d[our_d].position;
 
             if (our_pos != last_our_pos) {
-                immortal_map = loadImmortalHeroStats(dataDb.get(), our_pos);
+                immortal_map = loadImmortalHeroStats(db.get(), our_pos);
                 last_our_pos = our_pos;
             }
 
