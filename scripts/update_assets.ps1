@@ -26,8 +26,9 @@ Get-ChildItem 'finalapp\assets\*.png' | Sort-Object Name | ForEach-Object {
 
 $assetEntries = [ordered]@{}
 foreach ($key in $files.Keys) {
-    $hash = (Get-FileHash -Algorithm SHA256 -Path $files[$key]).Hash.ToLower()
-    $assetEntries[$key] = [ordered]@{ url = "$rawBase/$key"; sha256 = $hash }
+    $item = Get-Item -Path $files[$key]
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $item.FullName).Hash.ToLower()
+    $assetEntries[$key] = [ordered]@{ url = "$rawBase/$key"; sha256 = $hash; size = $item.Length }
 }
 
 Write-Host "[2/2] Updating manifest.json ($($assetEntries.Count) files)..."

@@ -35,6 +35,9 @@ set "SHA_DB=%SHA_DB: =%"
 echo CBM: %SHA_CBM%
 echo DB:  %SHA_DB%
 
+for %%A in (finalapp\draft_helper_abstract.cbm) do set "SIZE_CBM=%%~zA"
+for %%A in (finalapp\draft_helper_abstract_data.db) do set "SIZE_DB=%%~zA"
+
 :: ── 3. GitHub release ────────────────────────────────────────────────────
 echo [3/5] Creating GitHub release data-%DVER%...
 gh release create "data-%DVER%" finalapp\draft_helper_abstract.cbm finalapp\draft_helper_abstract_data.db --title "Data %DVER%" --notes "Data version %DVER%, schema %SCHEMA%"
@@ -50,8 +53,10 @@ set "PS1=%TEMP%\dd_update_data_manifest.ps1"
     echo $m.data.schema = [int]%SCHEMA%
     echo $m.data.files.'draft_helper_abstract.cbm'.url = '%BASE_URL%/draft_helper_abstract.cbm'
     echo $m.data.files.'draft_helper_abstract.cbm'.sha256 = '%SHA_CBM%'
+    echo $m.data.files.'draft_helper_abstract.cbm'.size = [int64]%SIZE_CBM%
     echo $m.data.files.'draft_helper_abstract_data.db'.url = '%BASE_URL%/draft_helper_abstract_data.db'
     echo $m.data.files.'draft_helper_abstract_data.db'.sha256 = '%SHA_DB%'
+    echo $m.data.files.'draft_helper_abstract_data.db'.size = [int64]%SIZE_DB%
     echo $out = ConvertTo-Json $m -Depth 10
     echo Set-Content 'manifest.json' $out -Encoding utf8
 ) > "%PS1%"

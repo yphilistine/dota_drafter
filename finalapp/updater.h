@@ -17,6 +17,7 @@ enum class UpdateAction {
 struct FileEntry {
     std::string url;
     std::string sha256;
+    size_t      size = 0; // байт, из манифеста (0 = неизвестно, старый манифест без поля)
 };
 
 struct ManifestInfo {

@@ -150,6 +150,7 @@ bool fetchManifest(ManifestInfo& out) {
                 FileEntry fe;
                 fe.url    = fobj.value("url",    std::string());
                 fe.sha256 = fobj.value("sha256", std::string());
+                fe.size   = fobj.value("size",   (size_t)0);
                 out.dataFiles[fname] = fe;
             }
         }
@@ -285,12 +286,35 @@ bool downloadAndStageData(const ManifestInfo& manifest,
                           std::vector<std::string>& stagedFiles,
                           ProgressCb progress) {
     stagedFiles.clear();
+
+    // Сначала выбираем файлы, которые реально нужно скачать, и считаем их
+    // суммарный размер (manifest.size) — чтобы progress шёл по всей пачке
+    // сразу, а не скидывался на 0% на старте каждого отдельного файла.
+    std::vector<std::pair<std::string, FileEntry>> toDownload;
+    size_t totalBytes = 0;
     for (auto& [fname, fe] : manifest.dataFiles) {
         if (localFileUpToDate(fname, fe.sha256)) continue; // уже актуален — не трогаем
+        toDownload.emplace_back(fname, fe);
+        totalBytes += fe.size;
+    }
 
+    size_t doneBytes = 0;
+    for (auto& [fname, fe] : toDownload) {
         std::string stagingPath = std::string(STAGING_DIR) + "\\" + fname;
-        if (!downloadToStaging(fe.url, fe.sha256, stagingPath, progress))
+
+        ProgressCb wrapped = nullptr;
+        if (progress) {
+            wrapped = [&](size_t fileDone, size_t fileTotal) {
+                if (totalBytes > 0)
+                    progress(doneBytes + fileDone, totalBytes);
+                else
+                    progress(fileDone, fileTotal); // манифест без "size" — прогресс по текущему файлу
+            };
+        }
+
+        if (!downloadToStaging(fe.url, fe.sha256, stagingPath, wrapped))
             return false;
+        doneBytes += fe.size;
         stagedFiles.push_back(fname);
     }
     LOG_INFO("Data update: " << stagedFiles.size() << "/" << manifest.dataFiles.size()
