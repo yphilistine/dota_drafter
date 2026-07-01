@@ -2060,7 +2060,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
         if (action == UpdateAction::DATA_UPDATE) {
             SetUpdateStatus(L"Downloading data update...");
-            bool staged = downloadAndStageData(manifest,
+            std::vector<std::string> stagedFiles;
+            bool staged = downloadAndStageData(manifest, stagedFiles,
                 [](size_t done, size_t total) {
                     if (total > 0)
                         SetUpdateProgress(L"Downloading data...", (int)(done * 100 / total));
@@ -2069,7 +2070,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                 });
             if (staged) {
                 SetUpdateStatus(L"Applying data update...");
-                if (swapDataFiles(manifest))
+                if (swapDataFiles(manifest, stagedFiles))
                     LOG_INFO("Data updated to version " << manifest.dataVersion);
                 else
                     LOG_ERR("Data swap failed, using existing data");

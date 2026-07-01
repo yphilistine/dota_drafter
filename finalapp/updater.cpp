@@ -270,12 +270,31 @@ bool downloadToStaging(const std::string& url,
 
 // ─── Data channel ────────────────────────────────────────────────────────────
 
-bool downloadAndStageData(const ManifestInfo& manifest, ProgressCb progress) {
+// Локальный файл уже совпадает с манифестом — перекачивать не нужно.
+static bool localFileUpToDate(const std::string& fname, const std::string& expectedSha256) {
+    if (expectedSha256.empty()) return false;
+    if (GetFileAttributesA(fname.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    try {
+        return fileSha256(fname) == expectedSha256;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool downloadAndStageData(const ManifestInfo& manifest,
+                          std::vector<std::string>& stagedFiles,
+                          ProgressCb progress) {
+    stagedFiles.clear();
     for (auto& [fname, fe] : manifest.dataFiles) {
+        if (localFileUpToDate(fname, fe.sha256)) continue; // уже актуален — не трогаем
+
         std::string stagingPath = std::string(STAGING_DIR) + "\\" + fname;
         if (!downloadToStaging(fe.url, fe.sha256, stagingPath, progress))
             return false;
+        stagedFiles.push_back(fname);
     }
+    LOG_INFO("Data update: " << stagedFiles.size() << "/" << manifest.dataFiles.size()
+             << " files need downloading (rest already up to date)");
     return true;
 }
 
@@ -307,22 +326,24 @@ static void cleanupObsoleteAssets(const ManifestInfo& manifest) {
     FindClose(h);
 }
 
-bool swapDataFiles(const ManifestInfo& manifest) {
+bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>& stagedFiles) {
+    if (stagedFiles.empty()) return true; // всё уже актуально — менять нечего
+
     // swap.lock для отслеживания прерванных операций
     {
         std::ofstream lk(SWAP_LOCK, std::ios::trunc);
         lk << "{\"status\":\"in_progress\"}";
     }
 
-    // Бэкап текущих файлов
-    for (auto& [fname, _] : manifest.dataFiles) {
+    // Бэкап текущих файлов (только тех, что реально заменяем)
+    for (auto& fname : stagedFiles) {
         std::string bak = fname + ".bak";
         CopyFileA(fname.c_str(), bak.c_str(), FALSE);
     }
 
     // Замена: staging → live
     bool ok = true;
-    for (auto& [fname, _] : manifest.dataFiles) {
+    for (auto& fname : stagedFiles) {
         std::string staged = std::string(STAGING_DIR) + "\\" + fname;
         ensureParentDir(fname);
         if (!MoveFileExA(staged.c_str(), fname.c_str(), MOVEFILE_REPLACE_EXISTING)) {
@@ -340,7 +361,7 @@ bool swapDataFiles(const ManifestInfo& manifest) {
     }
 
     // Удалить бэкапы и lock
-    for (auto& [fname, _] : manifest.dataFiles)
+    for (auto& fname : stagedFiles)
         DeleteFileA((fname + ".bak").c_str());
     DeleteFileA(SWAP_LOCK);
 

@@ -2,6 +2,7 @@
 #include <string>
 #include <functional>
 #include <map>
+#include <vector>
 #include "version_utils.h"
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
@@ -43,8 +44,16 @@ bool downloadToStaging(const std::string& url,
 
 std::string fileSha256(const std::string& path);
 
-bool downloadAndStageData(const ManifestInfo& manifest, ProgressCb progress = nullptr);
-bool swapDataFiles(const ManifestInfo& manifest);
+// stagedFiles получает ключи манифеста, которые реально были скачаны (т.е. локальный
+// файл отсутствовал или не совпадал по SHA-256). Файлы, уже совпадающие с манифестом,
+// не перекачиваются и не попадают в stagedFiles.
+bool downloadAndStageData(const ManifestInfo& manifest,
+                          std::vector<std::string>& stagedFiles,
+                          ProgressCb progress = nullptr);
+
+// Меняет местами (staging -> live) только файлы из stagedFiles — остальные
+// (уже актуальные) не трогаются вовсе.
+bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>& stagedFiles);
 void rollbackDataFiles();
 void checkPendingSwap();
 void cleanupStaging();

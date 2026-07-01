@@ -273,8 +273,8 @@ Schema gate: перед загрузкой модели проверяет `meta
 | `checkForUpdates(manifest)` | App: kAppVersion vs manifest. Data: SHA-256 **каждого** файла из dataFiles на диске vs манифест → UpdateAction |
 | `downloadToStaging(url, sha256, path, progress)` | Скачивание в .part + SHA-256 через BCrypt + rename. Создаёт вложенные директории назначения (`ensureParentDir`) |
 | `fileSha256(path)` | SHA-256 файла через BCrypt API (64KB чанки) |
-| `downloadAndStageData(manifest, progress)` | Скачивание всех dataFiles в staging/ (сохраняя относительный путь ключа, напр. `staging\assets\foo.png`) |
-| `swapDataFiles(manifest)` | Backup (.bak) + MoveFileEx для каждого файла манифеста + `cleanupObsoleteAssets` + удаление .bak/lock |
+| `downloadAndStageData(manifest, stagedFiles, progress)` | **Выборочно**: для каждого файла манифеста сначала проверяет `localFileUpToDate` (существует + SHA-256 совпадает) — совпавшие пропускает без скачивания; скачивает только отсутствующие/изменившиеся, их ключи возвращает через `stagedFiles` (out-параметр) |
+| `swapDataFiles(manifest, stagedFiles)` | Backup (.bak) + MoveFileEx только для файлов из `stagedFiles` (не всего манифеста) + `cleanupObsoleteAssets` + удаление .bak/lock. Пустой `stagedFiles` → no-op |
 | `cleanupObsoleteAssets(manifest)` | Удаляет `assets\*.png`, которых нет среди ключей `assets/*` в манифесте (герой переименован/убран) — иначе маска `assets\*.png` только добавляет/перезаписывает и никогда не подчищает лишнее |
 | `rollbackDataFiles()` | Без ManifestInfo (вызывается до fetchManifest): восстанавливает `*.bak` и `assets\*.bak` по маске, а не по жёстко заданному списку файлов |
 | `checkPendingSwap()` | Проверка swap.lock при старте → rollback если найден |
@@ -383,7 +383,7 @@ CWD → curl_global_init → GDI+
   → retry loop: fetchManifest() или "Failed to check" + "Try again"
   → checkForUpdates():   // SHA-256 каждого файла из manifest.dataFiles, без сохранённого снимка версии
       APP_UPDATE  → download → sha256 → bat(3s delay + installer /SILENT) → exit
-      DATA_UPDATE → downloadAndStageData() → swapDataFiles() (+ cleanupObsoleteAssets) → continue
+      DATA_UPDATE → downloadAndStageData() [только несовпавшие файлы] → swapDataFiles() [только скачанные] (+ cleanupObsoleteAssets) → continue
       SCHEMA_TOO_NEW → banner flag
   → DestroyUpdateWindow()
   → config → DB → Phase 1a → orchestrator → Phase 1b → D3D11 → ImGui → loop
