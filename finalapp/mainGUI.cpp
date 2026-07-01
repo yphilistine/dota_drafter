@@ -55,6 +55,9 @@ static IDXGISwapChain*         g_SwapChain = nullptr;
 static ID3D11RenderTargetView* g_RTV       = nullptr;
 static HWND                    g_Hwnd      = nullptr;
 
+static void RenderFrame();   // определена ниже; нужна раньше для WM_SIZE
+static void PresentFrame();  // определена ниже; форс-рендер во время live-resize
+
 static void CreateRTV() {
     ID3D11Texture2D* back = nullptr;
     g_SwapChain->GetBuffer(0, IID_PPV_ARGS(&back));
@@ -93,6 +96,15 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (g_RTV) { g_RTV->Release(); g_RTV = nullptr; }
             g_SwapChain->ResizeBuffers(0,LOWORD(lp),HIWORD(lp),DXGI_FORMAT_UNKNOWN,0);
             CreateRTV();
+            // Живой рендер сразу при изменении размера: во время интерактивного
+            // resize (тянем рамку окна) Windows крутит собственный модальный цикл
+            // сообщений внутри DefWindowProc и не возвращается в наш while(PeekMessage)
+            // до отпускания мыши. Без этого кадр не обновляется, и DWM растягивает
+            // старый бэкбуфер под новый размер — визуально это выглядит как смазанные
+            // полосы (особенно заметно при растягивании окна за левый край, когда DWM
+            // ещё и сдвигает/масштабирует всю поверхность).
+            if (ImGui::GetCurrentContext() && LOWORD(lp) > 0 && HIWORD(lp) > 0)
+                PresentFrame();
         }
         return 0;
     case WM_DESTROY: PostQuitMessage(0); return 0;
@@ -1964,7 +1976,7 @@ static void RenderFrame() {
     ImGui::SameLine(0, 8.f);
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
-    ImGui::BeginChild("##picks",{midW,contentH},true);
+    ImGui::BeginChild("##picks",{midW,contentH},true,ImGuiWindowFlags_NoScrollbar);
     ImGui::Spacing();
     DrawPicksPanel(ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
@@ -1973,13 +1985,26 @@ static void RenderFrame() {
     ImGui::SameLine(0, 8.f);
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
-    ImGui::BeginChild("##meta",{rightW,contentH},true);
+    ImGui::BeginChild("##meta",{rightW,contentH},true,ImGuiWindowFlags_NoScrollbar);
     ImGui::Spacing();
     DrawMetaHeroesPanel(ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
     ImGui::End();
+}
+
+static void PresentFrame() {
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    RenderFrame();
+    ImGui::Render();
+    const float bg[4] = {0.04f,0.04f,0.04f,1.f};
+    g_Context->OMSetRenderTargets(1, &g_RTV, nullptr);
+    g_Context->ClearRenderTargetView(g_RTV, bg);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    g_SwapChain->Present(1, 0);
 }
 
 // ─── Иконка приложения [D] (программно через GDI) ────────────────────────────
@@ -2445,16 +2470,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
             TranslateMessage(&msg); DispatchMessage(&msg);
             continue;
         }
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        RenderFrame();
-        ImGui::Render();
-        const float bg[4] = {0.04f,0.04f,0.04f,1.f};
-        g_Context->OMSetRenderTargets(1, &g_RTV, nullptr);
-        g_Context->ClearRenderTargetView(g_RTV, bg);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        g_SwapChain->Present(1, 0);
+        PresentFrame();
     }
 
     // ── Завершение ────────────────────────────────────────────────────────
