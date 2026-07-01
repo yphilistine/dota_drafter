@@ -95,6 +95,7 @@ struct GuiPickerState {
     // Статус нашего героя
     bool  ourHeroPicked = false;
     char  ourHeroName[64] = {};
+    int   ourHeroId       = 0;
     float winProb         = 0.f;
     int   ourPosition     = 0;   // позиция 1-5
     int   ourSlot         = 1;   // слот 1-5
@@ -119,6 +120,7 @@ struct GuiPickerState {
         ourPosition     = 0;
         recCount        = 0;
         ourHeroName[0]  = '\0';
+        ourHeroId       = 0;
         schemaError     = false;
         schemaMsg[0]    = '\0';
         for (auto& s : radiant) s = {};

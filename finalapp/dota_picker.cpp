@@ -454,6 +454,7 @@ static void renderToGui(
         state->winProb = flipProb ? 1.f - (float)probs[0] : (float)probs[0];
         auto on = hname(our_hero);
         std::snprintf(state->ourHeroName, sizeof(state->ourHeroName), "%s", on.c_str());
+        state->ourHeroId = our_hero;
         state->recCount = 0;
 
     } else {

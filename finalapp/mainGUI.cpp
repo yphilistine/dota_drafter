@@ -36,6 +36,7 @@
 #include <map>
 #include <cstdio>
 #include <cstring>
+#include <cctype>
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -137,8 +138,9 @@ static PlayerState g_player;
 // Текстура аватара (только GUI-поток)
 static ID3D11ShaderResourceView* g_avatarSRV = nullptr;
 
-// Кэш портретов героев: localized_name → D3D11 текстура (PNG из assets/)
-static std::map<std::string, ID3D11ShaderResourceView*> g_heroPortraits;
+// Кэш портретов героев: heroId → D3D11 текстура (PNG из assets/, файлы именованы
+// по стабильному heroes.name, а не localized_name — который Valve иногда меняет).
+static std::map<int, ID3D11ShaderResourceView*> g_heroPortraits;
 
 // Конфигурация (из переменных окружения / умолчаний, затем read-only)
 static std::string g_stratzToken;
@@ -147,6 +149,32 @@ static std::string g_stratzToken;
 static bool g_schemaBannerNeeded = false;
 static const char* DB_PATH    = "playerandlivestats.db";
 static const char* MODEL_PATH = "draft_helper_abstract";
+
+// heroId → localized_name, для текста в GUI (только для отображения — не для
+// сопоставления, см. portrait_runner.cpp). Заполняется лениво из heroes:
+// на момент первого вызова таблица могла ещё не наполниться (runDataFetcherInit
+// работает в фоне), поэтому пробуем снова, пока она пустая.
+static std::map<int, std::string> g_heroDisplayNames;
+static std::string heroDisplayName(int heroId, const char* fallback) {
+    if (g_heroDisplayNames.empty()) {
+        sqlite3* db = nullptr;
+        if (sqlite3_open(DB_PATH, &db) == SQLITE_OK) {
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(db, "SELECT id, localized_name FROM heroes",
+                                   -1, &st, nullptr) == SQLITE_OK) {
+                while (sqlite3_step(st) == SQLITE_ROW) {
+                    int id = sqlite3_column_int(st, 0);
+                    const char* nm = (const char*)sqlite3_column_text(st, 1);
+                    if (nm) g_heroDisplayNames[id] = nm;
+                }
+                sqlite3_finalize(st);
+            }
+            sqlite3_close(db);
+        }
+    }
+    auto it = g_heroDisplayNames.find(heroId);
+    return it != g_heroDisplayNames.end() ? it->second : (fallback ? fallback : "");
+}
 // Портреты + пикер: активны HERO_SELECTION + 5с. GUI показывает результат до конца игры.
 static constexpr int PHASE3_TAIL_SEC = 5;
 
@@ -304,11 +332,60 @@ static ID3D11ShaderResourceView* createTextureFromImageData(
 }
 
 // ─── Загрузка портретов героев из папки assets/ ──────────────────────────────
+// Файлы assets/*.png именованы по heroes.name (без префикса npc_dota_hero_,
+// напр. "antimage.png"), а не по localized_name — тот Valve иногда временно
+// меняет. Портреты кэшируются по heroId, поэтому переименование Valve не влияет
+// на отображение.
+
+// Суффикс heroes.name → heroId. Зашито в бинарник (не читается из БД), т.к.
+// heroId в Dota 2 неизменны, а таблица heroes на первом запуске приложения
+// ещё не заполнена (runDataFetcherInit работает в фоновом потоке и не успевает
+// до вызова loadHeroPortraits() при старте GUI). При добавлении нового героя
+// сюда нужно добавить строку вместе с assets/<suffix>.png.
+static const std::map<std::string, int>& heroNameSuffixToId() {
+    static const std::map<std::string, int> m = {
+        {"antimage", 1}, {"axe", 2}, {"bane", 3}, {"bloodseeker", 4},
+        {"crystal_maiden", 5}, {"drow_ranger", 6}, {"earthshaker", 7}, {"juggernaut", 8},
+        {"mirana", 9}, {"morphling", 10}, {"nevermore", 11}, {"phantom_lancer", 12},
+        {"puck", 13}, {"pudge", 14}, {"razor", 15}, {"sand_king", 16},
+        {"storm_spirit", 17}, {"sven", 18}, {"tiny", 19}, {"vengefulspirit", 20},
+        {"windrunner", 21}, {"zuus", 22}, {"kunkka", 23}, {"lina", 25},
+        {"lion", 26}, {"shadow_shaman", 27}, {"slardar", 28}, {"tidehunter", 29},
+        {"witch_doctor", 30}, {"lich", 31}, {"riki", 32}, {"enigma", 33},
+        {"tinker", 34}, {"sniper", 35}, {"necrolyte", 36}, {"warlock", 37},
+        {"beastmaster", 38}, {"queenofpain", 39}, {"venomancer", 40}, {"faceless_void", 41},
+        {"skeleton_king", 42}, {"death_prophet", 43}, {"phantom_assassin", 44}, {"pugna", 45},
+        {"templar_assassin", 46}, {"viper", 47}, {"luna", 48}, {"dragon_knight", 49},
+        {"dazzle", 50}, {"rattletrap", 51}, {"leshrac", 52}, {"furion", 53},
+        {"life_stealer", 54}, {"dark_seer", 55}, {"clinkz", 56}, {"omniknight", 57},
+        {"enchantress", 58}, {"huskar", 59}, {"night_stalker", 60}, {"broodmother", 61},
+        {"bounty_hunter", 62}, {"weaver", 63}, {"jakiro", 64}, {"batrider", 65},
+        {"chen", 66}, {"spectre", 67}, {"ancient_apparition", 68}, {"doom_bringer", 69},
+        {"ursa", 70}, {"spirit_breaker", 71}, {"gyrocopter", 72}, {"alchemist", 73},
+        {"invoker", 74}, {"silencer", 75}, {"obsidian_destroyer", 76}, {"lycan", 77},
+        {"brewmaster", 78}, {"shadow_demon", 79}, {"lone_druid", 80}, {"chaos_knight", 81},
+        {"meepo", 82}, {"treant", 83}, {"ogre_magi", 84}, {"undying", 85},
+        {"rubick", 86}, {"disruptor", 87}, {"nyx_assassin", 88}, {"naga_siren", 89},
+        {"keeper_of_the_light", 90}, {"wisp", 91}, {"visage", 92}, {"slark", 93},
+        {"medusa", 94}, {"troll_warlord", 95}, {"centaur", 96}, {"magnataur", 97},
+        {"shredder", 98}, {"bristleback", 99}, {"tusk", 100}, {"skywrath_mage", 101},
+        {"abaddon", 102}, {"elder_titan", 103}, {"legion_commander", 104}, {"techies", 105},
+        {"ember_spirit", 106}, {"earth_spirit", 107}, {"abyssal_underlord", 108}, {"terrorblade", 109},
+        {"phoenix", 110}, {"oracle", 111}, {"winter_wyvern", 112}, {"arc_warden", 113},
+        {"monkey_king", 114}, {"dark_willow", 119}, {"pangolier", 120}, {"grimstroke", 121},
+        {"hoodwink", 123}, {"void_spirit", 126}, {"snapfire", 128}, {"mars", 129},
+        {"ringmaster", 131}, {"dawnbreaker", 135}, {"marci", 136}, {"primal_beast", 137},
+        {"muerta", 138}, {"kez", 145}, {"largo", 155},
+    };
+    return m;
+}
 
 static void loadHeroPortraits() {
     WIN32_FIND_DATAW fd;
     HANDLE hFind = FindFirstFileW(L"assets\\*.png", &fd);
     if (hFind == INVALID_HANDLE_VALUE) return;
+
+    const auto& nameToId = heroNameSuffixToId();
 
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
@@ -332,15 +409,19 @@ static void loadHeroPortraits() {
         auto* srv = createTextureFromImageData(buf.data(), buf.size());
         if (!srv) continue;
 
-        // Имя героя = имя файла без .png
+        // Имя файла (без .png) = суффикс heroes.name → находим heroId
         int len = WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1,
                                       nullptr, 0, nullptr, nullptr);
         std::string name(len - 1, '\0');
         WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1,
                             name.data(), len, nullptr, nullptr);
         if (name.size() > 4) name.resize(name.size() - 4); // strip ".png"
+        for (auto& c : name) c = static_cast<char>(std::tolower((unsigned char)c));
 
-        g_heroPortraits[name] = srv;
+        auto it = nameToId.find(name);
+        if (it == nameToId.end()) { srv->Release(); continue; }
+
+        g_heroPortraits[it->second] = srv;
     } while (FindNextFileW(hFind, &fd));
 
     FindClose(hFind);
@@ -651,7 +732,8 @@ static void orchestratorMain() {
                 s.heroId = snap[i].heroId;
                 s.filled = snap[i].valid();
                 s.isYou  = (ourSide == 1 && i == ourSlot - 1);
-                if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s", snap[i].heroName.c_str());
+                if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s",
+                    heroDisplayName(snap[i].heroId, snap[i].heroName.c_str()).c_str());
                 else s.name[0] = '\0';
             }
             for (int i = 0; i < 5; ++i) {
@@ -659,7 +741,8 @@ static void orchestratorMain() {
                 s.heroId = snap[5+i].heroId;
                 s.filled = snap[5+i].valid();
                 s.isYou  = (ourSide == 0 && i == ourSlot - 1);
-                if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s", snap[5+i].heroName.c_str());
+                if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s",
+                    heroDisplayName(snap[5+i].heroId, snap[5+i].heroName.c_str()).c_str());
                 else s.name[0] = '\0';
             }
             g_pickerState.recCount     = 0;
@@ -854,7 +937,7 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
     } else {
         char ab[3] = {h.name[0], h.name[1] ? h.name[1] : '\0', '\0'};
         ImTextureID htex = 0;
-        auto it = g_heroPortraits.find(h.name);
+        auto it = g_heroPortraits.find(h.heroId);
         if (it != g_heroPortraits.end()) htex = (ImTextureID)it->second;
         DrawPortrait(dl, pp, PSZ, heroFill, Ca(kText, 0.18f), ab, htex);
     }
@@ -1086,6 +1169,7 @@ static void DrawPicksPanel(float panelW) {
     // Снимок состояния
     bool       gameStarted, ourHeroPicked;
     char       ourHeroName[64];
+    int        ourHeroId;
     float      winProb;
     int        ourPosition, ourSlot;
     bool       isRadiant;
@@ -1100,6 +1184,7 @@ static void DrawPicksPanel(float panelW) {
         ourSlot       = g_pickerState.ourSlot;
         isRadiant     = g_pickerState.isRadiant;
         std::memcpy(ourHeroName, g_pickerState.ourHeroName, sizeof(ourHeroName));
+        ourHeroId = g_pickerState.ourHeroId;
         recCount = g_pickerState.recCount;
         for (int i=0;i<recCount && i<10;i++) recs[i] = g_pickerState.recs[i];
     }
@@ -1174,7 +1259,7 @@ static void DrawPicksPanel(float panelW) {
     // winX   : rW - WIN_COL_W
 
     // Отрисовка строки рекомендации
-    auto DrawPickRow = [&](int rank, const char* name, float win, bool highlight,
+    auto DrawPickRow = [&](int rank, const char* name, int heroId, float win, bool highlight,
                            int gamesPlayer, float wrPlayer, int gamesImm, float wrImm)
     {
         ImDrawList* dl  = ImGui::GetWindowDrawList();
@@ -1210,7 +1295,7 @@ static void DrawPicksPanel(float panelW) {
         ImU32  bord = highlight ? Ca(wc,0.45f) : Ca(kText,0.12f);
         char   ab[3] = {name[0], name[1] ? name[1] : '\0', '\0'};
         ImTextureID htex = 0;
-        auto hit = g_heroPortraits.find(name);
+        auto hit = g_heroPortraits.find(heroId);
         if (hit != g_heroPortraits.end()) htex = (ImTextureID)hit->second;
         DrawPortrait(dl, pp, PSZ, fill, bord, ab, htex);
 
@@ -1250,12 +1335,12 @@ static void DrawPicksPanel(float panelW) {
 
     if (ourHeroPicked) {
         // Наш герой + P(win)
-        DrawPickRow(0, ourHeroName, winProb, true, 0,0,0,0);
+        DrawPickRow(0, ourHeroName, ourHeroId, winProb, true, 0,0,0,0);
     } else {
         // Top-10 рекомендаций
         for (int i=0;i<recCount && i<10;i++) {
             const PickRowGui& r = recs[i];
-            DrawPickRow(r.rank, r.name, r.winProb, r.rank==1,
+            DrawPickRow(r.rank, r.name, r.heroId, r.winProb, r.rank==1,
                         r.gamesPlayer, r.wrPlayer, r.gamesImm, r.wrImm);
         }
         if (recCount == 0) {

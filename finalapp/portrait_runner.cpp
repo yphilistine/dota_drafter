@@ -79,18 +79,34 @@ static long long nowMs() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+// Каноническая форма имени героя: нижний регистр, без '_'/'-', без префикса
+// npc_dota_hero_. Используется как ключ сопоставления вместо localized_name,
+// т.к. Valve иногда временно/некорректно меняет localized_name (напр. видели
+// в БД "Axe?" вместо "Axe") — это ломает распознавание. heroes.name стабилен.
+static std::string canonicalHeroKey(const std::string& raw) {
+    static const std::string kPrefix = "npc_dota_hero_";
+    std::string s = raw;
+    if (s.size() >= kPrefix.size() && s.compare(0, kPrefix.size(), kPrefix) == 0)
+        s = s.substr(kPrefix.size());
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '_' || c == '-') continue;
+        out += static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    }
+    return out;
+}
+
 static std::map<std::string, int> loadHeroNameToId(sqlite3* db) {
     std::map<std::string, int> m;
     sqlite3_stmt* st = nullptr;
-    if (sqlite3_prepare_v2(db, "SELECT id, localized_name FROM heroes",
+    if (sqlite3_prepare_v2(db, "SELECT id, name FROM heroes",
                            -1, &st, nullptr) != SQLITE_OK) return m;
     while (sqlite3_step(st) == SQLITE_ROW) {
         int id = sqlite3_column_int(st, 0);
         const char* raw = (const char*)sqlite3_column_text(st, 1);
         if (!raw) continue;
-        std::string name = raw;
-        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-        m[name] = id;
+        m[canonicalHeroKey(raw)] = id;
     }
     sqlite3_finalize(st);
     return m;
@@ -98,9 +114,7 @@ static std::map<std::string, int> loadHeroNameToId(sqlite3* db) {
 
 static int lookupHeroId(const std::map<std::string, int>& nameMap, const char* rawName) {
     if (!rawName) return 0;
-    std::string lower = rawName;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    auto it = nameMap.find(lower);
+    auto it = nameMap.find(canonicalHeroKey(rawName));
     return it != nameMap.end() ? it->second : 0;
 }
 
@@ -544,7 +558,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 HeroMatch m = recognizer.recognize(bmp);
                 if (!m.name || m.score < 0.5f) continue;
 
-                bool isNullHero  = (std::strcmp(m.name, "NULL") == 0);
+                bool isNullHero  = (std::strcmp(m.name, "null") == 0);
                 int  detectedId  = isNullHero ? 0 : lookupHeroId(nameToId, m.name);
 
                 if (!isNullHero && detectedId > 0) {
