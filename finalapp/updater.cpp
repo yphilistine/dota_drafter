@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <set>
 #include <windows.h>
 #include <bcrypt.h>
 
@@ -14,8 +15,18 @@ static const char* SWAP_LOCK    = "staging\\swap.lock";
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
-static void ensureStagingDir() {
-    CreateDirectoryA(STAGING_DIR, nullptr);
+// Создаёт все директории-предки файла (напр. "staging\assets\foo.png" ->
+// "staging" затем "staging\assets"). Нужно, т.к. manifest.dataFiles может
+// содержать вложенные ключи (assets/*.png), а не только файлы верхнего уровня.
+static void ensureParentDir(const std::string& path) {
+    size_t pos = path.find_last_of("\\/");
+    if (pos == std::string::npos) return;
+    std::string dir = path.substr(0, pos);
+    for (size_t i = 0; i < dir.size(); ++i) {
+        if (dir[i] == '\\' || dir[i] == '/')
+            CreateDirectoryA(dir.substr(0, i).c_str(), nullptr);
+    }
+    CreateDirectoryA(dir.c_str(), nullptr);
 }
 
 int compareVersions(const std::string& a, const std::string& b) {
@@ -203,7 +214,7 @@ bool downloadToStaging(const std::string& url,
                        const std::string& expectedSha256,
                        const std::string& stagingPath,
                        ProgressCb progress) {
-    ensureStagingDir();
+    ensureParentDir(stagingPath);
     std::string partPath = stagingPath + ".part";
 
     CURL* curl = curl_easy_init();
@@ -268,6 +279,34 @@ bool downloadAndStageData(const ManifestInfo& manifest, ProgressCb progress) {
     return true;
 }
 
+// Удаляет assets\*.png, которые не перечислены в manifest.dataFiles под
+// ключом "assets/<name>" — иначе переименованные/убранные герои оставляют
+// мусор в assets/ навсегда (сама маска assets\*.png в манифесте только
+// добавляет/перезаписывает файлы, но никогда не убирает лишние).
+static void cleanupObsoleteAssets(const ManifestInfo& manifest) {
+    std::set<std::string> expected;
+    for (auto& [fname, _] : manifest.dataFiles) {
+        if (fname.rfind("assets\\", 0) == 0 || fname.rfind("assets/", 0) == 0) {
+            size_t slash = fname.find_last_of("\\/");
+            expected.insert(fname.substr(slash + 1));
+        }
+    }
+    if (expected.empty()) return; // манифест не описывает ассеты — не трогаем локальную папку
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA("assets\\*.png", &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (!expected.count(fd.cFileName)) {
+            std::string path = std::string("assets\\") + fd.cFileName;
+            LOG_INFO("Removing obsolete asset: " << path);
+            DeleteFileA(path.c_str());
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
+
 bool swapDataFiles(const ManifestInfo& manifest) {
     // swap.lock для отслеживания прерванных операций
     {
@@ -285,6 +324,7 @@ bool swapDataFiles(const ManifestInfo& manifest) {
     bool ok = true;
     for (auto& [fname, _] : manifest.dataFiles) {
         std::string staged = std::string(STAGING_DIR) + "\\" + fname;
+        ensureParentDir(fname);
         if (!MoveFileExA(staged.c_str(), fname.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             LOG_ERR("Failed to swap " << staged << " -> " << fname
                     << " err=" << GetLastError());
@@ -304,19 +344,39 @@ bool swapDataFiles(const ManifestInfo& manifest) {
         DeleteFileA((fname + ".bak").c_str());
     DeleteFileA(SWAP_LOCK);
 
+    // Ассеты (assets/*.png) копируются по маске в манифесте, поэтому файлы
+    // героев, пропавших из манифеста (переименован/убран), сами по себе не
+    // перезапишутся — удаляем их явно, иначе они остаются в assets/ навсегда.
+    cleanupObsoleteAssets(manifest);
+
     return true;
 }
 
+// Восстанавливает файлы из *.bak после прерванного swap. Работает без
+// ManifestInfo (вызывается из checkPendingSwap до fetchManifest), поэтому
+// ищет *.bak по маске, а не по жёстко заданному списку файлов — это же
+// нужно, чтобы работать с произвольным набором файлов манифеста (включая
+// assets/*.png.bak), а не только с cbm/db.
+static void restoreBakGlob(const std::string& pattern) {
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    size_t slash = pattern.find_last_of("\\/");
+    std::string dirPrefix = (slash == std::string::npos) ? "" : pattern.substr(0, slash + 1);
+
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        std::string bakPath = dirPrefix + fd.cFileName;
+        std::string origPath = bakPath.substr(0, bakPath.size() - 4); // strip ".bak"
+        MoveFileExA(bakPath.c_str(), origPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
+
 void rollbackDataFiles() {
-    const char* files[] = {
-        "draft_helper_abstract.cbm",
-        "draft_helper_abstract_data.db"
-    };
-    for (auto* f : files) {
-        std::string bak = std::string(f) + ".bak";
-        if (GetFileAttributesA(bak.c_str()) != INVALID_FILE_ATTRIBUTES)
-            MoveFileExA(bak.c_str(), f, MOVEFILE_REPLACE_EXISTING);
-    }
+    restoreBakGlob("*.bak");
+    restoreBakGlob("assets\\*.bak");
 }
 
 void checkPendingSwap() {
@@ -327,15 +387,22 @@ void checkPendingSwap() {
     }
 }
 
-void cleanupStaging() {
+static void deletePartGlob(const std::string& pattern) {
     WIN32_FIND_DATAA fd;
-    std::string pattern = std::string(STAGING_DIR) + "\\*.part";
     HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do {
-            std::string path = std::string(STAGING_DIR) + "\\" + fd.cFileName;
-            DeleteFileA(path.c_str());
-        } while (FindNextFileA(h, &fd));
-        FindClose(h);
-    }
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    size_t slash = pattern.find_last_of("\\/");
+    std::string dirPrefix = (slash == std::string::npos) ? "" : pattern.substr(0, slash + 1);
+
+    do {
+        std::string path = dirPrefix + fd.cFileName;
+        DeleteFileA(path.c_str());
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
+
+void cleanupStaging() {
+    deletePartGlob(std::string(STAGING_DIR) + "\\*.part");
+    deletePartGlob(std::string(STAGING_DIR) + "\\assets\\*.part");
 }

@@ -16,7 +16,519 @@
                                "draft_helper_abstract_data.db":  {
                                                                      "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract_data.db",
                                                                      "sha256":  "86e9ce2681e7cd9863b48871ae7bf215fcd638c79e2b95c3f65416429fbe415c"
-                                                                 }
+                                                                 },
+                               "hero_hashes.dat":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/hero_hashes.dat",
+                                                       "sha256":  "59a96ff5571bdc92e29f08628926a6573607ca9fa5a99b0245fd4633b8675d56"
+                                                   },
+                               "assets/abaddon.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/abaddon.png",
+                                                          "sha256":  "badfa874a41638b5ba16b6e40abfcb2339e83d516e526dd1598d372e38044fa7"
+                                                      },
+                               "assets/abyssal_underlord.png":  {
+                                                                    "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/abyssal_underlord.png",
+                                                                    "sha256":  "69c09531134662d997c795f0dec16287475a3a9d8265c4b6b6510b71fb39f0ae"
+                                                                },
+                               "assets/alchemist.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/alchemist.png",
+                                                            "sha256":  "05c0c7933de915fd1fc2d2c846cc072a15fb60fa18c798700431de0a80f1b2b6"
+                                                        },
+                               "assets/ancient_apparition.png":  {
+                                                                     "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/ancient_apparition.png",
+                                                                     "sha256":  "69f7ef253d11562355d6a82fae9c68af764dc069ce235d36891addf914aa0a88"
+                                                                 },
+                               "assets/antimage.png":  {
+                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/antimage.png",
+                                                           "sha256":  "e4ec4ffacdccb1b07e576b76442c2a5bfbb9347b636836eaeccdd945b7441ba5"
+                                                       },
+                               "assets/arc_warden.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/arc_warden.png",
+                                                             "sha256":  "bb679e93a7da015eedb1f1916b6d41e7b56377d606b31a411189512ac5181f94"
+                                                         },
+                               "assets/axe.png":  {
+                                                      "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/axe.png",
+                                                      "sha256":  "eed184f6c880215884e48486bec75be753149e280c2d061104a4a44fcf157d11"
+                                                  },
+                               "assets/bane.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/bane.png",
+                                                       "sha256":  "6ae8ee9f7769e801372fd5a462b0d65e182a4db515bb73ecc34ec7e0d3eacce3"
+                                                   },
+                               "assets/batrider.png":  {
+                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/batrider.png",
+                                                           "sha256":  "d5caf501dfc6738358979f7e3b0528eb90a90e62c4f52d1675ae08aaf9dbad1a"
+                                                       },
+                               "assets/beastmaster.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/beastmaster.png",
+                                                              "sha256":  "fceda75cd2f46b98d2a37294ddfd8eb50b2e5db5670e16349749bcffb100434b"
+                                                          },
+                               "assets/bloodseeker.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/bloodseeker.png",
+                                                              "sha256":  "f581412f2d4c8c988ce9aedd21e00215099057ea663cabd1daadb1cd717c7868"
+                                                          },
+                               "assets/bounty_hunter.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/bounty_hunter.png",
+                                                                "sha256":  "df21c8298b9d18a3d0769869b4fe2a438e01b1c7d8cab11772e718254e90589a"
+                                                            },
+                               "assets/brewmaster.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/brewmaster.png",
+                                                             "sha256":  "164e2dac039115785284fd8509529ce13e274bf37ba7a2ff6e085d0a69291a44"
+                                                         },
+                               "assets/bristleback.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/bristleback.png",
+                                                              "sha256":  "f87aca9a7cf33effd53c5772e274848978ddaca8ba3560487aee9c751c88e750"
+                                                          },
+                               "assets/broodmother.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/broodmother.png",
+                                                              "sha256":  "c46f6bb763a4095d71efb7b79d5587b6c7b2d21533d51ace09d3913ad158a849"
+                                                          },
+                               "assets/centaur.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/centaur.png",
+                                                          "sha256":  "859247168508e25297f0a580361fd842324dc5cb498e9a33051428e201101cad"
+                                                      },
+                               "assets/chaos_knight.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/chaos_knight.png",
+                                                               "sha256":  "cdc008fb46f5e6d11cb189a4183291945ce74e7786dbe5d869f1b969fd69ad78"
+                                                           },
+                               "assets/chen.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/chen.png",
+                                                       "sha256":  "9fb8e985c2dd91f525de039747c34232857da08ef963dba93d773248bda35b54"
+                                                   },
+                               "assets/clinkz.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/clinkz.png",
+                                                         "sha256":  "456a781993eefc5a207c199d40b49b364f391eec2510137f42f1b5e0195146a5"
+                                                     },
+                               "assets/crystal_maiden.png":  {
+                                                                 "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/crystal_maiden.png",
+                                                                 "sha256":  "1c4654e8ab1e72b9036b7c714094d9d2442100fe495b5ab7002944a8aab16940"
+                                                             },
+                               "assets/dark_seer.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/dark_seer.png",
+                                                            "sha256":  "20d6d433c56dca8045868b26ed75513d76504813214f5cdbeeb8b2b8cc736a39"
+                                                        },
+                               "assets/dark_willow.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/dark_willow.png",
+                                                              "sha256":  "6464ba518790b21d7eb83409ce3236a497b9d843cdc49a0e623ef3ce58887f25"
+                                                          },
+                               "assets/dawnbreaker.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/dawnbreaker.png",
+                                                              "sha256":  "d240bd7fd8d903bd432af9750234109e04897ae649f6015a2bd8eb642fad2686"
+                                                          },
+                               "assets/dazzle.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/dazzle.png",
+                                                         "sha256":  "37b4737739a00c7308544356ccb115ce8501e6e53e6ae796a6bd1e80a584a2ed"
+                                                     },
+                               "assets/death_prophet.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/death_prophet.png",
+                                                                "sha256":  "5bf5eea1f496a8df9f05967fc0af8e18e78de6a6c28425f263d0057912df1c61"
+                                                            },
+                               "assets/disruptor.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/disruptor.png",
+                                                            "sha256":  "85dc04e5e8757fdbab87cb9e5ce02ef0ebe53267a0e2e3ef9ea61b11c8105d1c"
+                                                        },
+                               "assets/doom_bringer.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/doom_bringer.png",
+                                                               "sha256":  "60b1c1f368be764b33fedd4e8f593952e08887fc0a5d3f3e120ca65eab219437"
+                                                           },
+                               "assets/dragon_knight.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/dragon_knight.png",
+                                                                "sha256":  "e99e38136c1221933317279dcb5b6dd84fe447a2cff7013dc21f7d2344a90283"
+                                                            },
+                               "assets/drow_ranger.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/drow_ranger.png",
+                                                              "sha256":  "fce32e3e35c4150d6ca96f6a020306003ba903e0e328c990825d958b54b92673"
+                                                          },
+                               "assets/earth_spirit.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/earth_spirit.png",
+                                                               "sha256":  "98a0c88e37d3717f3acf6fc37be18e1e7563d7218f181baf2614353c324d8873"
+                                                           },
+                               "assets/earthshaker.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/earthshaker.png",
+                                                              "sha256":  "e9c679cd2e920025fbe53e23e7ec9b98b010fd804138809d6f53641bd7ab2b0e"
+                                                          },
+                               "assets/elder_titan.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/elder_titan.png",
+                                                              "sha256":  "7bc8cac67c8a9d42a311f66b0a9be25cab3647c2c400cae9e97ff001293c49b2"
+                                                          },
+                               "assets/ember_spirit.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/ember_spirit.png",
+                                                               "sha256":  "966c28255c9ea52deed14e3965179cf40ded0c7e2b6ad32ccd1b698188ba31dd"
+                                                           },
+                               "assets/enchantress.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/enchantress.png",
+                                                              "sha256":  "cd3f5bca4b523ef3c0bb3d51772bf72650bdade6bcb9d79fc7cc70344f9d67a8"
+                                                          },
+                               "assets/enigma.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/enigma.png",
+                                                         "sha256":  "2181cd79cfce80bd9ef3c7de8461662487aab51a17f1fcc9ab34b83d815c7877"
+                                                     },
+                               "assets/faceless_void.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/faceless_void.png",
+                                                                "sha256":  "96b3f34fa6567ede15a2f59abf487b7c67f885bf901ec2fee73e86ac75a97984"
+                                                            },
+                               "assets/furion.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/furion.png",
+                                                         "sha256":  "f198b54fe474fe462b51214e709f60883dcd5c93229005e10e319c80b6e904e0"
+                                                     },
+                               "assets/grimstroke.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/grimstroke.png",
+                                                             "sha256":  "57a430b7df62711b12bce9c6f6adf5b1cb3db1b52d189ced57cbe29f1d207a59"
+                                                         },
+                               "assets/gyrocopter.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/gyrocopter.png",
+                                                             "sha256":  "4827dbf1addd15eedfed50d6767a5284a2740fe106976a7a02fd4c05f5e44db1"
+                                                         },
+                               "assets/hoodwink.png":  {
+                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/hoodwink.png",
+                                                           "sha256":  "441764f9291464d870775888410e0c136760d013dbb4efc5f24bc0dc042c8043"
+                                                       },
+                               "assets/huskar.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/huskar.png",
+                                                         "sha256":  "808160b4cc649e4d241ac3912f99151168a2d3aafcc4f75223bb1183391cce54"
+                                                     },
+                               "assets/invoker.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/invoker.png",
+                                                          "sha256":  "cd5c38c418fb408aba6bdde4220655d089184e5447c6f1196cd3c8e1f3ef2aed"
+                                                      },
+                               "assets/jakiro.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/jakiro.png",
+                                                         "sha256":  "3eb8582398d1c27654e53d021f0508a1aa987838f58e4d54e4769f0de96b2e40"
+                                                     },
+                               "assets/juggernaut.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/juggernaut.png",
+                                                             "sha256":  "f6ad7e359971613f07e201fcc0d9ce7a257529d2e3c5d2a266bb5681f84cf99f"
+                                                         },
+                               "assets/keeper_of_the_light.png":  {
+                                                                      "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/keeper_of_the_light.png",
+                                                                      "sha256":  "a9c175424c7c3e76a67ea1e1d44a21a79fea6ab11a667b1652076ba32e3b1dd9"
+                                                                  },
+                               "assets/kez.png":  {
+                                                      "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/kez.png",
+                                                      "sha256":  "c9a2d043bc3818b72fbef953330d3c959283b7c04d329471f46468e4a7914994"
+                                                  },
+                               "assets/kunkka.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/kunkka.png",
+                                                         "sha256":  "4b100ef2808aad46c48e8d53e5d93ada8719cd2393fa0c54b79aed4f11068a3f"
+                                                     },
+                               "assets/largo.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/largo.png",
+                                                        "sha256":  "a5053f7fe2e846f23125490c307b702f5749670bd15502e360280f4851cc1b60"
+                                                    },
+                               "assets/legion_commander.png":  {
+                                                                   "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/legion_commander.png",
+                                                                   "sha256":  "69df909d6789767244ae119a5cdd4cb792f7293ce79c6757cdd4ab101a3a8561"
+                                                               },
+                               "assets/leshrac.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/leshrac.png",
+                                                          "sha256":  "71b8c3870fab2268916bbe418d65511690306b79b8da9c966f2756f4f5464822"
+                                                      },
+                               "assets/lich.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/lich.png",
+                                                       "sha256":  "d9867bf67246429b1babfdf43dc9fb8e107b6c1337d2157aaa17c6ca0f1444a6"
+                                                   },
+                               "assets/life_stealer.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/life_stealer.png",
+                                                               "sha256":  "70d1cdd1fba5f3da05dc3e6aada9af1548eda7e1570bbe02066e206df12f7086"
+                                                           },
+                               "assets/lina.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/lina.png",
+                                                       "sha256":  "38727d0fd7ec7cc343f8e32a20dc13599d53b156499aeeec429d590bd80436d9"
+                                                   },
+                               "assets/lion.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/lion.png",
+                                                       "sha256":  "4cae84ac26352c494b5ababa60ade9aa8978d9db2173967e666ef28bad0a1e3d"
+                                                   },
+                               "assets/lone_druid.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/lone_druid.png",
+                                                             "sha256":  "3ca422226053619512ed8e3e651bf678ffe7aa4d4e503bcb05c1b61c3e0b61bf"
+                                                         },
+                               "assets/luna.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/luna.png",
+                                                       "sha256":  "a5cd2c1bed629f923d4b9ada18d7a2ff9f55f6d1eb569f27aec5f30911f927ff"
+                                                   },
+                               "assets/lycan.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/lycan.png",
+                                                        "sha256":  "d298504568eb8baf933ace008f2b2eabfab9d3f3f2f356bc63bb29a8a6dc5988"
+                                                    },
+                               "assets/magnataur.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/magnataur.png",
+                                                            "sha256":  "538b4721d8f8a8b5028b2d7bdf6a49eb446206c58c6f316c1e101b4d5f3c9285"
+                                                        },
+                               "assets/marci.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/marci.png",
+                                                        "sha256":  "08752d0c857935b28dcee52dfe3625d54c55376945201765bf2d2bd5b8698c64"
+                                                    },
+                               "assets/mars.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/mars.png",
+                                                       "sha256":  "a4fbc025bc1bd9ea06be4b2b0f3211f06ccd44ba373bd70bc47ca987053c7e49"
+                                                   },
+                               "assets/medusa.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/medusa.png",
+                                                         "sha256":  "31b15e5cdc3c9f4dc80b0a0fea1fbd2b03d240929f35ba7c4d0b430921721d13"
+                                                     },
+                               "assets/meepo.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/meepo.png",
+                                                        "sha256":  "25c068ed25ddc4de5fb3a15284493981f7cdee4aa49d7ce545515c82319347ed"
+                                                    },
+                               "assets/mirana.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/mirana.png",
+                                                         "sha256":  "9d44a7b9bebd94e70ed8afbe30e8059469a4c5fa1624067cb9f3f87ee3fe7c1f"
+                                                     },
+                               "assets/monkey_king.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/monkey_king.png",
+                                                              "sha256":  "e3f9331e5c709e75eb3ec0ae9514e3d97f13dc8d76d86af12c5729a08d0118bd"
+                                                          },
+                               "assets/morphling.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/morphling.png",
+                                                            "sha256":  "282cdc9c97d8552bd142ffe476b6f53f7dc1d9f0ac274d7f790f161688f40443"
+                                                        },
+                               "assets/muerta.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/muerta.png",
+                                                         "sha256":  "e6a9475f0eb58b8a6abea571e30ad0168604053289593aa97f7fd3c346f4422d"
+                                                     },
+                               "assets/naga_siren.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/naga_siren.png",
+                                                             "sha256":  "c5d7e710ecd3eead86d56c825e54dd529eb6d4f84e706ba7cf6f63e95aa4626f"
+                                                         },
+                               "assets/necrolyte.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/necrolyte.png",
+                                                            "sha256":  "8bffbc3707be9aca22909bafb8e0a163989e0f70e4fe195d222d34d4bf4c1c3e"
+                                                        },
+                               "assets/nevermore.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/nevermore.png",
+                                                            "sha256":  "1bd4ca68a2273c89b0161eb6eb3637d9589d20a2ac51076d0cf86007722ce5fa"
+                                                        },
+                               "assets/night_stalker.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/night_stalker.png",
+                                                                "sha256":  "72ed6078e31374a972ddb6b4a20fbe82790f6857a3604254c2590d00950b9a1d"
+                                                            },
+                               "assets/nyx_assassin.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/nyx_assassin.png",
+                                                               "sha256":  "190deab18846b49c03632f5d5d1b8bef88133ac3a1b947e54b20eec6628db85e"
+                                                           },
+                               "assets/obsidian_destroyer.png":  {
+                                                                     "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/obsidian_destroyer.png",
+                                                                     "sha256":  "8e6a9bc3a44b8acdcb08dfda9a64ad49addb95b005b8eb88a883a6694259ce0a"
+                                                                 },
+                               "assets/ogre_magi.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/ogre_magi.png",
+                                                            "sha256":  "911ca52bec7cd9aaeed217c353dc0c3a68569d5b643f54681a2ddfead0b6ff42"
+                                                        },
+                               "assets/omniknight.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/omniknight.png",
+                                                             "sha256":  "b5c1605515bee7ce950f969b614f4e2cb19c894158dda005b17cb8ce56a31d66"
+                                                         },
+                               "assets/oracle.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/oracle.png",
+                                                         "sha256":  "7b76fbb90fba5810950cf6ef9159eeae324856be218ba85075df79d0f26c0cfa"
+                                                     },
+                               "assets/pangolier.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/pangolier.png",
+                                                            "sha256":  "e6b59e7d782e29157bb8d2347bc5575683f1223328ed49238c7e26371bfeedfd"
+                                                        },
+                               "assets/phantom_assassin.png":  {
+                                                                   "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/phantom_assassin.png",
+                                                                   "sha256":  "aa1ca564d19f70333a87145b1ed40a454bb1935e24be349978a8075c0efc5826"
+                                                               },
+                               "assets/phantom_lancer.png":  {
+                                                                 "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/phantom_lancer.png",
+                                                                 "sha256":  "c94ef6777f54fd9866605f954d92b12f81e542fe90d71eeeb862d88454085d73"
+                                                             },
+                               "assets/phoenix.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/phoenix.png",
+                                                          "sha256":  "bed487d48499bddc65194e1db69c80005c102ac8e2266f03556641e99e4b3688"
+                                                      },
+                               "assets/primal_beast.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/primal_beast.png",
+                                                               "sha256":  "d019ca5715131b647ad377d080fd8d8aaa2552fc785bffa984c2d0821b68a78b"
+                                                           },
+                               "assets/puck.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/puck.png",
+                                                       "sha256":  "29e2f73fb0e44967646669031efa94d515c3b76e466270456ec70545c033c774"
+                                                   },
+                               "assets/pudge.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/pudge.png",
+                                                        "sha256":  "c4e1c50f1e902dcd62b6b3305433700e295871432a1c54bf30b6523b4cc3c485"
+                                                    },
+                               "assets/pugna.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/pugna.png",
+                                                        "sha256":  "8553f3dd5c216b1858511a79a08fbd4207106977accb12d0df85b542a0c812e6"
+                                                    },
+                               "assets/queenofpain.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/queenofpain.png",
+                                                              "sha256":  "d025d1a80f136648685c626f7a620b6c6ceb1930b1952ba9ab68c92ac1eeb17b"
+                                                          },
+                               "assets/rattletrap.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/rattletrap.png",
+                                                             "sha256":  "148b2246883589c1749759dca3173d12b770a01187c24aa87a3d02996bfac9fb"
+                                                         },
+                               "assets/razor.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/razor.png",
+                                                        "sha256":  "2528ee87e6bff2a96c579d9f64b80bd0d5c2df8bf95952950dbe63fd7ed169e9"
+                                                    },
+                               "assets/riki.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/riki.png",
+                                                       "sha256":  "4506a0b45e7770135a92f0aff628307a082530dc632da40b0c56d0959c51ebb4"
+                                                   },
+                               "assets/ringmaster.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/ringmaster.png",
+                                                             "sha256":  "a09e76d98de3a8ee62cd26455e2dc179b6b8b4dc314625ce590fa9d348237e7d"
+                                                         },
+                               "assets/rubick.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/rubick.png",
+                                                         "sha256":  "3bc3838b581e4b29264a0db6b0f0c8769c4e0bc8ac0bcd2b14d079fbad168286"
+                                                     },
+                               "assets/sand_king.png":  {
+                                                            "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/sand_king.png",
+                                                            "sha256":  "1c5cf4c3eac132f0a076da858694175e615c7d821b5824c08d7f4897ee98e8ea"
+                                                        },
+                               "assets/shadow_demon.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/shadow_demon.png",
+                                                               "sha256":  "f09ee2aed53263754e1ae09e233440661f6eab1a09f95caaedc9e0d9d7d4a02c"
+                                                           },
+                               "assets/shadow_shaman.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/shadow_shaman.png",
+                                                                "sha256":  "db0a15969f84dc6629eedc89ea8ab0b7ce5a973520383e7e74dba71bdd4aabf9"
+                                                            },
+                               "assets/shredder.png":  {
+                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/shredder.png",
+                                                           "sha256":  "9674b680ae27ff834afb2b84a2a24e1345f7744fcce9133c896fda1f7099e27d"
+                                                       },
+                               "assets/silencer.png":  {
+                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/silencer.png",
+                                                           "sha256":  "d1a498bd8516e94d2fba65cf8abb852deba30bdc6d8a40fee73e246ef4583044"
+                                                       },
+                               "assets/skeleton_king.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/skeleton_king.png",
+                                                                "sha256":  "8c1b4fd1a4662fd8045aa840e7c0ecb92a4ebba6baa757b18b7727712405ad6e"
+                                                            },
+                               "assets/skywrath_mage.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/skywrath_mage.png",
+                                                                "sha256":  "ef07ee4004eaec701fffeb45783bc2c2623290dfe9d2a15220ed61b4f4604b22"
+                                                            },
+                               "assets/slardar.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/slardar.png",
+                                                          "sha256":  "9f4d9ffbd3757e7e5a4f33115dbcb6eca51934bc3d534fbe0d20ccdb7eac51ce"
+                                                      },
+                               "assets/slark.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/slark.png",
+                                                        "sha256":  "90272422d8c15718288d4bd1074d8e310a62852774a6809a36aaef64f29583f2"
+                                                    },
+                               "assets/snapfire.png":  {
+                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/snapfire.png",
+                                                           "sha256":  "50ae9ae03ffb0530103ccf6e3610b1700f35ca4df1fd30f564938ab361bc2abf"
+                                                       },
+                               "assets/sniper.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/sniper.png",
+                                                         "sha256":  "3b57244c9ae79d285a4b55cdfdf113d4b140f3bd09c28193bb73bfc5285bd07d"
+                                                     },
+                               "assets/spectre.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/spectre.png",
+                                                          "sha256":  "31614e072a0b006b599f5636d6e720f32dc59dbf68745a8a9c1fc570d862b935"
+                                                      },
+                               "assets/spirit_breaker.png":  {
+                                                                 "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/spirit_breaker.png",
+                                                                 "sha256":  "548a367edc0923e720bff72e2d98e902083b7b1269eb803a49b41102e613b8eb"
+                                                             },
+                               "assets/storm_spirit.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/storm_spirit.png",
+                                                               "sha256":  "80809343c9001c6fd8fd699677d5bb8e18b6190e7912295a5fe38a2c6c690e3b"
+                                                           },
+                               "assets/sven.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/sven.png",
+                                                       "sha256":  "f3cad9ba91b8ffdf0288c0fdd0d81a4f7245a464b3e4e7107cd15401d4a72040"
+                                                   },
+                               "assets/techies.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/techies.png",
+                                                          "sha256":  "51fab1f78007f36a18241271e8f9690955a100c8b96e778547538fc13f38beb4"
+                                                      },
+                               "assets/templar_assassin.png":  {
+                                                                   "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/templar_assassin.png",
+                                                                   "sha256":  "b844983ec3823038f986c9a5293d92b47a93720eba0174b988e4bf4f4ea7cf49"
+                                                               },
+                               "assets/terrorblade.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/terrorblade.png",
+                                                              "sha256":  "065fe338ae2f9ce3ef77934057d18a8f17f97f299a58eee16f45ed2738b24205"
+                                                          },
+                               "assets/tidehunter.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/tidehunter.png",
+                                                             "sha256":  "42e0face05594e10496af805d358467908da7c373f18ccc188e8ff46e4b527e4"
+                                                         },
+                               "assets/tinker.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/tinker.png",
+                                                         "sha256":  "701ca2db9ec76b24169003af19d7ae63e7f3322e5c9af415dd4a3572a59edb03"
+                                                     },
+                               "assets/tiny.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/tiny.png",
+                                                       "sha256":  "ef725e5af9adaffdd15c67d8a4f359743fe53c0242ba05fa45139464280943fe"
+                                                   },
+                               "assets/treant.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/treant.png",
+                                                         "sha256":  "46ea283e37ac9a997d3717be0f2a4eb5612a668235d4ab2caada667a24e38374"
+                                                     },
+                               "assets/troll_warlord.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/troll_warlord.png",
+                                                                "sha256":  "bbba68dcaf85dce2a63ba230abf457a82d0bdaeac866cf2eeeb48b75247a3197"
+                                                            },
+                               "assets/tusk.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/tusk.png",
+                                                       "sha256":  "1660f2402fce423c831f4f80f576b4b048337a3801b6ef57c3a392976ecfd95e"
+                                                   },
+                               "assets/undying.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/undying.png",
+                                                          "sha256":  "c43fe8bac37486311d791fe470325f8ca15b85c7ce2aa3e0d083188588767e08"
+                                                      },
+                               "assets/ursa.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/ursa.png",
+                                                       "sha256":  "d8c1e8ad7d80caa640dfb96bb7e7c5b620e606eb1153d826190bf2eeb7de0098"
+                                                   },
+                               "assets/vengefulspirit.png":  {
+                                                                 "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/vengefulspirit.png",
+                                                                 "sha256":  "99f6a15a3d2570d623fd9f02a9aa40e86f2727f7f2e5ce814a35ee009e2f7564"
+                                                             },
+                               "assets/venomancer.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/venomancer.png",
+                                                             "sha256":  "2f53b9561fdb67f119e3ae5f0d9bedad0ef05755dde8b4119bbb9dca1f4bb825"
+                                                         },
+                               "assets/viper.png":  {
+                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/viper.png",
+                                                        "sha256":  "f55a1f52d2ba7699baafe01c54ec546eb5d228155265f0c011b80be1f479cd9b"
+                                                    },
+                               "assets/visage.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/visage.png",
+                                                         "sha256":  "2d0e8c8c853be44f6e7657e6fcbf756c60f54f7eaa178a8295d0b08947ad0b6b"
+                                                     },
+                               "assets/void_spirit.png":  {
+                                                              "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/void_spirit.png",
+                                                              "sha256":  "c3d5fefd695baa676381e95a5ffeb7eca64364e8bad3eb537578e20bb52388b1"
+                                                          },
+                               "assets/warlock.png":  {
+                                                          "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/warlock.png",
+                                                          "sha256":  "0b6430d30c479f65ecc2d3d305483b9ebded71ac7d8d43f8b42c3f42c2fa65d9"
+                                                      },
+                               "assets/weaver.png":  {
+                                                         "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/weaver.png",
+                                                         "sha256":  "ada77ae291a39be3e85c83981ff8772e079aabd8a44adeaf34043799a5521e4d"
+                                                     },
+                               "assets/windrunner.png":  {
+                                                             "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/windrunner.png",
+                                                             "sha256":  "cc4b603c240e75062db243ca9b9c70e1c29bb80badb19f77301cde2c15239f00"
+                                                         },
+                               "assets/winter_wyvern.png":  {
+                                                                "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/winter_wyvern.png",
+                                                                "sha256":  "6a99b75cff271f912de843b8774ae188ad9b5a0df7e7ec28b93c9d9ba78ab785"
+                                                            },
+                               "assets/wisp.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/wisp.png",
+                                                       "sha256":  "f4fca3673e5e4906b7b02ec0d7cbb9923e5b885e93a0b4544536c5b230efc993"
+                                                   },
+                               "assets/witch_doctor.png":  {
+                                                               "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/witch_doctor.png",
+                                                               "sha256":  "606cc7addf4223157b86aad1748bf3d354346889fef7b49ab4f8c213d5761b23"
+                                                           },
+                               "assets/zuus.png":  {
+                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/zuus.png",
+                                                       "sha256":  "a067df95c8194cdc3fe6a6e20950a83cd5ca8982108a44cbe7e0b05d17cc0fbd"
+                                                   }
                            }
              }
 }

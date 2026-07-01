@@ -34,6 +34,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl";
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "quicklaunchicon"; Description: "Create Quick Launch shortcut"; GroupDescription: "{cm:AdditionalIcons}"
 
+[InstallDelete]
+
+; assets\*.png копируется по маске — Inno Setup никогда не удаляет файлы,
+; пропавшие из источника (переименованный/убранный герой), поэтому папку
+; полностью очищаем перед копированием, чтобы не копились устаревшие PNG.
+Type: filesandordirs; Name: "{app}\assets"
+
 [Files]
 
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\Dota_Drafter.exe"; DestDir: "{app}"; Flags: ignoreversion

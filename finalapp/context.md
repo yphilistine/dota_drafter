@@ -103,6 +103,18 @@ GSI-таймаут: если нет обновлений > 5с — сброс н
 
 ---
 
+### clouddatafetcher.h / clouddatafetcher.cpp
+Синхронизация PostgreSQL → SQLite: `proherostats` и `immortalherostats` (агрегат `recentimmortalmatches`).
+
+| Функция | Описание |
+|---------|----------|
+| `fetchAndStoreProHeroStats(db, connStr)` | PG `proherostats` → SQLite `proherostats`, полная перезапись |
+| `fetchAndStoreImmortalHeroStats(db, connStr)` | PG `recentimmortalmatches` → агрегация (hero_id, pos) → SQLite `immortalherostats` |
+
+Компилируется в основной exe (см. `build_unified.bat`), линкуется с libpq, но **не вызывается ни из одного рантайм-пути** (нет вызовов в `datafetcher.cpp`/`mainGUI.cpp`). Похоже на офлайн/dev-инструмент разработчика для регенерации `proherostats`/`immortalherostats` перед `scripts/pack_data.bat`, а не часть логики приложения у пользователя.
+
+---
+
 ### dota2_capture.h / dota2_capture.cpp
 Захват окна Dota 2 через Windows GDI (PrintWindow).
 
@@ -132,7 +144,7 @@ HudLayout содержит координаты портретов (radiant_x_st
 ---
 
 ### dhash.h
-Распознавание героев и позиций по Pearson-корреляции 8x8 серых матриц.
+Распознавание **героев** по Pearson-корреляции 8x8 серых матриц. Позиции больше не распознаются этим методом — см. `pos_ocr.h`.
 
 | Тип / Функция | Описание |
 |---------------|----------|
@@ -142,21 +154,32 @@ HudLayout содержит координаты портретов (radiant_x_st
 | `pearson(a, b)` | Корреляция Пирсона двух Matrix8 (dot / 63) |
 | `computeMatrix(bgra, w, h)` | BGRA-пиксели → Matrix8 (greyscale → bilinear 8x8 → нормализация) |
 | `HeroRecognizer` | Поиск ближайшего героя по базе хешей |
-| `PosHashEntry` | Пара: номер позиции (0-5) + Matrix8 |
-| `PosMatch` | Результат: pos, score. `confident()` при score >= 0.80 |
-| `PosRecognizer` | Поиск ближайшей позиции по базе хешей |
+| `PosMatch` | Результат OCR-распознавания позиции: pos (0-5), score. `confident()` при score >= 0.50 |
 
-Порог уверенности: score >= 0.80 (same hero ~0.99, different ~0.0).
+Порог уверенности героя: score >= 0.80 (same hero ~0.99, different ~0.0).
+`PosHashEntry`/`PosRecognizer` (Pearson-подход к позициям) удалены из этого файла — заменены OCR (`pos_ocr.h`).
 
 ---
 
-### hero_hashes.h / pos_hashes.h
-Данные хешей для распознавания.
+### hero_hashes.dat (runtime, не хедер)
+База хешей героев для `HeroRecognizer` — **не компилируется в бинарник** (в отличие от того, что было раньше). Бинарный файл (uint32 count, затем на запись: uint16 nameLen + имя + 64 float32) лежит рядом с exe и грузится в рантайме через `loadHeroHashes("hero_hashes.dat")` (`portrait_runner.cpp`). Генерируется офлайн-инструментом `screencapture/build_hero_db.cpp` (вне `finalapp/`), устанавливается инсталлятором (см. `dota_draft_setup.iss`). Файла `hero_hashes.h` в проекте больше нет.
 
-| Файл | Содержимое |
-|------|-----------|
-| `hero_hashes.h` | `g_hero_db[]` — Matrix8 для каждого героя (~130 записей) |
-| `pos_hashes.h` | `g_pos_db[]` — Matrix8 для позиций 0-5 (5 вариантов NULL + 5 позиций) |
+### pos_hashes.h
+Оставшийся файл с `g_pos_db[]` (Matrix8 для позиций 0-5) — **не используется нигде в коде** (мёртвый файл, ничего его не инклюдит). Позиции теперь распознаются через `pos_ocr.h`. Кандидат на удаление.
+
+---
+
+### pos_ocr.h
+Распознавание **позиции** (1-5) через Windows OCR API (WinRT), заменяет старый Pearson-подход (`PosRecognizer`/`pos_hashes.h`).
+
+| Тип / Функция | Описание |
+|---------------|----------|
+| `PosOcrRecognizer` | Создаёт `OcrEngine` для en-US и ru (fallback — язык профиля пользователя) |
+| `.isAvailable()` | true, если хотя бы один движок OCR создан |
+| `.recognize(bmp)` | Апскейл BGRA x4 → SoftwareBitmap → OCR (en, затем ru) → `textToPosition` |
+| `textToPosition(text)` | Ключевые слова EN ("safe/mid/off/soft/hard/supp/lane") и RU ("центр/мид/сложн/полн.../жёстк/лёгк/мягк/поддерж") → позиция 1-5 |
+
+OCR либо уверенно распознаёт (score=1.0), либо возвращает pos=0 (score=0) — бинарный результат, порог `confident()` из `dhash.h` (>=0.50) здесь не критичен.
 
 ---
 
@@ -177,7 +200,8 @@ GSI HTTP-сервер.
 | Функция | Описание |
 |---------|----------|
 | `startDotaOverlay()` | Запуск прозрачной кнопки [D] поверх Dota 2 (один раз при старте) |
-| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 500мс → распознавание героев и позиций → запись в livepicks |
+| `loadHeroHashes(path)` | Загрузка `hero_hashes.dat` (бинарный формат) в vector<HeroHashEntry> для `HeroRecognizer` |
+| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 500мс → `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций → запись в livepicks |
 | `updateSlot(db, slot, heroId)` | Обновление hero в слоте livepicks |
 | `updateSlotPos(db, slot, pos)` | Обновление позиции в слоте livepicks |
 | `clearHeroSlots(db)` | Обнуление всех hero + pos слотов в livepicks |
@@ -231,33 +255,35 @@ Schema gate: перед загрузкой модели проверяет `meta
 
 | Функция / Тип | Описание |
 |----------------|----------|
-| `LocalVersionInfo` | Структура: appVersion, dataVersion, schema |
-| `DataMeta` | Структура: schema, dataVersion (из _data.db) |
-| `loadLocalVersion()` | Читает version.json; при ошибке реконструирует из _data.db meta + kAppVersion |
-| `saveLocalVersion(v)` | Атомарная запись: .tmp + MoveFileEx + FILE_ATTRIBUTE_HIDDEN |
+| `DataMeta` | Структура: schema, dataVersion (из meta-таблицы _data.db) |
 | `readDataDbMeta(path)` | Читает schema_version и data_version из meta-таблицы _data.db |
+
+Файл сейчас содержит только это — `version.json`/`LocalVersionInfo`/`loadLocalVersion`/`saveLocalVersion` **больше не существуют**. Локальное состояние версий отдельно нигде не хранится: `checkForUpdates` каждый раз сравнивает манифест напрямую с содержимым файловой системы (SHA-256 каждого файла), а не с сохранённым снимком версии.
 
 ---
 
 ### updater.h / updater.cpp
-Система авто-обновлений.
+Система авто-обновлений. `ManifestInfo.dataFiles` — общий map<ключ, {url, sha256}>; логика ниже одинаково работает для любых файлов, перечисленных в манифесте (не только .cbm/.db).
 
 | Функция / Тип | Описание |
 |----------------|----------|
 | `UpdateAction` | Enum: NONE, APP_UPDATE, DATA_UPDATE, SCHEMA_TOO_NEW |
-| `ManifestInfo` | Структура: версии app/data, URL, SHA-256, mandatory, dataFiles |
+| `ManifestInfo` | Структура: версии app/data, URL, SHA-256, mandatory, dataFiles (map) |
 | `fetchManifest(out)` | GET manifest.json с SSL verify, connect 5с, total 10с |
-| `checkForUpdates(manifest, local)` | Сравнение версий → UpdateAction |
-| `downloadToStaging(url, sha256, path, progress)` | Скачивание в .part + SHA-256 через BCrypt + rename |
+| `checkForUpdates(manifest)` | App: kAppVersion vs manifest. Data: SHA-256 **каждого** файла из dataFiles на диске vs манифест → UpdateAction |
+| `downloadToStaging(url, sha256, path, progress)` | Скачивание в .part + SHA-256 через BCrypt + rename. Создаёт вложенные директории назначения (`ensureParentDir`) |
 | `fileSha256(path)` | SHA-256 файла через BCrypt API (64KB чанки) |
-| `downloadAndStageData(manifest, progress)` | Скачивание всех data-файлов в staging/ |
-| `swapDataFiles(manifest)` | Backup (.bak) + MoveFileEx + update version.json + cleanup |
-| `rollbackDataFiles()` | Восстановление из .bak при ошибке swap |
+| `downloadAndStageData(manifest, progress)` | Скачивание всех dataFiles в staging/ (сохраняя относительный путь ключа, напр. `staging\assets\foo.png`) |
+| `swapDataFiles(manifest)` | Backup (.bak) + MoveFileEx для каждого файла манифеста + `cleanupObsoleteAssets` + удаление .bak/lock |
+| `cleanupObsoleteAssets(manifest)` | Удаляет `assets\*.png`, которых нет среди ключей `assets/*` в манифесте (герой переименован/убран) — иначе маска `assets\*.png` только добавляет/перезаписывает и никогда не подчищает лишнее |
+| `rollbackDataFiles()` | Без ManifestInfo (вызывается до fetchManifest): восстанавливает `*.bak` и `assets\*.bak` по маске, а не по жёстко заданному списку файлов |
 | `checkPendingSwap()` | Проверка swap.lock при старте → rollback если найден |
-| `cleanupStaging()` | Удаление orphan .part файлов |
+| `cleanupStaging()` | Удаление orphan `.part` в staging/ и staging/assets/ |
 | `compareVersions(a, b)` | Посегментное числовое сравнение версий |
 
 SSL verification включена (CURLSSLOPT_NATIVE_CA). Не использует общий applyCurlNetworkOpts.
+
+**Ассеты и hero_hashes.dat в манифесте** (добавлено, см. `scripts/update_assets.ps1`): в отличие от `.cbm`/`_data.db` (версионированные GitHub Releases, `scripts/pack_data.bat`), `hero_hashes.dat` и каждый `assets/<name>.png` попадают в `manifest.json → data.files` с `url` на `raw.githubusercontent.com/.../main/finalapp/...` — т.е. приложение сверяется напрямую с содержимым main-ветки репозитория, без отдельных релизов/версий для ассетов. При каждом старте `checkForUpdates` хэширует и эти файлы; расхождение (или лишний PNG, которого больше нет в манифесте) чинится тем же DATA_UPDATE-путём.
 
 ---
 
@@ -307,6 +333,15 @@ GUI: ImGui/D3D11 + оркестратор + система обновлений.
 
 ---
 
+### installer/dota_draft_setup.iss (../installer/, вне finalapp/)
+Inno Setup скрипт полной установки/апдейта приложения (канал `APP_UPDATE` — не `updater.cpp`, тот меняет только `.cbm`/`_data.db`).
+
+Ставит: exe, `catboostmodel.dll`, `draft_helper_abstract.cbm`/`_data.db`, `hero_hashes.dat`, `assets\*.png`, GSI-конфиг.
+
+`[InstallDelete] Type: filesandordirs; Name: "{app}\assets"` — папка `assets` полностью удаляется **перед** копированием новых файлов. Нужно, т.к. `[Files]` с маской `assets\*.png` в Inno Setup только добавляет/перезаписывает файлы, совпадающие с источником, но никогда не удаляет из `{app}\assets` файлы, пропавшие из источника (переименованный/убранный герой) — без этого шага устаревшие PNG копились бы в установке пользователя при каждом обновлении приложения.
+
+---
+
 ## Базы данных
 
 ### playerandlivestats.db — данные игрока и runtime
@@ -344,35 +379,40 @@ GUI: ImGui/D3D11 + оркестратор + система обновлений.
 ```
 CWD → curl_global_init → GDI+
   → checkPendingSwap() + cleanupStaging()
-  → loadLocalVersion()
   → CreateUpdateWindow()
   → retry loop: fetchManifest() или "Failed to check" + "Try again"
-  → checkForUpdates():
-      APP_UPDATE  → download → sha256 → update version.json → bat(3s delay + installer /SILENT) → exit
-      DATA_UPDATE → download → sha256 → swapDataFiles() → continue
+  → checkForUpdates():   // SHA-256 каждого файла из manifest.dataFiles, без сохранённого снимка версии
+      APP_UPDATE  → download → sha256 → bat(3s delay + installer /SILENT) → exit
+      DATA_UPDATE → downloadAndStageData() → swapDataFiles() (+ cleanupObsoleteAssets) → continue
       SCHEMA_TOO_NEW → banner flag
   → DestroyUpdateWindow()
   → config → DB → Phase 1a → orchestrator → Phase 1b → D3D11 → ImGui → loop
 ```
 
+Нет `version.json`/сохранённого локального снимка версии — на каждом старте `checkForUpdates` заново хэширует все файлы из `manifest.dataFiles` и сравнивает с манифестом, вместо сравнения версий.
+
 ### Файлы версионирования
 
 | Файл | Расположение | Описание |
 |------|-------------|----------|
-| `manifest.json` | GitHub repo root (raw.githubusercontent) | Источник правды: версии, URL, SHA-256 |
-| `version.json` | Рядом с exe (hidden) | Локальное состояние: app_version, data_version, schema |
+| `manifest.json` | GitHub repo root (raw.githubusercontent, main) | Источник правды: `app` (версия/URL/sha256 инсталлятора), `data.files` — map ключ→{url, sha256} |
 | `version.h` | Исходный код | Компилируемые константы: kAppVersion, kSupportedSchema |
 | `version.rc` | Исходный код | RC-ресурс с параметризованной версией (VER_MAJOR/MINOR/PATCH) |
 | `meta` таблица | _data.db | schema_version + data_version внутри пакета данных |
+
+`manifest.data.files` смешивает два разных канала доставки по ключу:
+- `draft_helper_abstract.cbm` / `draft_helper_abstract_data.db` — версионированные GitHub Releases (`data-<DVER>`), управляются `pack_data.bat`
+- `hero_hashes.dat` и `assets/<hero>.png` — **без релизов/версий**, url = `raw.githubusercontent.com/.../main/finalapp/...`; приложение сверяется напрямую с текущим состоянием main-ветки, управляются `update_assets.ps1`
 
 ### Скрипты релиза
 
 | Скрипт | Описание |
 |--------|----------|
-| `scripts/release_app.bat VERSION` | Обновить version.h → build → installer → gh release → manifest.json |
-| `scripts/pack_data.bat DVER SCHEMA` | meta в _data.db → gh release → manifest.json |
+| `scripts/release_app.bat VERSION` | Обновить version.h → build → installer → gh release → manifest.json (app) |
+| `scripts/pack_data.bat DVER SCHEMA` | meta в _data.db → gh release → manifest.json (cbm/db) |
+| `scripts/update_assets.ps1` (+ `.bat` обёртка) | Пересчитать sha256 hero_hashes.dat + assets/*.png → manifest.json (raw main URL, без релиза) → commit + push |
 
-VS Code Tasks: "Release App", "Release Data" (с prompt для версии).
+VS Code Tasks: "Release App", "Release Data", "Update Assets".
 
 ---
 

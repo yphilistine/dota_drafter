@@ -13,7 +13,7 @@
 - Matchup-данные (global WR, vs/with пайрвайзные, hero×position WR)
 - Immortal-статистика для фильтрации пула кандидатов
 
-**Распознавание героев и позиций** — захват HUD и сравнение по Pearson-корреляции 8×8 матриц (без OCR).
+**Распознавание героев** — захват HUD и сравнение по Pearson-корреляции 8×8 матриц. **Распознавание позиций** — Windows OCR (текст плашки "Safe Lane" / "Лёгкая линия" и т.п.).
 
 **ML-предсказания** — CatBoost модель предсказывает P(radiant_win) для каждого возможного пика (10 cat + 42 float признаков).
 
@@ -67,11 +67,15 @@ gamestate_integration_dota2.cfg     Конфигурация GSI (устанав
 
 ### Как работает
 
-При каждом запуске приложение проверяет `manifest.json` на GitHub:
+При каждом запуске приложение проверяет `manifest.json` на GitHub (main-ветка, raw.githubusercontent.com):
 1. Если нет подключения — показывает окно "Failed to check for updates" с кнопкой "Try again"
 2. Если есть обновление приложения — скачивает инсталлятор, проверяет SHA-256, запускает silent install
-3. Если есть обновление данных — скачивает .cbm и _data.db, проверяет SHA-256, подменяет файлы
+3. Если есть обновление данных — скачивает изменившиеся файлы из `manifest.data.files`, проверяет SHA-256, подменяет файлы
 4. Гейт совместимости — если schema данных не совпадает с поддерживаемой приложением, показывает баннер
+
+`manifest.data.files` — не только `.cbm`/`_data.db`, но и `hero_hashes.dat` + каждый `assets/<hero>.png`. Для `.cbm`/`_data.db` `url` указывает на версионированный GitHub Release (`pack_data.bat`); для `hero_hashes.dat`/ассетов — напрямую на `raw.githubusercontent.com/.../main/finalapp/...`, т.е. приложение на каждом старте сверяет свои локальные копии с тем, что прямо сейчас лежит в main-ветке репозитория, без отдельных релизов/версий (см. `scripts/update_assets.ps1`). Несовпадение или отсутствие файла → перекачка; PNG, отсутствующий в манифесте (герой переименован/убран), удаляется (`cleanupObsoleteAssets` в `updater.cpp`).
+
+Отдельно: полный переустановщик (`installer/dota_draft_setup.iss`) тоже ставит `assets/*.png` и `hero_hashes.dat` напрямую и перед копированием полностью удаляет папку `assets` (секция `[InstallDelete]`) — то же самое "не копить устаревшие файлы", но на случай, когда обновление идёт через новый инсталлятор, а не через фоновый data-канал.
 
 ### Версионирование
 
@@ -90,7 +94,8 @@ gamestate_integration_dota2.cfg     Конфигурация GSI (устанав
 ### Релиз через VS Code
 
 - **Release App**: Tasks → "Release App" → ввести версию (напр. `1.0.1`)
-- **Release Data**: Tasks → "Release Data" → ввести версию данных и схему
+- **Release Data**: Tasks → "Release Data" → ввести версию данных и схему (только `.cbm`/`_data.db`)
+- **Update Assets**: Tasks → "Update Assets" — пересчитать sha256 и обновить манифест после изменений в `assets/` или `hero_hashes.dat` (без версии/релиза, `scripts/update_assets.ps1`)
 
 ---
 
@@ -99,9 +104,10 @@ gamestate_integration_dota2.cfg     Конфигурация GSI (устанав
 | Компонент | Описание |
 |-----------|----------|
 | `catboostmodel.dll` | CatBoost C API runtime |
-| vcpkg | libcurl, sqlite3, openssl, lz4, zlib, nlohmann-json (static) |
+| vcpkg | libcurl, sqlite3, openssl, lz4, zlib, nlohmann-json, libpq (static) |
 | ImGui | Встроена как `imgui.lib` (D3D11 backend) |
 | Windows SDK | d3d11, dxgi, d3dcompiler, dwmapi, gdiplus, bcrypt |
+| Windows OCR (WinRT/cppwinrt) | `pos_ocr.h` — распознавание позиций (`Windows.Media.Ocr`) |
 
 ---
 
@@ -233,11 +239,13 @@ build_unified.bat debug     :: debug (/Od /Zi)
 | `version_utils.cpp / .h` | Чтение/запись version.json, чтение meta из _data.db |
 | `updater.cpp / .h` | Система обновлений: manifest, download, sha256, swap, rollback |
 | `datafetcher.cpp` | Фаза 1a (init) + 1b (player data) |
+| `clouddatafetcher.cpp / .h` | PostgreSQL → SQLite sync (proherostats/immortalherostats); dev-инструмент, не вызывается в рантайме приложения |
 | `livestatsfetcher.cpp` | GSI HTTP-сервер |
 | `portrait_runner.cpp / .h` | Захват портретов + позиций + overlay [D] |
 | `dota_picker.cpp` | ML-пикер CatBoost + schema gate |
 | `dota2_capture.cpp / .h` | Захват окна Dota 2 (PrintWindow + GDI) |
-| `dhash.h` | Pearson-корреляция 8x8 для распознавания |
+| `dhash.h` | Pearson-корреляция 8x8 для распознавания **героев** (база — `hero_hashes.dat`, грузится в рантайме) |
+| `pos_ocr.h` | Распознавание **позиций** через Windows OCR (заменяет старый Pearson-подход) |
 | `playerdatafetcher.cpp / .h` | OpenDota / STRATZ запросы |
 
 ---
@@ -248,13 +256,12 @@ build_unified.bat debug     :: debug (/Od /Zi)
 
 | Операция | Время | Когда |
 |----------|-------|-------|
-| Fetch manifest.json (~1KB) | 0.5-2с | Каждый запуск |
-| SHA-256 проверка (BCrypt) | <50мс | При скачивании |
+| Fetch manifest.json (~30KB, ~130 записей файлов) | 0.5-2с | Каждый запуск |
+| SHA-256 проверка ~130 локальных файлов (cbm/db/hero_hashes.dat/assets) | <100мс | Каждый запуск (checkForUpdates хэширует все файлы манифеста, не только изменившиеся) |
 | Скачивание app (~10MB) | 2-10с | Только при обновлении |
 | Скачивание data (~5.6MB) | 1-5с | Только при обновлении |
-| File swap (MoveFileEx) | <5мс | Только при обновлении data |
+| File swap (MoveFileEx) | <5мс/файл | Только при обновлении data |
 | Schema gate (2 SQL запроса) | <5мс | Один раз при старте picker |
-| version.json read/write | <1мс | При старте |
 
 **Итого**: +0.5-2с к запуску (online, без обновления). Без влияния на производительность во время игры.
 
