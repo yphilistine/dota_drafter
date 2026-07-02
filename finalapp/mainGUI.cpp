@@ -2382,7 +2382,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
             fn((void*)(intptr_t)-4);
     }
 
-    ensureLogsDir();
+    initConsole();
     CurlGlobal curlInit;
 
     // GDI+ для декодирования аватаров (JPEG/PNG)

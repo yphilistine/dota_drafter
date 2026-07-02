@@ -14,6 +14,7 @@
 #include <ws2tcpip.h>
 
 #include "shared_types.h"
+#include "common.h"
 
 #include <iostream>
 #include <mutex>
@@ -22,6 +23,7 @@
 
 static const int PORT = 62326;
 static GameInfo* g_gameInfo = nullptr;
+static std::string g_lastLoggedState;  // для дедупликации записей в лог (только смена состояния)
 
 static GamePhase parsePhaseStr(const std::string& s) {
     if (s == "DOTA_GAMERULES_STATE_HERO_SELECTION" ||
@@ -95,6 +97,7 @@ static std::string handle_request(const std::string& raw) {
         int team_slot = slot_str.empty() ? 0 : std::stoi(slot_str);
 
         if (!mid.empty()) {
+            bool stateChanged = false;
             if (g_gameInfo) {
                 std::lock_guard<std::mutex> lk(g_gameInfo->mtx);
                 bool newId = (!mid.empty() && mid != g_gameInfo->matchId);
@@ -102,18 +105,20 @@ static std::string handle_request(const std::string& raw) {
                 if (!gstate.empty()) g_gameInfo->phase   = parsePhaseStr(gstate);
                 if (!team.empty())   g_gameInfo->ourSide = (team == "radiant") ? 1 : 0;
                 g_gameInfo->ourSlot = team_slot + 1;
-                if (newId) {
-                    g_gameInfo->newMatch = true;
-                    std::printf("[GSI] Новый матч: %s  player:%s  state:%s\n",
-                        mid.c_str(), uid.c_str(), gstate.c_str());
-                }
+                if (newId) g_gameInfo->newMatch = true;
+                // Логируем только первый контакт и смену состояния — иначе лог
+                // захлёбывается GSI-запросами, которые идут несколько раз в секунду.
+                stateChanged = newId || (gstate != g_lastLoggedState);
+                if (stateChanged) g_lastLoggedState = gstate;
                 g_gameInfo->isHeroSelection =
                     (gstate == "DOTA_GAMERULES_STATE_HERO_SELECTION");
                 g_gameInfo->lastUpdate = std::chrono::steady_clock::now();
             }
 
-            std::printf("[GSI] match=%s state=%s team=%s slot=%d\n",
-                mid.c_str(), gstate.c_str(), team.c_str(), team_slot);
+            if (stateChanged) {
+                LOG_INFO("[GSI] match=" << mid << " state=" << gstate
+                    << " team=" << team << " slot=" << team_slot << " player=" << uid);
+            }
         }
         resp_body = "OK";
 
@@ -189,11 +194,11 @@ void runGsiServer(GameInfo& gameInfo) {
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
-        std::fprintf(stderr, "[GSI] WSAStartup failed\n"); return;
+        LOG_ERR("[GSI] WSAStartup failed"); return;
     }
     SOCKET server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server == INVALID_SOCKET) {
-        std::fprintf(stderr, "[GSI] socket() failed\n"); return;
+        LOG_ERR("[GSI] socket() failed, WSA error " << WSAGetLastError()); return;
     }
     int opt = 1;
     setsockopt(server, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
@@ -201,13 +206,17 @@ void runGsiServer(GameInfo& gameInfo) {
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(PORT);
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR ||
-        listen(server, SOMAXCONN) == SOCKET_ERROR) {
-        std::fprintf(stderr, "[GSI] bind/listen error: %d\n", WSAGetLastError());
+    if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        LOG_ERR("[GSI] bind() на порту " << PORT << " не удался, WSA error "
+            << WSAGetLastError() << " — порт уже занят другим процессом?");
         closesocket(server); return;
     }
-    std::printf("[GSI] Сервер запущен на порту %d\n", PORT);
-    std::printf("[GSI] GET http://localhost:%d/phase — статус\n", PORT);
+    if (listen(server, SOMAXCONN) == SOCKET_ERROR) {
+        LOG_ERR("[GSI] listen() не удался, WSA error " << WSAGetLastError());
+        closesocket(server); return;
+    }
+    LOG_INFO("[GSI] Сервер запущен на порту " << PORT);
+    LOG_INFO("[GSI] GET http://localhost:" << PORT << "/phase — статус");
 
     while (true) {
         SOCKET client = accept(server, nullptr, nullptr);

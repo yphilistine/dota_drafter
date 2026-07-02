@@ -71,22 +71,84 @@ Type: filesandordirs; Name: "{app}"
 
 [Code]
 
-function GetDotaCfgPath(Param: String): String;
+// Ищет папку "...\dota 2 beta\game\dota\cfg" среди ВСЕХ библиотек Steam, а не
+// только под путём установки самого Steam. Dota 2 (30+ ГБ) очень часто стоит
+// в отдельной библиотеке на другом диске (steamapps\libraryfolders.vdf), и путь
+// установки Steam из реестра тогда указывает не туда, где на самом деле лежит игра.
+function FindDotaCfgFolder(): String;
 var
-  SteamPath: String;
+  SteamPath, VdfPath, Candidate, LibPath, Line: String;
+  Lines: TArrayOfString;
+  I, PStart, PEnd: Integer;
 begin
   Result := '';
-  if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Valve\Steam', 'InstallPath', SteamPath) or
-     RegQueryStringValue(HKEY_CURRENT_USER, 'SOFTWARE\Valve\Steam', 'SteamPath', SteamPath) then
+
+  if not (RegQueryStringValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Valve\Steam', 'InstallPath', SteamPath) or
+          RegQueryStringValue(HKEY_CURRENT_USER, 'SOFTWARE\Valve\Steam', 'SteamPath', SteamPath)) then
+    exit;
+
+  StringChangeEx(SteamPath, '/', '\', True);
+
+  // Кандидат 1: дефолтная библиотека (папка установки самого Steam)
+  Candidate := SteamPath + '\steamapps\common\dota 2 beta\game\dota\cfg';
+  if DirExists(Candidate) then
   begin
-    StringChangeEx(SteamPath, '/', '\', True);
-    Result := SteamPath + '\steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration';
+    Result := Candidate;
+    exit;
   end;
+
+  // Кандидаты 2..N: остальные библиотеки из steamapps\libraryfolders.vdf
+  VdfPath := SteamPath + '\steamapps\libraryfolders.vdf';
+  if not FileExists(VdfPath) then
+    exit;
+  if not LoadStringsFromFile(VdfPath, Lines) then
+    exit;
+
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Lines[I];
+    if Pos('"path"', Line) > 0 then
+    begin
+      PStart := Pos('"path"', Line) + Length('"path"');
+      while (PStart <= Length(Line)) and (Line[PStart] <> '"') do
+        PStart := PStart + 1;
+      PStart := PStart + 1;
+      PEnd := PStart;
+      while (PEnd <= Length(Line)) and (Line[PEnd] <> '"') do
+        PEnd := PEnd + 1;
+      if PEnd > PStart then
+      begin
+        LibPath := Copy(Line, PStart, PEnd - PStart);
+        StringChangeEx(LibPath, '\\', '\', True);
+        Candidate := LibPath + '\steamapps\common\dota 2 beta\game\dota\cfg';
+        if DirExists(Candidate) then
+        begin
+          Result := Candidate;
+          exit;
+        end;
+      end;
+    end;
+  end;
+end;
+
+function GetDotaCfgPath(Param: String): String;
+var
+  CfgFolder: String;
+begin
+  CfgFolder := FindDotaCfgFolder();
+  if CfgFolder <> '' then
+    Result := CfgFolder + '\gamestate_integration'
+  else
+    Result := '';
 end;
 
 function DotaCfgPathExists(): Boolean;
 begin
-  Result := DirExists(GetDotaCfgPath(''));
+  // Проверяем "...\cfg" (доказывает, что Dota 2 реально там установлена), а не
+  // "...\cfg\gamestate_integration" — эту подпапку Steam/Dota не создаёт заранее
+  // (она появляется, только если у пользователя уже стоял другой GSI-инструмент),
+  // а Inno Setup создаст её сам при копировании файла в DestDir.
+  Result := FindDotaCfgFolder() <> '';
 end;
 
 function IsSilentInstall(): Boolean;
