@@ -213,6 +213,9 @@ static std::map<int, std::vector<MetaHeroRow>> g_metaHeroStats;
 // даже если он не попал в топ-10/порог отсечения.
 static std::map<int, std::map<int, MetaHeroRow>> g_metaHeroLookup;
 static bool g_metaHeroStatsLoaded = false;
+// Ручной выбор позиции для панели Meta Heroes: -1 = Auto (следует за позицией из
+// драфта), 0 = All Positions (агрегат), 1-5 = конкретная позиция.
+static int g_metaPosOverride = -1;
 
 static void loadMetaHeroStatsIfNeeded() {
     if (g_metaHeroStatsLoaded) return;
@@ -1130,7 +1133,12 @@ static void SectionLabel(const char* label) {
 // бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает — переносим
 // бейдж на отдельную строку под заголовком. Так бейдж никогда не наезжает на
 // текст секции, при любой ширине панели.
-static void SectionLabelWithPosBadge(const char* label, float panelW, int position) {
+// overridePos != nullptr делает бейдж кликабельным: клик открывает popup с выбором
+// Auto/All/Position 1-5, записывает результат в *overridePos. *overridePos: -1 = Auto,
+// 0 = All Positions, 1-5 = конкретная позиция. Используется панелью Meta Heroes;
+// для панелей без ручного переключения (RECOMMENDED PICKS) передаётся nullptr —
+// поведение бейджа остаётся прежним, некликабельным.
+static void SectionLabelWithPosBadge(const char* label, float panelW, int position, int* overridePos = nullptr) {
     const float lh     = ImGui::GetTextLineHeight();
     const float startX = ImGui::GetCursorPosX();
 
@@ -1147,8 +1155,14 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
     float reservedLabelW = ImGui::CalcTextSize("RECOMMENDED PICKS").x;
     float labelEndX = startX + ImGui::CalcTextSize(">").x + 6.f + reservedLabelW;
 
-    char fullText[32], shortText[32];
-    if (position > 0) {
+    bool isAuto = overridePos && (*overridePos == -1);
+
+    char fullText[40], shortText[32];
+    if (isAuto) {
+        if (position > 0) std::snprintf(fullText, sizeof(fullText), "[=] Auto - Pos %d", position);
+        else              std::snprintf(fullText, sizeof(fullText), "[=] Auto - All");
+        std::snprintf(shortText, sizeof(shortText), "Auto");
+    } else if (position > 0) {
         std::snprintf(fullText,  sizeof(fullText),  "[=] Position %d", position);
         std::snprintf(shortText, sizeof(shortText), "Pos %d", position);
     } else {
@@ -1176,10 +1190,35 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 bp = ImGui::GetCursorScreenPos();
-    dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
+    bool hovered = overridePos && ImGui::IsMouseHoveringRect(bp, {bp.x+bW,bp.y+bH});
+    dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH}, hovered ? C(kCard) : C(kCard2));
     dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
     dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
-    ImGui::Dummy({bW,bH});
+
+    if (overridePos) {
+        char btnId[48], popupId[48];
+        std::snprintf(btnId,   sizeof(btnId),   "##posBadgeBtn_%s",    label);
+        std::snprintf(popupId, sizeof(popupId), "##posBadgePopup_%s",  label);
+
+        ImGui::SetCursorScreenPos(bp);
+        if (ImGui::InvisibleButton(btnId, {bW, bH}))
+            ImGui::OpenPopup(popupId);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click to change position");
+
+        if (ImGui::BeginPopup(popupId)) {
+            if (ImGui::Selectable("Auto", *overridePos == -1)) *overridePos = -1;
+            if (ImGui::Selectable("All",  *overridePos == 0))  *overridePos = 0;
+            for (int p = 1; p <= 5; ++p) {
+                char plabel[16];
+                std::snprintf(plabel, sizeof(plabel), "Pos %d", p);
+                if (ImGui::Selectable(plabel, *overridePos == p)) *overridePos = p;
+            }
+            ImGui::EndPopup();
+        }
+    } else {
+        ImGui::Dummy({bW,bH});
+    }
 }
 
 // ─── Панель драфта (слоты Radiant/Dire + winProb) ─────────────────────────────
@@ -1547,11 +1586,16 @@ static void DrawMetaHeroesPanel(float panelW) {
         std::memcpy(ourHeroName, g_pickerState.ourHeroName, sizeof(ourHeroName));
     }
 
-    int effectivePos = (ourPosition > 0) ? ourPosition : 0; // 0 = агрегат по всем позициям
+    // -1 (Auto) следует за позицией из драфта; иначе — то, что выбрал пользователь
+    // в бейдже (0 = All Positions, 1-5 = конкретная позиция).
+    int effectivePos = (g_metaPosOverride == -1)
+        ? ((ourPosition > 0) ? ourPosition : 0) // 0 = агрегат по всем позициям
+        : g_metaPosOverride;
 
     // Заголовок секции + бейдж позиции — то же оформление, что и в DrawPicksPanel
-    // (сокращается/переносится на узкой панели, см. SectionLabelWithPosBadge).
-    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, effectivePos);
+    // (сокращается/переносится на узкой панели, см. SectionLabelWithPosBadge), но
+    // здесь бейдж кликабельный: позволяет вручную закрепить позицию 1-5/All/Auto.
+    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, effectivePos, &g_metaPosOverride);
 
     ImGui::Spacing();
     ImGui::Separator();
