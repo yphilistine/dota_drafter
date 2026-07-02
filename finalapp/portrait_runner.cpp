@@ -332,6 +332,23 @@ static void bringDotaToFront(Dota2Capture* cap) {
     if (fg != my) AttachThreadInput(my, fg, FALSE);
 }
 
+// Оверлеи сторонних приложений (Discord/Steam/NVIDIA/Xbox Game Bar и т.п.),
+// открытые поверх Dota 2, технически становятся foreground-окном ОС — из-за
+// этого строгое сравнение fg==dotaHwnd прячет кнопку [D], хотя пользователь
+// всё ещё в игре. Вместо хрупкого списка конкретных оверлеев (у каждого свой
+// window class, меняется от версии к версии) проверяем общий признак игрового
+// оверлея: WS_EX_TOPMOST-окно, геометрически перекрывающее окно Dota — по
+// такому определению оверлей "не считается" переключением на другое приложение.
+static bool isOverlayOverDota(HWND fg, HWND dotaHwnd) {
+    if (!fg || !dotaHwnd || fg == dotaHwnd) return false;
+    LONG_PTR exStyle = GetWindowLongPtr(fg, GWL_EXSTYLE);
+    if (!(exStyle & WS_EX_TOPMOST)) return false;
+    RECT fgRect{}, dotaRect{};
+    if (!GetWindowRect(fg, &fgRect) || !GetWindowRect(dotaHwnd, &dotaRect)) return false;
+    RECT inter{};
+    return IntersectRect(&inter, &fgRect, &dotaRect) != 0;
+}
+
 static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE: {
@@ -359,7 +376,8 @@ static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             HWND dotaHwnd = oc->cap->gameWindowHandle();
             HWND ourApp   = findAppWindow();
             bool shouldShow = (fg == dotaHwnd) ||
-                              (ourApp && fg == ourApp);
+                              (ourApp && fg == ourApp) ||
+                              isOverlayOverDota(fg, dotaHwnd);
 
             if (shouldShow) {
                 if (!IsWindowVisible(hwnd))

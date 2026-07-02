@@ -58,6 +58,13 @@ static HWND                    g_Hwnd      = nullptr;
 static void RenderFrame();   // определена ниже; нужна раньше для WM_SIZE
 static void PresentFrame();  // определена ниже; форс-рендер во время live-resize
 
+// Минимальный размер клиентской области: раскладка (шапка с карточкой игрока
+// фиксированной ширины + 3 колонки драфта/рекомендаций/меты) считается в
+// абсолютных пикселях и не масштабируется — при более узком/низком окне
+// элементы наезжают друг на друга и на заголовок окна.
+static const LONG kMinClientW = 1300;
+static const LONG kMinClientH = 480;
+
 static void CreateRTV() {
     ID3D11Texture2D* back = nullptr;
     g_SwapChain->GetBuffer(0, IID_PPV_ARGS(&back));
@@ -91,6 +98,14 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LP
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wp, lp)) return true;
     switch (msg) {
+    case WM_GETMINMAXINFO: {
+        RECT r = {0, 0, kMinClientW, kMinClientH};
+        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+        MINMAXINFO* mmi = (MINMAXINFO*)lp;
+        mmi->ptMinTrackSize.x = r.right - r.left;
+        mmi->ptMinTrackSize.y = r.bottom - r.top;
+        return 0;
+    }
     case WM_SIZE:
         if (g_Device && wp != SIZE_MINIMIZED) {
             if (g_RTV) { g_RTV->Release(); g_RTV = nullptr; }
@@ -194,6 +209,9 @@ static std::string heroDisplayName(int heroId, const char* fallback) {
 struct MetaHeroRow { char name[64] = {}; int heroId = 0; int games = 0; float winRate = 0.f; };
 // Ключ 0 = агрегат по всем позициям (используется, когда позиция игрока ещё не определена).
 static std::map<int, std::vector<MetaHeroRow>> g_metaHeroStats;
+// Полный (нефильтрованный по 1%-порогу) lookup pos -> heroId -> row, для показа статы выбранного героя,
+// даже если он не попал в топ-10/порог отсечения.
+static std::map<int, std::map<int, MetaHeroRow>> g_metaHeroLookup;
 static bool g_metaHeroStatsLoaded = false;
 
 static void loadMetaHeroStatsIfNeeded() {
@@ -239,7 +257,12 @@ static void loadMetaHeroStatsIfNeeded() {
                 for (auto& r : rows) total += r.games;
                 long long floor = (long long)(total * 0.01);
                 std::vector<MetaHeroRow> kept;
-                for (auto& r : rows) if (r.games >= floor) kept.push_back(toRow(r.heroId, r.games, r.wins, r.name));
+                auto& lookup = g_metaHeroLookup[pos];
+                for (auto& r : rows) {
+                    MetaHeroRow row = toRow(r.heroId, r.games, r.wins, r.name);
+                    lookup[r.heroId] = row;
+                    if (r.games >= floor) kept.push_back(row);
+                }
                 std::sort(kept.begin(), kept.end(), [](auto&a, auto&b){ return a.games > b.games; });
                 g_metaHeroStats[pos] = std::move(kept);
             }
@@ -247,8 +270,12 @@ static void loadMetaHeroStatsIfNeeded() {
             for (auto& [hid, gw] : aggByHero) totalAll += gw.first;
             long long aggFloor = (long long)(totalAll * 0.01);
             std::vector<MetaHeroRow> aggRows;
-            for (auto& [hid, gw] : aggByHero)
-                if (gw.first >= aggFloor) aggRows.push_back(toRow(hid, gw.first, gw.second, nameByHero[hid]));
+            auto& aggLookup = g_metaHeroLookup[0];
+            for (auto& [hid, gw] : aggByHero) {
+                MetaHeroRow row = toRow(hid, gw.first, gw.second, nameByHero[hid]);
+                aggLookup[hid] = row;
+                if (gw.first >= aggFloor) aggRows.push_back(row);
+            }
             std::sort(aggRows.begin(), aggRows.end(), [](auto&a, auto&b){ return a.games > b.games; });
             g_metaHeroStats[0] = std::move(aggRows); // 0 = агрегат по всем позициям (ордер по сумме матчей)
 
@@ -1097,6 +1124,64 @@ static void SectionLabel(const char* label) {
     ImGui::TextUnformatted(label);
 }
 
+// ─── Метка секции + бейдж текущей позиции (RECOMMENDED PICKS / META HEROES) ───
+// Бейдж по умолчанию делит строку с заголовком (справа). Если панель узкая и
+// полный текст бейджа перекрыл бы заголовок — сначала пробуем сократить текст
+// бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает — переносим
+// бейдж на отдельную строку под заголовком. Так бейдж никогда не наезжает на
+// текст секции, при любой ширине панели.
+static void SectionLabelWithPosBadge(const char* label, float panelW, int position) {
+    const float lh     = ImGui::GetTextLineHeight();
+    const float startX = ImGui::GetCursorPosX();
+
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::TextUnformatted(">");
+    ImGui::PopStyleColor();
+    ImGui::SameLine(0, 6.f);
+    ImGui::TextUnformatted(label);
+
+    // Порог "влезает/не влезает" считаем по самому длинному из возможных
+    // заголовков секции ("RECOMMENDED PICKS"), а не по текущему тексту —
+    // иначе соседние панели (RECOMMENDED PICKS/META HEROES, YOUR PICK/YOUR HERO)
+    // схлопывались бы каждая на своей ширине, вразнобой.
+    float reservedLabelW = ImGui::CalcTextSize("RECOMMENDED PICKS").x;
+    float labelEndX = startX + ImGui::CalcTextSize(">").x + 6.f + reservedLabelW;
+
+    char fullText[32], shortText[32];
+    if (position > 0) {
+        std::snprintf(fullText,  sizeof(fullText),  "[=] Position %d", position);
+        std::snprintf(shortText, sizeof(shortText), "Pos %d", position);
+    } else {
+        std::snprintf(fullText,  sizeof(fullText),  "[=] All Positions");
+        std::snprintf(shortText, sizeof(shortText), "All Pos");
+    }
+
+    const float GAP = 8.f;
+    const float bH  = lh + 6.f;
+    const char* badgeText = fullText;
+    float bW = ImGui::CalcTextSize(badgeText).x + 14.f;
+    bool sameLine = (labelEndX + GAP + bW <= panelW);
+    if (!sameLine) {
+        badgeText = shortText;
+        bW = ImGui::CalcTextSize(badgeText).x + 14.f;
+        sameLine = (labelEndX + GAP + bW <= panelW);
+    }
+
+    if (sameLine)
+        ImGui::SameLine(panelW - bW);
+    else
+        // Ни полный, ни сокращённый текст не помещаются рядом с заголовком —
+        // бейдж уходит на новую строку (курсор уже на ней после TextUnformatted).
+        ImGui::SetCursorPosX((std::max)(startX, panelW - bW));
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 bp = ImGui::GetCursorScreenPos();
+    dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
+    dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
+    dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
+    ImGui::Dummy({bW,bH});
+}
+
 // ─── Панель драфта (слоты Radiant/Dire + winProb) ─────────────────────────────
 static void DrawDraftPanel(float panelW) {
     const float PAD  = 8.f;
@@ -1271,32 +1356,9 @@ static void DrawPicksPanel(float panelW) {
         for (int i=0;i<recCount && i<10;i++) recs[i] = g_pickerState.recs[i];
     }
 
-    SectionLabel(ourHeroPicked ? "YOUR PICK" : "RECOMMENDED PICKS");
-
-    // Position badge — высота строки резервируется всегда (даже без бейджа),
-    // чтобы разделитель совпадал по высоте с соседней панелью Meta Heroes.
-    {
-        float bH = lh + 6.f;
-        if (ourPosition > 0) {
-            char badgeText[32];
-            std::snprintf(badgeText, sizeof(badgeText),
-                          "[=] Position %d", ourPosition);
-            ImVec2 ts = ImGui::CalcTextSize(badgeText);
-            float  bW = ts.x + 14.f;
-            ImGui::SameLine(panelW - bW);
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImVec2 bp = ImGui::GetCursorScreenPos();
-            dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
-            dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
-            dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
-            ImGui::Dummy({bW,bH});
-        } else {
-            // Без бейджа — держим резервируемую высоту на той же строке, что и заголовок
-            // секции (как и в ветке с бейджем), а не на новой строке ниже него.
-            ImGui::SameLine(panelW - 1.f);
-            ImGui::Dummy({1.f, bH});
-        }
-    }
+    // Заголовок секции + бейдж позиции (всегда виден, даже без определённой
+    // позиции); бейдж сокращается/переносится на узкой панели — см. SectionLabelWithPosBadge.
+    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR PICK" : "RECOMMENDED PICKS", panelW, ourPosition);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -1350,7 +1412,7 @@ static void DrawPicksPanel(float panelW) {
 
     // Отрисовка строки рекомендации
     auto DrawPickRow = [&](int rank, const char* name, int heroId, float win, bool highlight,
-                           int gamesPlayer, float wrPlayer, int gamesImm, float wrImm)
+                           int gamesPlayer, float wrPlayer)
     {
         ImDrawList* dl  = ImGui::GetWindowDrawList();
         ImVec2      rp  = ImGui::GetCursorScreenPos();
@@ -1395,18 +1457,9 @@ static void DrawPicksPanel(float panelW) {
         dl->PopClipRect();
 
         // Колонка 4: статистика (фиксированный x=statsX)
-        if (gamesPlayer > 0 || gamesImm > 0) {
-            char sub[64] = {};
-            int  n = 0;
-            if (gamesPlayer > 0)
-                n += std::snprintf(sub+n, sizeof(sub)-n,
-                                   "you %dg %.0f%%", gamesPlayer, wrPlayer*100.f);
-            if (gamesImm > 0) {
-                if (n > 0) n += std::snprintf(sub+n, sizeof(sub)-n,
-                                              "  imm %.0f%%", wrImm*100.f);
-                else       std::snprintf(sub+n, sizeof(sub)-n,
-                                         "imm %.0f%%", wrImm*100.f);
-            }
+        if (gamesPlayer > 0) {
+            char sub[64];
+            std::snprintf(sub, sizeof(sub), "you %dg %.0f%%", gamesPlayer, wrPlayer*100.f);
             dl->PushClipRect({statsX, rp.y}, {winX - 4.f, rp.y+RH}, true);
             dl->AddText({statsX, rp.y+(RH-lh2)*0.5f}, Ca(kMuted,0.85f), sub);
             dl->PopClipRect();
@@ -1425,13 +1478,13 @@ static void DrawPicksPanel(float panelW) {
 
     if (ourHeroPicked) {
         // Наш герой + P(win)
-        DrawPickRow(0, ourHeroName, ourHeroId, winProb, true, 0,0,0,0);
+        DrawPickRow(0, ourHeroName, ourHeroId, winProb, true, 0,0);
     } else {
         // Top-10 рекомендаций
         for (int i=0;i<recCount && i<10;i++) {
             const PickRowGui& r = recs[i];
             DrawPickRow(r.rank, r.name, r.heroId, r.winProb, r.rank==1,
-                        r.gamesPlayer, r.wrPlayer, r.gamesImm, r.wrImm);
+                        r.gamesPlayer, r.wrPlayer);
         }
         if (recCount == 0) {
             bool hasPlayer_ = false;
@@ -1482,43 +1535,29 @@ static void DrawMetaHeroesPanel(float panelW) {
     const float BAR_W     = 68.f;
     const float rW_ref    = panelW;
 
-    int ourPosition = 0;
-    { std::lock_guard<std::mutex> lk(g_pickerState.mtx); ourPosition = g_pickerState.ourPosition; }
+    int  ourPosition   = 0;
+    bool ourHeroPicked = false;
+    int  ourHeroId     = 0;
+    char ourHeroName[64] = {};
+    {
+        std::lock_guard<std::mutex> lk(g_pickerState.mtx);
+        ourPosition   = g_pickerState.ourPosition;
+        ourHeroPicked = g_pickerState.ourHeroPicked;
+        ourHeroId     = g_pickerState.ourHeroId;
+        std::memcpy(ourHeroName, g_pickerState.ourHeroName, sizeof(ourHeroName));
+    }
 
     int effectivePos = (ourPosition > 0) ? ourPosition : 0; // 0 = агрегат по всем позициям
 
-    SectionLabel("META HEROES");
-
-    // Position badge — то же оформление, что и в DrawPicksPanel
-    {
-        char badgeText[32];
-        if (effectivePos > 0)
-            std::snprintf(badgeText, sizeof(badgeText), "[=] Position %d", effectivePos);
-        else
-            std::snprintf(badgeText, sizeof(badgeText), "[=] All Positions");
-        ImVec2 ts = ImGui::CalcTextSize(badgeText);
-        float  bW = ts.x + 14.f;
-        float  bH = lh + 6.f;
-        ImGui::SameLine(panelW - bW);
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 bp = ImGui::GetCursorScreenPos();
-        dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},C(kCard2));
-        dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
-        dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
-        ImGui::Dummy({bW,bH});
-    }
+    // Заголовок секции + бейдж позиции — то же оформление, что и в DrawPicksPanel
+    // (сокращается/переносится на узкой панели, см. SectionLabelWithPosBadge).
+    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, effectivePos);
 
     ImGui::Spacing();
     ImGui::Separator();
 
     if (!g_metaHeroStatsLoaded) {
         ImGui::TextColored(kMuted, "  Loading meta stats...");
-        return;
-    }
-
-    auto it = g_metaHeroStats.find(effectivePos);
-    if (it == g_metaHeroStats.end() || it->second.empty()) {
-        ImGui::TextColored(kMuted, "  No data for this position yet");
         return;
     }
 
@@ -1536,7 +1575,7 @@ static void DrawMetaHeroesPanel(float panelW) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    auto DrawMetaRow = [&](int rank, const MetaHeroRow& row) {
+    auto DrawMetaRow = [&](int rank, const MetaHeroRow& row, bool highlight = false) {
         ImDrawList* dl  = ImGui::GetWindowDrawList();
         ImVec2      rp  = ImGui::GetCursorScreenPos();
         const float lh2 = ImGui::GetTextLineHeight();
@@ -1545,20 +1584,25 @@ static void DrawMetaHeroesPanel(float panelW) {
         const float rW  = rW_ref;
         ImVec4      wc  = WinColor(row.winRate);
 
-        const float portX  = rp.x + lh2 * 1.8f;
+        const float portX  = (rank > 0) ? rp.x + lh2 * 1.8f : rp.x + lh2 * 0.3f;
         const float nameX  = portX + PSZ + lh2 * 0.5f;
         const float statsX = rp.x + rW * 0.47f;
         const float winX   = rp.x + rW - WIN_COL_W;
 
         dl->AddRectFilled(rp,{rp.x+rW,rp.y+RH},C(kCard));
-        dl->AddRect(rp,{rp.x+rW,rp.y+RH},C(kBorder));
+        if (highlight)
+            dl->AddRect(rp,{rp.x+rW,rp.y+RH},Ca(wc,0.6f),0.f,0,1.5f);
+        else
+            dl->AddRect(rp,{rp.x+rW,rp.y+RH},C(kBorder));
 
-        char rb[4]; std::snprintf(rb,sizeof(rb),"%2d",rank);
-        dl->AddText({rp.x+4.f, rp.y+(RH-lh2)*0.5f}, C(kMuted), rb);
+        if (rank > 0) {
+            char rb[4]; std::snprintf(rb,sizeof(rb),"%2d",rank);
+            dl->AddText({rp.x+4.f, rp.y+(RH-lh2)*0.5f}, C(kMuted), rb);
+        }
 
         ImVec2 pp  = {portX, rp.y+(RH-PSZ)*0.5f};
-        ImU32  fill = C(kCard2);
-        ImU32  bord = Ca(kText,0.12f);
+        ImU32  fill = highlight ? Ca(wc,0.20f) : C(kCard2);
+        ImU32  bord = highlight ? Ca(wc,0.45f) : Ca(kText,0.12f);
         char   ab[3] = {row.name[0], row.name[1] ? row.name[1] : '\0', '\0'};
         ImTextureID htex = 0;
         auto hit = g_heroPortraits.find(row.heroId);
@@ -1584,9 +1628,31 @@ static void DrawMetaHeroesPanel(float panelW) {
         ImGui::Spacing();
     };
 
-    auto& rows = it->second;
-    int n = (int)std::min(rows.size(), (size_t)10);
-    for (int i=0;i<n;i++) DrawMetaRow(i+1, rows[i]);
+    if (ourHeroPicked) {
+        MetaHeroRow row;
+        bool        found = false;
+        auto posIt = g_metaHeroLookup.find(effectivePos);
+        if (posIt != g_metaHeroLookup.end()) {
+            auto heroIt = posIt->second.find(ourHeroId);
+            if (heroIt != posIt->second.end()) { row = heroIt->second; found = true; }
+        }
+        if (found) {
+            DrawMetaRow(0, row, true);
+        } else {
+            std::string nm = ourHeroName[0] ? ourHeroName : heroDisplayName(ourHeroId, "");
+            ImGui::TextColored(kMuted, "  No meta data for %s yet",
+                                nm.empty() ? "this hero" : nm.c_str());
+        }
+    } else {
+        auto it = g_metaHeroStats.find(effectivePos);
+        if (it == g_metaHeroStats.end() || it->second.empty()) {
+            ImGui::TextColored(kMuted, "  No data for this position yet");
+        } else {
+            auto& rows = it->second;
+            int n = (int)std::min(rows.size(), (size_t)10);
+            for (int i=0;i<n;i++) DrawMetaRow(i+1, rows[i]);
+        }
+    }
 
     // Легенда цветов — то же оформление, что и в DrawPicksPanel
     ImGui::Separator();
@@ -1745,11 +1811,29 @@ static void DrawStatusBar(float fullW) {
 }
 
 // ─── Шапка: логотип [D] + заголовок + карточка игрока / ввод Friend ID ────────
-static void DrawHeader(float fullW) {
+// Возвращает высоту шапки (фиксированная 60 — высота шапки не растёт; в
+// режиме ввода Friend ID содержимое карточки сжимается по вертикали, чтобы
+// уместиться в те же 60px, см. ниже).
+static float DrawHeader(float fullW) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      hs  = ImGui::GetCursorScreenPos();
-    const float H   = 60.f;
     const float lh  = ImGui::GetTextLineHeight();
+    const float H   = 60.f;
+
+    // Снимок состояния player info (нужен уже здесь, чтобы посчитать ширину
+    // карточки под режим ввода — см. ниже)
+    long long  accountId;
+    char       pname[128];
+    bool       hasPlayer;
+    bool       phase1Running;
+    {
+        std::lock_guard<std::mutex> lk(g_player.mtx);
+        accountId    = g_player.accountId;
+        hasPlayer    = g_player.hasPlayer;
+        phase1Running= g_player.phase1Running;
+        std::memcpy(pname, g_player.name, sizeof(pname));
+    }
+    const bool inputMode = !hasPlayer || s_editMode;
 
     // ── [D] logo box (на всю высоту шапки) ─────────────────────────────
     const float LOGO_W = H;
@@ -1779,42 +1863,56 @@ static void DrawHeader(float fullW) {
     dl->AddText({tx, titleY + lh + 2.f}, C(kMuted), "Dota 2 Draft Analyzer - Live Overlay");
 
     // ── Player card (right side) ──────────────────────────────────────────
-    const float CW = 240.f;
-    float cx = hs.x + fullW - CW;
+    const float INPUT_W = 120.f;
+    float CW = 240.f;
+    if (inputMode) {
+        // В режиме ввода карточка должна вместить label + input + Set (+x) —
+        // иначе кнопки вылезают за нарисованную рамку карточки (240px под
+        // это не рассчитан, он только под аватар+имя в режиме показа).
+        const ImGuiStyle& style   = ImGui::GetStyle();
+        float setBtnW = ImGui::CalcTextSize("Set").x + style.FramePadding.x * 2.f;
+        bool  showCancel = s_editMode && hasPlayer;
+        float xBtnW   = showCancel ? (ImGui::CalcTextSize("x").x + style.FramePadding.x * 2.f) : 0.f;
+        float neededW = 52.f + INPUT_W + 4.f + setBtnW + (showCancel ? (4.f + xBtnW) : 0.f) + 12.f;
+        CW = (std::max)(CW, neededW);
+    }
+    // Не даём карточке залезть на заголовок, если окно сужено сильнее,
+    // чем предполагает фиксированная раскладка (см. kMinClientW/H).
+    float titleEndX = tx + ImGui::CalcTextSize("Dota_Drafter").x + 20.f;
+    float cx = (std::max)(titleEndX, hs.x + fullW - CW);
 
-    dl->AddRectFilled({cx,hs.y},    {cx+CW,hs.y+H}, C(kCard));
-    dl->AddRect      ({cx,hs.y},    {cx+CW,hs.y+H}, C(kBorder));
+    // Карточка — настоящее дочернее окно ImGui (как ##draft/##picks/##meta
+    // ниже), а не просто нарисованный прямоугольник: любой виджет внутри
+    // (InputText/Button) автоматически обрезается по его границе и не может
+    // визуально вылезти наружу, даже если наш расчёт CW окажется неточным.
+    ImGui::SetCursorScreenPos({cx, hs.y});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.f, 0.f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, kCard);
+    ImGui::BeginChild("##playercard", {CW, H}, true, ImGuiWindowFlags_NoScrollbar);
+    dl = ImGui::GetWindowDrawList();
 
-    // Avatar box (36×36, вертикально по центру карточки)
+    // Avatar box (36×36, вертикально по центру карточки — H всегда 60)
     const float AVS  = 36.f;
     const float avY  = hs.y + (H - AVS) * 0.5f;
     dl->AddRectFilled({cx+8, avY}, {cx+8+AVS, avY+AVS}, C(kCard2));
     dl->AddRect      ({cx+8, avY}, {cx+8+AVS, avY+AVS}, C(kBorder));
 
-    // Снимок состояния player info
-    long long  accountId;
-    char       pname[128];
-    bool       hasPlayer;
-    bool       phase1Running;
-    {
-        std::lock_guard<std::mutex> lk(g_player.mtx);
-        accountId    = g_player.accountId;
-        hasPlayer    = g_player.hasPlayer;
-        phase1Running= g_player.phase1Running;
-        std::memcpy(pname, g_player.name, sizeof(pname));
-    }
-
-    if (!hasPlayer || s_editMode) {
+    if (inputMode) {
         // ── Input mode ────────────────────────────────────────────────────
+        // Не увеличиваем шапку — вместо этого сжимаем отступы и высоту строки
+        // input/Set/x (уменьшенный FramePadding), чтобы label + обе строки
+        // гарантированно уместились в фиксированные 60px карточки.
         ImVec2 avts = ImGui::CalcTextSize("ID");
         dl->AddText({cx+8+(AVS-avts.x)/2.f, avY+(AVS-avts.y)/2.f},
                     C(kMuted), "ID");
 
-        dl->AddText({cx+52.f, avY}, C(kMuted), "Enter Friend ID:");
+        const float rowTopY = hs.y + 6.f;
+        dl->AddText({cx+52.f, rowTopY}, C(kMuted), "Enter Friend ID:");
 
-        // InputText + Set button
-        ImGui::SetCursorScreenPos({cx+52.f, avY+lh+4.f});
-        ImGui::SetNextItemWidth(120.f);
+        // InputText + Set button (сжатый FramePadding.y, чтобы строка была ниже)
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.f, 1.f));
+        ImGui::SetCursorScreenPos({cx+52.f, rowTopY+lh+2.f});
+        ImGui::SetNextItemWidth(INPUT_W);
         bool commit = ImGui::InputText("##steamid", s_inputBuf, sizeof(s_inputBuf),
                                        ImGuiInputTextFlags_CharsNoBlank |
                                        ImGuiInputTextFlags_EnterReturnsTrue);
@@ -1847,6 +1945,7 @@ static void DrawHeader(float fullW) {
             ImGui::SameLine(0,4.f);
             if (ImGui::SmallButton("x")) s_editMode = false;
         }
+        ImGui::PopStyleVar(); // FramePadding (input/Set/x row)
 
     } else {
         // ── Display mode ──────────────────────────────────────────────────
@@ -1888,8 +1987,13 @@ static void DrawHeader(float fullW) {
         }
     }
 
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+
     ImGui::SetCursorScreenPos({hs.x, hs.y + H});
     ImGui::Dummy({fullW, 0.f});
+    return H;
 }
 
 // ─── Главный кадр ────────────────────────────────────────────────────────────
@@ -1927,14 +2031,14 @@ static void RenderFrame() {
 
     ImGui::SetCursorPos({PAD, PAD});
 
-    DrawHeader(FULL);
+    float headerH = DrawHeader(FULL);
 
     // Единый отступ между секциями
     const float GAP = PAD;
 
-    ImGui::SetCursorPos({PAD, PAD + 60.f + GAP});
+    ImGui::SetCursorPos({PAD, PAD + headerH + GAP});
     DrawStatusBar(FULL);
-    ImGui::SetCursorPos({PAD, PAD + 60.f + GAP + 26.f + GAP});
+    ImGui::SetCursorPos({PAD, PAD + headerH + GAP + 26.f + GAP});
 
     // ── Баннеры совместимости ────────────────────────────────────────────
     {
