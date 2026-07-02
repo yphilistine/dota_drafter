@@ -139,7 +139,13 @@ begin
   if CfgFolder <> '' then
     Result := CfgFolder + '\gamestate_integration'
   else
-    Result := '';
+    // Dota 2 не найдена — Check: DotaCfgPathExists и так пропустит копирование
+    // этого файла. Но DestDir вычисляется через {code:...} независимо от Check,
+    // и порядок их вычисления Inno Setup не документирует — если бы Result был
+    // '', это невалидный путь для DestDir и мог бы прервать всю установку.
+    // Отдаём заведомо существующую {app} как безопасную заглушку: копирования
+    // всё равно не будет, а если вдруг и произойдёт — ничего не сломает.
+    Result := ExpandConstant('{app}');
 end;
 
 function DotaCfgPathExists(): Boolean;
