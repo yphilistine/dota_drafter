@@ -2416,6 +2416,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
         UpdateAction action = checkForUpdates(manifest);
 
+        // GSI-конфиг живёт вне {app} (в папке Dota 2) и не завязан на схему
+        // данных/версию приложения, поэтому синхронизируется отдельно от
+        // action — и на APP_UPDATE/DATA_UPDATE, и на NONE (обычный запуск).
+        syncGsiConfig(manifest);
+
         if (action == UpdateAction::APP_UPDATE) {
             SetUpdateStatus(L"Downloading app update...");
             CreateDirectoryA("staging", nullptr);

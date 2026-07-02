@@ -13,6 +13,13 @@
 static const char* STAGING_DIR  = "staging";
 static const char* SWAP_LOCK    = "staging\\swap.lock";
 
+// Ключ манифеста, который не является путём относительно {app} — этот файл
+// живёт в папке Dota 2 и обрабатывается отдельно, см. syncGsiConfig().
+static const char* GSI_CONFIG_KEY = "gamestate_integration_dota2.cfg";
+static bool isExternalManifestKey(const std::string& fname) {
+    return fname == GSI_CONFIG_KEY;
+}
+
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
 // Создаёт все директории-предки файла (напр. "staging\assets\foo.png" ->
@@ -170,6 +177,7 @@ UpdateAction checkForUpdates(const ManifestInfo& manifest) {
     // Data: сравнение SHA-256 локальных файлов с манифестом
     for (auto& [fname, fe] : manifest.dataFiles) {
         if (fe.sha256.empty()) continue;
+        if (isExternalManifestKey(fname)) continue; // не {app}-путь, см. syncGsiConfig()
         if (GetFileAttributesA(fname.c_str()) == INVALID_FILE_ATTRIBUTES) {
             if (manifest.dataSchema <= kSupportedSchema)
                 return UpdateAction::DATA_UPDATE;
@@ -293,6 +301,7 @@ bool downloadAndStageData(const ManifestInfo& manifest,
     std::vector<std::pair<std::string, FileEntry>> toDownload;
     size_t totalBytes = 0;
     for (auto& [fname, fe] : manifest.dataFiles) {
+        if (isExternalManifestKey(fname)) continue; // не {app}-путь, см. syncGsiConfig()
         if (localFileUpToDate(fname, fe.sha256)) continue; // уже актуален — не трогаем
         toDownload.emplace_back(fname, fe);
         totalBytes += fe.size;
@@ -450,4 +459,109 @@ static void deletePartGlob(const std::string& pattern) {
 void cleanupStaging() {
     deletePartGlob(std::string(STAGING_DIR) + "\\*.part");
     deletePartGlob(std::string(STAGING_DIR) + "\\assets\\*.part");
+}
+
+// ─── GSI config sync (файл вне {app}, живёт в папке Dota 2) ──────────────────
+
+static bool regReadString(HKEY root, const char* subKey, const char* value, std::string& out) {
+    HKEY hKey;
+    if (RegOpenKeyExA(root, subKey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
+        return false;
+    char buf[MAX_PATH] = {};
+    DWORD size = sizeof(buf) - 1;
+    DWORD type = 0;
+    LONG rc = RegQueryValueExA(hKey, value, nullptr, &type, (LPBYTE)buf, &size);
+    RegCloseKey(hKey);
+    if (rc != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) return false;
+    out = buf;
+    return true;
+}
+
+static bool dirExistsA(const std::string& path) {
+    DWORD attr = GetFileAttributesA(path.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// Ищет "...\dota 2 beta\game\dota\cfg" среди ВСЕХ библиотек Steam, а не только
+// под путём установки самого Steam — Dota 2 (30+ ГБ) часто стоит в отдельной
+// библиотеке на другом диске (steamapps\libraryfolders.vdf). Тот же алгоритм,
+// что и в installer/dota_draft_setup.iss (FindDotaCfgFolder), но на C++, т.к.
+// здесь он должен отрабатывать не один раз при установке, а при каждом запуске.
+// Пустая строка = Dota 2 на этой машине не найдена.
+static std::string findDotaCfgFolder() {
+    std::string steamPath;
+    if (!regReadString(HKEY_LOCAL_MACHINE, "SOFTWARE\\Valve\\Steam", "InstallPath", steamPath) &&
+        !regReadString(HKEY_CURRENT_USER,  "SOFTWARE\\Valve\\Steam", "SteamPath",   steamPath))
+        return "";
+    for (auto& c : steamPath) if (c == '/') c = '\\';
+
+    std::string candidate = steamPath + "\\steamapps\\common\\dota 2 beta\\game\\dota\\cfg";
+    if (dirExistsA(candidate)) return candidate;
+
+    std::ifstream vdf(steamPath + "\\steamapps\\libraryfolders.vdf");
+    if (!vdf.is_open()) return "";
+
+    std::string line;
+    while (std::getline(vdf, line)) {
+        auto keyPos = line.find("\"path\"");
+        if (keyPos == std::string::npos) continue;
+        auto q1 = line.find('"', keyPos + 6);
+        if (q1 == std::string::npos) continue;
+        auto q2 = line.find('"', q1 + 1);
+        if (q2 == std::string::npos) continue;
+
+        std::string libPath = line.substr(q1 + 1, q2 - q1 - 1);
+        std::string cleaned;
+        cleaned.reserve(libPath.size());
+        for (size_t i = 0; i < libPath.size(); ++i) {
+            if (libPath[i] == '\\' && i + 1 < libPath.size() && libPath[i + 1] == '\\') {
+                cleaned += '\\';
+                ++i;
+            } else {
+                cleaned += libPath[i];
+            }
+        }
+
+        candidate = cleaned + "\\steamapps\\common\\dota 2 beta\\game\\dota\\cfg";
+        if (dirExistsA(candidate)) return candidate;
+    }
+    return "";
+}
+
+void syncGsiConfig(const ManifestInfo& manifest) {
+    try {
+        auto it = manifest.dataFiles.find(GSI_CONFIG_KEY);
+        if (it == manifest.dataFiles.end() || it->second.sha256.empty()) return;
+
+        std::string cfgFolder = findDotaCfgFolder();
+        if (cfgFolder.empty()) {
+            LOG_INFO("[GSI cfg] Dota 2 не найдена на этой машине — пропускаем синхронизацию");
+            return;
+        }
+
+        std::string gsiDir  = cfgFolder + "\\gamestate_integration";
+        std::string gsiPath = gsiDir + "\\" + GSI_CONFIG_KEY;
+
+        if (localFileUpToDate(gsiPath, it->second.sha256)) return; // уже актуален
+
+        CreateDirectoryA(gsiDir.c_str(), nullptr); // может не существовать (см. dota_draft_setup.iss)
+
+        std::string tmpPath = gsiPath + ".part";
+        DeleteFileA(tmpPath.c_str()); // подчистить обрывок от прошлой неудачной попытки
+
+        if (!downloadToStaging(it->second.url, it->second.sha256, tmpPath, nullptr)) {
+            LOG_ERR("[GSI cfg] Не удалось скачать обновлённый конфиг");
+            return;
+        }
+        if (!MoveFileExA(tmpPath.c_str(), gsiPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            LOG_ERR("[GSI cfg] Не удалось заменить конфиг, err=" << GetLastError());
+            DeleteFileA(tmpPath.c_str());
+            return;
+        }
+        LOG_INFO("[GSI cfg] Конфиг обновлён: " << gsiPath);
+    } catch (const std::exception& e) {
+        LOG_ERR("[GSI cfg] Исключение при синхронизации: " << e.what());
+    } catch (...) {
+        LOG_ERR("[GSI cfg] Неизвестное исключение при синхронизации");
+    }
 }

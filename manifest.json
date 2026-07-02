@@ -658,7 +658,12 @@
                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/zuus.png",
                                                        "sha256":  "a067df95c8194cdc3fe6a6e20950a83cd5ca8982108a44cbe7e0b05d17cc0fbd",
                                                        "size":  1962
-                                                   }
+                                                   },
+                               "gamestate_integration_dota2.cfg":  {
+                                                                       "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/installer/gamestate_integration_dota2.cfg",
+                                                                       "sha256":  "e5c862d781432952edcc295f7a48680400e48caf784d36d935631c9b57473aba",
+                                                                       "size":  233
+                                                                   }
                            }
              }
 }
