@@ -2437,7 +2437,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
             if (ok) {
                 SetUpdateStatus(L"Installing update...");
 
-                // Написать .bat который ждёт выхода процесса, потом запускает инсталлятор
+                // Написать .bat который ждёт выхода процесса, потом запускает инсталлятор.
+                // kPingCount пингов ping -n дают ~(kPingCount-1) секунд задержки — время,
+                // за которое наш процесс должен полностью завершиться и отпустить файл exe,
+                // прежде чем инсталлятор начнёт его перезаписывать.
+                const int kPingCount = 4;
+
                 char fullStagingPath[MAX_PATH];
                 GetFullPathNameA(stagingPath.c_str(), MAX_PATH, fullStagingPath, nullptr);
 
@@ -2445,7 +2450,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                 {
                     std::ofstream bat(batPath, std::ios::trunc);
                     bat << "@echo off\n";
-                    bat << "ping -n 4 127.0.0.1 >nul\n";
+                    bat << "ping -n " << kPingCount << " 127.0.0.1 >nul\n";
                     bat << "\"" << fullStagingPath << "\" /SILENT /SUPPRESSMSGBOXES\n";
                     bat << "del \"%~f0\"\n";
                 }
@@ -2462,6 +2467,20 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
                     CloseHandle(pi.hProcess);
                     CloseHandle(pi.hThread);
                 }
+
+                // Не закрывать окно сразу — держать его открытым (с накачкой сообщений,
+                // чтобы не словить "Not Responding") примерно на то же время, что и .bat
+                // выше ждёт перед запуском инсталлятора, плюс небольшой запас на его
+                // собственный старт. Раньше окно исчезало мгновенно, и пользователь видел
+                // несколько секунд пустого экрана до появления окна инсталлятора.
+                SetUpdateStatus(L"Starting installer...");
+                DWORD waitMs    = (DWORD)(kPingCount - 1) * 1000 + 500;
+                DWORD waitStart = GetTickCount();
+                while (GetTickCount() - waitStart < waitMs) {
+                    PumpMessages();
+                    Sleep(15);
+                }
+
                 DestroyUpdateWindow();
                 Gdiplus::GdiplusShutdown(gdipToken);
                 return 0;
