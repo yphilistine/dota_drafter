@@ -111,6 +111,102 @@ static int textToPosition(const std::wstring& raw) {
 
     if (hasSupport) return 4;
 
+    // Ниже — блоки для UK/BE/KK/DE/PL/FR/ES. В каждом только те корни, которые
+    // ДЕЙСТВИТЕЛЬНО не перехватываются уже отработавшими блоками выше (напр.
+    // "легк"/"лёгк"/"центр" для UK/BE не дублируются — их уже ловит RU-блок
+    // благодаря общим славянским корням) — иначе получились бы недостижимые ветки.
+
+    // UK (украинский)
+    bool ukSupport = containsW(t, L"підтримк");
+    if (containsW(t, L"мід"))
+        return 2;
+    if (containsW(t, L"складн"))
+        return 3;
+    if (containsW(t, L"жорстк"))
+        return 5;
+    if (containsW(t, L"м'як") || containsW(t, L"мяк"))
+        return 4;
+    if (ukSupport) return 4;
+
+    // BE (белорусский)
+    bool beSupport = containsW(t, L"падтрымк");
+    if (containsW(t, L"складан"))
+        return 3;
+    if (containsW(t, L"цвёрд"))
+        return 5;
+    if (beSupport) return 4;
+
+    // KK (казахский)
+    bool kkSupport = containsW(t, L"қолдау");
+    if (containsW(t, L"орталық"))
+        return 2;
+    if (containsW(t, L"қиын"))
+        return 3;
+    if (containsW(t, L"қатаң"))
+        return 5;
+    if (containsW(t, L"жеңіл"))
+        return 1;
+    if (containsW(t, L"жұмсақ"))
+        return 4;
+    if (kkSupport) return 4;
+
+    // DE (немецкий)
+    bool deSupport = containsW(t, L"unterst");
+    if (containsW(t, L"mitte") || containsW(t, L"mittl"))
+        return 2;
+    if (containsW(t, L"schwer") || containsW(t, L"schwierig"))
+        return 3;
+    if (containsW(t, L"hart"))
+        return 5;
+    if (containsW(t, L"sicher"))
+        return deSupport ? 4 : 1;
+    if (containsW(t, L"sanft") || containsW(t, L"weich"))
+        return 4;
+    if (deSupport) return 4;
+
+    // PL (польский)
+    bool plSupport = containsW(t, L"wsparci");
+    if (containsW(t, L"środk") || containsW(t, L"srodk"))
+        return 2;
+    if (containsW(t, L"trudn"))
+        return 3;
+    if (containsW(t, L"tward"))
+        return 5;
+    if (containsW(t, L"bezpieczn"))
+        return plSupport ? 4 : 1;
+    if (containsW(t, L"miękk") || containsW(t, L"miekk"))
+        return 4;
+    if (plSupport) return 4;
+
+    // FR (французский)
+    bool frSupport = containsW(t, L"soutien");
+    if (containsW(t, L"milieu"))
+        return 2;
+    if (containsW(t, L"difficile"))
+        return 3;
+    // "dur" короткое и само по себе неоднозначное — учитываем только вместе с "soutien"
+    if (containsW(t, L"renforc") || (frSupport && containsW(t, L"dur")))
+        return 5;
+    if (containsW(t, L"sûre") || containsW(t, L"sure"))
+        return frSupport ? 4 : 1;
+    if (containsW(t, L"souple") || containsW(t, L"léger") || containsW(t, L"leger"))
+        return 4;
+    if (frSupport) return 4;
+
+    // ES (испанский)
+    bool esSupport = containsW(t, L"apoyo");
+    if (containsW(t, L"medi"))
+        return 2;
+    if (containsW(t, L"dific") || containsW(t, L"difíc"))
+        return 3;
+    if (containsW(t, L"duro"))
+        return 5;
+    if (containsW(t, L"segur"))
+        return esSupport ? 4 : 1;
+    if (containsW(t, L"suave"))
+        return 4;
+    if (esSupport) return 4;
+
     return 0;
 }
 
@@ -118,24 +214,32 @@ static int textToPosition(const std::wstring& raw) {
 
 class PosOcrRecognizer {
 public:
+    // Порядок — от языков с реальной локализацией Dota 2/наибольшей вероятностью
+    // установленного OCR-пакета к менее вероятным. TryCreateFromLanguage не бросает
+    // и возвращает nullptr, если языковой OCR-пакет не установлен в Windows — так что
+    // отсутствующие языки просто выпадают из списка ниже, без ошибок.
     PosOcrRecognizer() {
-        try {
-            enEngine_ = wmo::OcrEngine::TryCreateFromLanguage(wgl::Language(L"en-US"));
-        } catch (...) {}
-        try {
-            ruEngine_ = wmo::OcrEngine::TryCreateFromLanguage(wgl::Language(L"ru"));
-        } catch (...) {}
-        if (!enEngine_ && !ruEngine_) {
+        static const wchar_t* kLangs[] = {
+            L"en-US", L"ru", L"uk", L"be", L"kk", L"de", L"pl", L"fr", L"es"
+        };
+        for (auto lang : kLangs) {
+            wmo::OcrEngine eng{nullptr};
             try {
-                enEngine_ = wmo::OcrEngine::TryCreateFromUserProfileLanguages();
+                eng = wmo::OcrEngine::TryCreateFromLanguage(wgl::Language(lang));
+            } catch (...) {}
+            if (eng) engines_.push_back(eng);
+        }
+        if (engines_.empty()) {
+            try {
+                auto eng = wmo::OcrEngine::TryCreateFromUserProfileLanguages();
+                if (eng) engines_.push_back(eng);
             } catch (...) {}
         }
-        std::printf("[pos_ocr] engines: en=%s ru=%s\n",
-                    enEngine_ ? "OK" : "N/A",
-                    ruEngine_ ? "OK" : "N/A");
+        std::printf("[pos_ocr] engines available: %d/%d\n",
+                    (int)engines_.size(), (int)(sizeof(kLangs)/sizeof(kLangs[0])));
     }
 
-    bool isAvailable() const { return enEngine_ || ruEngine_; }
+    bool isAvailable() const { return !engines_.empty(); }
 
     PosMatch recognize(const uint8_t* bgra, int w, int h) const {
         if (!isAvailable() || w <= 0 || h <= 0) return {0, 0.f};
@@ -147,12 +251,8 @@ public:
         auto bmp = bgraToSoftwareBitmap(upscaled.data(), uw, uh);
         if (!bmp) return {0, 0.f};
 
-        if (enEngine_) {
-            auto result = tryOcr(enEngine_, bmp);
-            if (result.pos > 0) return result;
-        }
-        if (ruEngine_) {
-            auto result = tryOcr(ruEngine_, bmp);
+        for (auto& engine : engines_) {
+            auto result = tryOcr(engine, bmp);
             if (result.pos > 0) return result;
         }
         return {0, 0.f};
@@ -192,8 +292,7 @@ private:
         return {0, 0.f};
     }
 
-    wmo::OcrEngine enEngine_{nullptr};
-    wmo::OcrEngine ruEngine_{nullptr};
+    std::vector<wmo::OcrEngine> engines_;
 };
 
 } // namespace dota2

@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <functional>
 #include <cstdio>
 #include <cstring>
 #include <cctype>
@@ -213,9 +214,6 @@ static std::map<int, std::vector<MetaHeroRow>> g_metaHeroStats;
 // даже если он не попал в топ-10/порог отсечения.
 static std::map<int, std::map<int, MetaHeroRow>> g_metaHeroLookup;
 static bool g_metaHeroStatsLoaded = false;
-// Ручной выбор позиции для панели Meta Heroes: -1 = Auto (следует за позицией из
-// драфта), 0 = All Positions (агрегат), 1-5 = конкретная позиция.
-static int g_metaPosOverride = -1;
 
 static void loadMetaHeroStatsIfNeeded() {
     if (g_metaHeroStatsLoaded) return;
@@ -1093,6 +1091,15 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
         if (ImGui::BeginPopup(popupId)) {
             int myIdx = absSlot % 5;
             int teamBase = absSlot - myIdx; // 0 for radiant, 5 for dire
+
+            // "?" = All/сброс — унифицировано с бейджами Picks/Meta (SectionLabelWithPosBadge):
+            // там это "All", здесь, т.к. слот всегда занят конкретным героем, а не
+            // агрегатом — снимает ручной override и возвращает авто-детект с экрана.
+            if (ImGui::Selectable("?", dispPos <= 0)) {
+                std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+                g_portraitState.manualPos[absSlot] = 0;
+                g_posRefreshNeeded.store(true);
+            }
             for (int p = 1; p <= 5; ++p) {
                 char label[16];
                 std::snprintf(label, sizeof(label), "Pos %d", p);
@@ -1133,12 +1140,14 @@ static void SectionLabel(const char* label) {
 // бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает — переносим
 // бейдж на отдельную строку под заголовком. Так бейдж никогда не наезжает на
 // текст секции, при любой ширине панели.
-// overridePos != nullptr делает бейдж кликабельным: клик открывает popup с выбором
-// Auto/All/Position 1-5, записывает результат в *overridePos. *overridePos: -1 = Auto,
-// 0 = All Positions, 1-5 = конкретная позиция. Используется панелью Meta Heroes;
-// для панелей без ручного переключения (RECOMMENDED PICKS) передаётся nullptr —
-// поведение бейджа остаётся прежним, некликабельным.
-static void SectionLabelWithPosBadge(const char* label, float panelW, int position, int* overridePos = nullptr) {
+// onPositionPick != nullptr делает бейдж кликабельным: клик открывает popup с
+// выбором All/Position 1-5, выбор вызывает onPositionPick(p) (0 = All). Унифицировано
+// для всех трёх мест выбора позиции (Draft-слот/Picks/Meta) — везде один и тот же
+// набор вариантов и один и тот же эффект: меняет НАШУ настоящую позицию в драфте
+// (см. SetOurPosition), никакого отдельного "auto" или независимого фильтра больше нет.
+// onPositionPick == nullptr — бейдж остаётся некликабельным (напр. до старта игры).
+static void SectionLabelWithPosBadge(const char* label, float panelW, int position,
+                                      std::function<void(int)> onPositionPick = nullptr) {
     const float lh     = ImGui::GetTextLineHeight();
     const float startX = ImGui::GetCursorPosX();
 
@@ -1155,14 +1164,8 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
     float reservedLabelW = ImGui::CalcTextSize("RECOMMENDED PICKS").x;
     float labelEndX = startX + ImGui::CalcTextSize(">").x + 6.f + reservedLabelW;
 
-    bool isAuto = overridePos && (*overridePos == -1);
-
     char fullText[40], shortText[32];
-    if (isAuto) {
-        if (position > 0) std::snprintf(fullText, sizeof(fullText), "[=] Auto - Pos %d", position);
-        else              std::snprintf(fullText, sizeof(fullText), "[=] Auto - All");
-        std::snprintf(shortText, sizeof(shortText), "Auto");
-    } else if (position > 0) {
+    if (position > 0) {
         std::snprintf(fullText,  sizeof(fullText),  "[=] Position %d", position);
         std::snprintf(shortText, sizeof(shortText), "Pos %d", position);
     } else {
@@ -1188,14 +1191,16 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
         // бейдж уходит на новую строку (курсор уже на ней после TextUnformatted).
         ImGui::SetCursorPosX((std::max)(startX, panelW - bW));
 
+    bool clickable = (bool)onPositionPick;
+
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 bp = ImGui::GetCursorScreenPos();
-    bool hovered = overridePos && ImGui::IsMouseHoveringRect(bp, {bp.x+bW,bp.y+bH});
+    bool hovered = clickable && ImGui::IsMouseHoveringRect(bp, {bp.x+bW,bp.y+bH});
     dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH}, hovered ? C(kCard) : C(kCard2));
     dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
     dl->AddText({bp.x+7.f,bp.y+3.f},C(kMuted),badgeText);
 
-    if (overridePos) {
+    if (clickable) {
         char btnId[48], popupId[48];
         std::snprintf(btnId,   sizeof(btnId),   "##posBadgeBtn_%s",    label);
         std::snprintf(popupId, sizeof(popupId), "##posBadgePopup_%s",  label);
@@ -1207,18 +1212,59 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
             ImGui::SetTooltip("Click to change position");
 
         if (ImGui::BeginPopup(popupId)) {
-            if (ImGui::Selectable("Auto", *overridePos == -1)) *overridePos = -1;
-            if (ImGui::Selectable("All",  *overridePos == 0))  *overridePos = 0;
+            if (ImGui::Selectable("All", position <= 0)) onPositionPick(0);
             for (int p = 1; p <= 5; ++p) {
                 char plabel[16];
                 std::snprintf(plabel, sizeof(plabel), "Pos %d", p);
-                if (ImGui::Selectable(plabel, *overridePos == p)) *overridePos = p;
+                if (ImGui::Selectable(plabel, position == p)) onPositionPick(p);
             }
             ImGui::EndPopup();
         }
     } else {
         ImGui::Dummy({bW,bH});
     }
+}
+
+// Меняет НАШУ настоящую позицию в текущем драфте — тот же эффект, что и клик
+// по позиции нашего слота в Draft-панели (DrawHeroSlot: свап с тиммейтом, если
+// позиция уже занята, запись в g_portraitState.manualPos + g_posRefreshNeeded).
+// newPos: 0 = All/сброс (снять ручной override, вернуться к авто-детекту с экрана),
+// 1-5 = конкретная позиция. Вынесено отдельно, т.к. это единая точка изменения нашей
+// позиции — вызывается и из бейджа Picks-панели, и из бейджа Meta-панели, держит
+// Draft/Picks/Meta синхронизированными без отдельного "auto"-режима.
+static void SetOurPosition(int newPos) {
+    if (newPos < 0 || newPos > 5) return;
+
+    bool isRadiant;
+    int  ourSlot;
+    int  usedPos[5] = {};
+    {
+        std::lock_guard<std::mutex> lk(g_pickerState.mtx);
+        isRadiant = g_pickerState.isRadiant;
+        ourSlot   = g_pickerState.ourSlot;
+        const HeroSlotGui* team = isRadiant ? g_pickerState.radiant : g_pickerState.dire;
+        for (int i = 0; i < 5; ++i) usedPos[i] = team[i].pos;
+    }
+
+    int myIdx = ourSlot - 1;
+    if (myIdx < 0 || myIdx > 4) return;
+    int teamBase = isRadiant ? 0 : 5;
+    int absSlot  = teamBase + myIdx;
+    int dispPos  = usedPos[myIdx];
+
+    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+    // Свап нужен только при назначении конкретной позиции — сброс на "All" (0)
+    // ни у кого ничего не отнимает, свапать с тиммейтом нечего.
+    if (newPos >= 1) {
+        for (int j = 0; j < 5; ++j) {
+            if (j != myIdx && usedPos[j] == newPos) {
+                g_portraitState.manualPos[teamBase + j] = dispPos;
+                break;
+            }
+        }
+    }
+    g_portraitState.manualPos[absSlot] = newPos;
+    g_posRefreshNeeded.store(true);
 }
 
 // ─── Панель драфта (слоты Radiant/Dire + winProb) ─────────────────────────────
@@ -1234,6 +1280,7 @@ static void DrawDraftPanel(float panelW) {
     HeroSlotGui  rad[5], dir[5];
     bool         ourHeroPicked;
     GamePhase    phase;
+    bool         isWaitingForPlayers;
     {
         std::lock_guard<std::mutex> lk(g_pickerState.mtx);
         gameStarted   = g_pickerState.gameStarted;
@@ -1245,13 +1292,18 @@ static void DrawDraftPanel(float panelW) {
     }
     {
         std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
-        phase = g_gameInfo.phase;
+        phase               = g_gameInfo.phase;
+        isWaitingForPlayers = g_gameInfo.isWaitingForPlayers;
     }
 
     int rCount=0, dCount=0;
     for (int i=0;i<5;i++) { if (rad[i].filled) ++rCount; if (dir[i].filled) ++dCount; }
 
-    SectionLabel((rCount==5 && dCount==5) ? "STRATEGY PHASE" : "DRAFT PHASE");
+    // WAIT_FOR_PLAYERS_TO_LOAD маппится на INGAME (gameStarted уже true с драфта),
+    // поэтому без этого флага панель молча показывала бы обычные слоты драфта без
+    // какой-либо индикации, что матч уже начал загружаться.
+    SectionLabel(isWaitingForPlayers ? "LOADING INTO MATCH"
+                 : (rCount==5 && dCount==5) ? "STRATEGY PHASE" : "DRAFT PHASE");
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1397,7 +1449,12 @@ static void DrawPicksPanel(float panelW) {
 
     // Заголовок секции + бейдж позиции (всегда виден, даже без определённой
     // позиции); бейдж сокращается/переносится на узкой панели — см. SectionLabelWithPosBadge.
-    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR PICK" : "RECOMMENDED PICKS", panelW, ourPosition);
+    // Кликабелен только когда игра идёт (до этого DrawHeroSlot в Draft-панели тоже
+    // не рендерит попапы позиций — тот же гейт, что и там). Клик меняет НАШУ
+    // настоящую позицию (SetOurPosition) — то же самое действие, что и клик по
+    // позиции нашего слота в Draft-панели, поэтому держит панели синхронизированными.
+    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "RECOMMENDED PICKS", panelW, ourPosition,
+                              gameStarted ? SetOurPosition : nullptr);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -1565,7 +1622,8 @@ static void DrawPicksPanel(float panelW) {
 }
 
 // ─── Панель "Meta Heroes" (живая стата по героям из STRATZ, без ML) ───────────
-// Позиция всегда авто: следует за позицией игрока из драфта; если позиция не определена — агрегат по всем.
+// Позиция унифицирована с Draft/Picks (см. SetOurPosition): бейдж всегда показывает
+// НАШУ настоящую позицию и позволяет её менять; если позиция не определена — агрегат по всем.
 static void DrawMetaHeroesPanel(float panelW) {
     loadMetaHeroStatsIfNeeded();
 
@@ -1574,28 +1632,26 @@ static void DrawMetaHeroesPanel(float panelW) {
     const float BAR_W     = 68.f;
     const float rW_ref    = panelW;
 
+    bool gameStarted   = false;
     int  ourPosition   = 0;
     bool ourHeroPicked = false;
     int  ourHeroId     = 0;
     char ourHeroName[64] = {};
     {
         std::lock_guard<std::mutex> lk(g_pickerState.mtx);
+        gameStarted   = g_pickerState.gameStarted;
         ourPosition   = g_pickerState.ourPosition;
         ourHeroPicked = g_pickerState.ourHeroPicked;
         ourHeroId     = g_pickerState.ourHeroId;
         std::memcpy(ourHeroName, g_pickerState.ourHeroName, sizeof(ourHeroName));
     }
 
-    // -1 (Auto) следует за позицией из драфта; иначе — то, что выбрал пользователь
-    // в бейдже (0 = All Positions, 1-5 = конкретная позиция).
-    int effectivePos = (g_metaPosOverride == -1)
-        ? ((ourPosition > 0) ? ourPosition : 0) // 0 = агрегат по всем позициям
-        : g_metaPosOverride;
-
-    // Заголовок секции + бейдж позиции — то же оформление, что и в DrawPicksPanel
-    // (сокращается/переносится на узкой панели, см. SectionLabelWithPosBadge), но
-    // здесь бейдж кликабельный: позволяет вручную закрепить позицию 1-5/All/Auto.
-    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, effectivePos, &g_metaPosOverride);
+    // Заголовок секции + бейдж позиции — то же оформление и тот же эффект, что и
+    // в DrawPicksPanel: клик меняет НАШУ настоящую позицию (SetOurPosition), унифицировано
+    // по всем трём местам выбора позиции (Draft-слот/Picks/Meta), никакого отдельного
+    // "auto"/независимого фильтра здесь больше нет.
+    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, ourPosition,
+                              gameStarted ? SetOurPosition : nullptr);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -1675,7 +1731,7 @@ static void DrawMetaHeroesPanel(float panelW) {
     if (ourHeroPicked) {
         MetaHeroRow row;
         bool        found = false;
-        auto posIt = g_metaHeroLookup.find(effectivePos);
+        auto posIt = g_metaHeroLookup.find(ourPosition);
         if (posIt != g_metaHeroLookup.end()) {
             auto heroIt = posIt->second.find(ourHeroId);
             if (heroIt != posIt->second.end()) { row = heroIt->second; found = true; }
@@ -1688,7 +1744,7 @@ static void DrawMetaHeroesPanel(float panelW) {
                                 nm.empty() ? "this hero" : nm.c_str());
         }
     } else {
-        auto it = g_metaHeroStats.find(effectivePos);
+        auto it = g_metaHeroStats.find(ourPosition);
         if (it == g_metaHeroStats.end() || it->second.empty()) {
             ImGui::TextColored(kMuted, "  No data for this position yet");
         } else {

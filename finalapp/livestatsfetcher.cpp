@@ -30,7 +30,8 @@ static GamePhase parsePhaseStr(const std::string& s) {
         s == "DOTA_GAMERULES_STATE_STRATEGY_TIME"  ||
         s == "DOTA_GAMERULES_STATE_TEAM_SHOWCASE")
         return GamePhase::DRAFT;
-    if (s == "DOTA_GAMERULES_STATE_PRE_GAME" ||
+    if (s == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD" ||
+        s == "DOTA_GAMERULES_STATE_PRE_GAME" ||
         s == "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS")
         return GamePhase::INGAME;
     if (s == "DOTA_GAMERULES_STATE_POST_GAME")
@@ -112,6 +113,8 @@ static std::string handle_request(const std::string& raw) {
                 if (stateChanged) g_lastLoggedState = gstate;
                 g_gameInfo->isHeroSelection =
                     (gstate == "DOTA_GAMERULES_STATE_HERO_SELECTION");
+                g_gameInfo->isWaitingForPlayers =
+                    (gstate == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD");
                 g_gameInfo->lastUpdate = std::chrono::steady_clock::now();
             }
 

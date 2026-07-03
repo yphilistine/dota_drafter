@@ -32,7 +32,8 @@ struct GameInfo {
     int         ourSide         = 1;   // 1 = Radiant, 0 = Dire
     int         ourSlot         = 1;   // 1-5
     bool        newMatch        = false;
-    bool        isHeroSelection = false; // true только при HERO_SELECTION
+    bool        isHeroSelection    = false; // true только при HERO_SELECTION
+    bool        isWaitingForPlayers = false; // true только при WAIT_FOR_PLAYERS_TO_LOAD
     std::chrono::steady_clock::time_point lastUpdate;
 };
 
