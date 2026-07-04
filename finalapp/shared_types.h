@@ -50,12 +50,14 @@ struct PortraitResult {
 struct SharedPortraitState {
     std::mutex     mtx;
     PortraitResult slots[10];
-    int            manualPos[10] = {};  // 0 = auto (screen capture), 1-5 = GUI override
+    int            manualPos[10]   = {};  // 0 = auto (screen capture), 1-5 = GUI override
+    int            detectedPos[10] = {};  // Итоговая позиция (manualPos либо OCR), для отображения без пикера/accountId
     bool           active = false;
     void clear() {
         std::lock_guard<std::mutex> lk(mtx);
         for (auto& s : slots) s = {};
         for (auto& p : manualPos) p = 0;
+        for (auto& p : detectedPos) p = 0;
         active = false;
     }
 };

@@ -403,9 +403,11 @@ static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
     if (!g_portraitRunning.load() || g_pickerRunning.load()) return;
 
     PortraitResult snap[10];
+    int posSnap[10];
     {
         std::lock_guard<std::mutex> lk(g_portraitState.mtx);
-        for (int i = 0; i < 10; ++i) snap[i] = g_portraitState.slots[i];
+        for (int i = 0; i < 10; ++i) snap[i]    = g_portraitState.slots[i];
+        for (int i = 0; i < 10; ++i) posSnap[i] = g_portraitState.detectedPos[i];
     }
     std::lock_guard<std::mutex> lk(g_pickerState.mtx);
     g_pickerState.gameStarted = true;
@@ -416,6 +418,7 @@ static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
         s.heroId = snap[i].heroId;
         s.filled = snap[i].valid();
         s.isYou  = (gs.ourSide == 1 && i == gs.ourSlot - 1);
+        s.pos    = posSnap[i];
         if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s",
             heroDisplayName(snap[i].heroId, snap[i].heroName.c_str()).c_str());
         else s.name[0] = '\0';
@@ -425,6 +428,7 @@ static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
         s.heroId = snap[5+i].heroId;
         s.filled = snap[5+i].valid();
         s.isYou  = (gs.ourSide == 0 && i == gs.ourSlot - 1);
+        s.pos    = posSnap[5+i];
         if (s.filled) std::snprintf(s.name, sizeof(s.name), "%s",
             heroDisplayName(snap[5+i].heroId, snap[5+i].heroName.c_str()).c_str());
         else s.name[0] = '\0';

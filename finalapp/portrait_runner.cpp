@@ -646,6 +646,8 @@ void runPortraitCapture(GameInfo&           gameInfo,
                     }
                     if (manual > 0 && manual <= 5) {
                         updateSlotPos(db, slot, manual);
+                        std::lock_guard<std::mutex> lk(out.mtx);
+                        out.detectedPos[slot] = manual;
                         continue;
                     }
 
@@ -654,12 +656,18 @@ void runPortraitCapture(GameInfo&           gameInfo,
                     PosMatch pm = posRecognizer.recognize(pbmp);
                     int pos = pm.confident() ? pm.pos : 0;
                     updateSlotPos(db, slot, pos);
+                    {
+                        std::lock_guard<std::mutex> lk(out.mtx);
+                        out.detectedPos[slot] = pos;
+                    }
                 }
 
                 // Вражеская команда — позиции всегда 0
                 int enemyStart = (ourSide == 1) ? 5 : 0;
                 for (int slot = enemyStart; slot < enemyStart + 5; ++slot) {
                     updateSlotPos(db, slot, 0);
+                    std::lock_guard<std::mutex> lk(out.mtx);
+                    out.detectedPos[slot] = 0;
                 }
             }
 
