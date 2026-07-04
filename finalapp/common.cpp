@@ -1,4 +1,5 @@
 #include "common.h"
+#include <exception>
 
 // ─── Глобальные переменные ────────────────────────────────────────────────────
 std::mutex    g_logMutex;
@@ -140,6 +141,36 @@ void logConsole(LogLevel level, const std::string& msg) {
         g_logFile.write(fileLine.data(), fileLine.size());
         g_logFile.flush();
     }
+}
+
+// ─── Крэш-хендлеры ───────────────────────────────────────────────────────────
+// Сетка безопасности на уровне процесса: без неё необработанное исключение
+// вне точечных try/catch (или SEH-исключение из GDI+/D3D11/WinRT) тихо валит
+// процесс без единой строки в логах — см. installCrashHandlers().
+static void onTerminate() {
+    std::string what = "unknown";
+    if (auto ex = std::current_exception()) {
+        try { std::rethrow_exception(ex); }
+        catch (const std::exception& e) { what = e.what(); }
+        catch (...) { what = "non-std::exception"; }
+    }
+    LOG_ERR("FATAL: unhandled exception: " << what);
+    std::abort();
+}
+
+#ifdef _WIN32
+static LONG WINAPI onUnhandledSeh(EXCEPTION_POINTERS* info) {
+    DWORD code = (info && info->ExceptionRecord) ? info->ExceptionRecord->ExceptionCode : 0;
+    LOG_ERR("FATAL: unhandled SEH exception, code=0x" << std::hex << code);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
+void installCrashHandlers() {
+    std::set_terminate(onTerminate);
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(onUnhandledSeh);
+#endif
 }
 
 // ─── HTTP ────────────────────────────────────────────────────────────────────

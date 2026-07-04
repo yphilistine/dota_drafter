@@ -45,7 +45,10 @@ static constexpr float MASTERY_PRIOR = 30.0f;
 struct PlayerStats {
     int games=0, wins=0;
 };
-struct ImmortalHeroStats {
+// Не ImmortalHeroStats — так называется другая, несовместимая по форме
+// структура в clouddatafetcher.h (hero_id/pos/games/wins/bans); разные имена
+// снимают коллизию, хотя ODR-конфликта сегодня нет (файлы не инклюдят друг друга).
+struct PickerHeroStat {
     int games=0, wins=0;
 };
 struct SlotData {
@@ -252,41 +255,13 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     v.finalize();
 }
 
-// ─── SQLite-обёртки (readonly) ────────────────────────────────────────────────
-
-class DB {
-    sqlite3* db_=nullptr;
-public:
-    explicit DB(const char* path) {
-        if (sqlite3_open_v2(path,&db_,SQLITE_OPEN_READONLY|SQLITE_OPEN_FULLMUTEX,nullptr)!=SQLITE_OK)
-            throw std::runtime_error(std::string("SQLite open: ")+sqlite3_errmsg(db_));
-    }
-    ~DB() { if (db_) sqlite3_close(db_); }
-    sqlite3* get() { return db_; }
-};
-class Stmt {
-    sqlite3_stmt* s_=nullptr;
-public:
-    Stmt(sqlite3* db,const char* sql) {
-        if (sqlite3_prepare_v2(db,sql,-1,&s_,nullptr)!=SQLITE_OK)
-            throw std::runtime_error(std::string("SQL prepare: ")+sqlite3_errmsg(db));
-    }
-    ~Stmt() { if (s_) sqlite3_finalize(s_); }
-    sqlite3_stmt* get() { return s_; }
-    bool row()            { return sqlite3_step(s_)==SQLITE_ROW; }
-    void bind_int(int i,int v){ sqlite3_bind_int(s_,i,v); }
-    int         col_int(int i)  { return sqlite3_column_int(s_,i); }
-    long long   col_int64(int i){ return sqlite3_column_int64(s_,i); }
-    std::string col_text(int i) { auto*t=sqlite3_column_text(s_,i); return t?(const char*)t:""; }
-    bool col_null(int i){ return sqlite3_column_type(s_,i)==SQLITE_NULL; }
-    double col_double(int i){ return sqlite3_column_double(s_,i); }
-};
+// SQLite-обёртки (readonly) — SqliteDB/SqliteStmt из common.h.
 
 // ─── Загрузка данных из SQLite ────────────────────────────────────────────────
 
 static std::map<int,std::string> loadHeroes(sqlite3* db) {
     std::map<int,std::string> m;
-    Stmt st(db,"SELECT id,localized_name FROM heroes");
+    SqliteStmt st(db,"SELECT id,localized_name FROM heroes");
     while (st.row()) m[st.col_int(0)]=st.col_text(1);
     return m;
 }
@@ -295,50 +270,50 @@ static MatchupData loadMatchupData(sqlite3* db) {
     MatchupData md;
 
     try {
-        Stmt st(db,"SELECT hero_id,wr FROM global_wr");
+        SqliteStmt st(db,"SELECT hero_id,wr FROM global_wr");
         while (st.row()) md.global_wr[st.col_int(0)] = (float)st.col_double(1);
-    } catch (...) { std::fprintf(stderr,"[picker] global_wr not found\n"); }
+    } catch (...) { LOG_WARN("[picker] global_wr not found"); }
 
     try {
-        Stmt st(db,"SELECT hero_id,opp_hero_id,wr FROM vs_wr");
+        SqliteStmt st(db,"SELECT hero_id,opp_hero_id,wr FROM vs_wr");
         while (st.row()) md.vs_wr[{st.col_int(0),st.col_int(1)}] = (float)st.col_double(2);
-    } catch (...) { std::fprintf(stderr,"[picker] vs_wr not found\n"); }
+    } catch (...) { LOG_WARN("[picker] vs_wr not found"); }
 
     try {
-        Stmt st(db,"SELECT hero_id,ally_hero_id,wr FROM with_wr");
+        SqliteStmt st(db,"SELECT hero_id,ally_hero_id,wr FROM with_wr");
         while (st.row()) md.with_wr[{st.col_int(0),st.col_int(1)}] = (float)st.col_double(2);
-    } catch (...) { std::fprintf(stderr,"[picker] with_wr not found\n"); }
+    } catch (...) { LOG_WARN("[picker] with_wr not found"); }
 
     try {
-        Stmt st(db,"SELECT hero_id,pos FROM modal_pos");
+        SqliteStmt st(db,"SELECT hero_id,pos FROM modal_pos");
         while (st.row()) md.modal_pos[st.col_int(0)] = st.col_int(1);
-    } catch (...) { std::fprintf(stderr,"[picker] modal_pos not found\n"); }
+    } catch (...) { LOG_WARN("[picker] modal_pos not found"); }
 
     try {
-        Stmt st(db,"SELECT hero_id,pos,wr FROM hero_pos_wr");
+        SqliteStmt st(db,"SELECT hero_id,pos,wr FROM hero_pos_wr");
         while (st.row()) md.hero_pos_wr[{st.col_int(0),st.col_int(1)}] = (float)st.col_double(2);
-    } catch (...) { std::fprintf(stderr,"[picker] hero_pos_wr not found\n"); }
+    } catch (...) { LOG_WARN("[picker] hero_pos_wr not found"); }
 
     try {
-        Stmt st(db,"SELECT hero_id,rate FROM pick_rates");
+        SqliteStmt st(db,"SELECT hero_id,rate FROM pick_rates");
         while (st.row()) md.pick_rates[st.col_int(0)] = (float)st.col_double(1);
-    } catch (...) { std::fprintf(stderr,"[picker] pick_rates not found\n"); }
+    } catch (...) { LOG_WARN("[picker] pick_rates not found"); }
 
-    std::printf("[picker] Matchup data: gwr=%zu vs=%zu with=%zu modal=%zu hpwr=%zu pr=%zu\n",
-        md.global_wr.size(), md.vs_wr.size(), md.with_wr.size(),
-        md.modal_pos.size(), md.hero_pos_wr.size(), md.pick_rates.size());
+    LOG_INFO("[picker] Matchup data: gwr=" << md.global_wr.size() << " vs=" << md.vs_wr.size()
+        << " with=" << md.with_wr.size() << " modal=" << md.modal_pos.size()
+        << " hpwr=" << md.hero_pos_wr.size() << " pr=" << md.pick_rates.size());
     return md;
 }
 
 // Порог отсечения кандидатов — динамический: 1% от суммарных игр на позиции за неделю
 // (не фиксированное число игр — данные теперь недельный STRATZ-снимок, а не all-time PG-дамп).
-static std::map<int,ImmortalHeroStats> loadImmortalHeroStats(sqlite3* db, int position) {
-    std::map<int,ImmortalHeroStats> m;
+static std::map<int,PickerHeroStat> loadImmortalHeroStats(sqlite3* db, int position) {
+    std::map<int,PickerHeroStat> m;
     if (position <= 0 || position > 5) return m;
     try {
         std::vector<std::tuple<int,int,int>> rows; // hero_id, games, wins
         long long totalGames = 0;
-        Stmt st(db,"SELECT hero_id,games,wins FROM stats WHERE pos=?");
+        SqliteStmt st(db,"SELECT hero_id,games,wins FROM stats WHERE pos=?");
         st.bind_int(1,position);
         while (st.row()) {
             int hid=st.col_int(0), g=st.col_int(1), w=st.col_int(2);
@@ -355,7 +330,7 @@ static std::map<int,ImmortalHeroStats> loadImmortalHeroStats(sqlite3* db, int po
 static std::map<int,PlayerStats> loadPlayerStats(sqlite3* db, int account_id) {
     std::map<int,PlayerStats> m;
     try {
-        Stmt st(db,"SELECT hero_id,games,wins FROM playerheroes WHERE account_id=?");
+        SqliteStmt st(db,"SELECT hero_id,games,wins FROM playerheroes WHERE account_id=?");
         st.bind_int(1,account_id);
         while (st.row()) m[st.col_int(0)] = {st.col_int(1), st.col_int(2)};
     } catch (...) {}
@@ -363,7 +338,7 @@ static std::map<int,PlayerStats> loadPlayerStats(sqlite3* db, int account_id) {
 }
 
 static bool loadLatestLivePick(sqlite3* db, LivePick& lp) {
-    Stmt st(db,R"(
+    SqliteStmt st(db,R"(
         SELECT match_id,our_account_id,our_side,our_slot,updated_at,
                r1_hero,r1_pos,r2_hero,r2_pos,r3_hero,r3_pos,r4_hero,r4_pos,r5_hero,r5_pos,
                d1_hero,d1_pos,d2_hero,d2_pos,d3_hero,d3_pos,d4_hero,d4_pos,d5_hero,d5_pos
@@ -408,7 +383,7 @@ static void renderToGui(
     const std::map<int,std::string>&       hero_map,
     const MatchupData&                     md,
     const std::map<int,PlayerStats>&       our_stats,
-    const std::map<int,ImmortalHeroStats>& immortal_map,
+    const std::map<int,PickerHeroStat>&    immortal_map,
     ModelCalcerHandle*                     model)
 {
     if (!state) return;
@@ -523,7 +498,7 @@ static void renderToGui(
                 std::snprintf(r.name, sizeof(r.name), "%s", hn.c_str());
 
                 auto pl  = our_stats.count(hid)   ? our_stats.at(hid)   : PlayerStats{};
-                auto imm = immortal_map.count(hid) ? immortal_map.at(hid) : ImmortalHeroStats{};
+                auto imm = immortal_map.count(hid) ? immortal_map.at(hid) : PickerHeroStat{};
 
                 r.gamesPlayer = pl.games;
                 r.wrPlayer    = pl.games > 0 ? (float)pl.wins / pl.games : 0.f;
@@ -536,6 +511,20 @@ static void renderToGui(
     state->gameStarted = true;
     state->inferenceGen.fetch_add(1, std::memory_order_release);
 }
+
+// ─── CatBoost model RAII ─────────────────────────────────────────────────────
+// Без этого ModelCalcerDelete вызывался только после нормального завершения
+// цикла (см. ниже) — исключение из runBatch/renderToGui посреди цикла
+// пропускало освобождение и утекало модель.
+class ModelHandle {
+    ModelCalcerHandle* h_;
+public:
+    explicit ModelHandle(ModelCalcerHandle* h) : h_(h) {}
+    ~ModelHandle() { if (h_) ModelCalcerDelete(h_); }
+    ModelCalcerHandle* get() const { return h_; }
+    ModelHandle(const ModelHandle&) = delete;
+    ModelHandle& operator=(const ModelHandle&) = delete;
+};
 
 // ─── Главный цикл пикера ─────────────────────────────────────────────────────
 
@@ -577,12 +566,12 @@ int runPickerGui(const char* model_path, const char* db_path,
                      << " — proceeding (legacy data)");
         }
 
-        ModelCalcerHandle* model = loadModel(base + ".cbm");
+        ModelHandle model(loadModel(base + ".cbm"));
 
-        DB db(db_path);
+        SqliteDB db(db_path, /*readOnly=*/true);
         auto hero_map = loadHeroes(db.get());
 
-        DB dataDb(dataDbPath.c_str());
+        SqliteDB dataDb(dataDbPath, /*readOnly=*/true);
         auto md = loadMatchupData(dataDb.get());
 
         if (guiState) {
@@ -592,7 +581,7 @@ int runPickerGui(const char* model_path, const char* db_path,
 
         LivePick last_lp; last_lp.match_id = -1;
         std::map<int, PlayerStats>       our_stats;
-        std::map<int, ImmortalHeroStats>  immortal_map;
+        std::map<int, PickerHeroStat>    immortal_map;
         int last_account_id = -1, last_our_pos = -1;
 
         while (running.load()) {
@@ -629,16 +618,14 @@ int runPickerGui(const char* model_path, const char* db_path,
             if (lp != last_lp) {
                 last_lp = lp;
                 renderToGui(guiState, lp, hero_map, md,
-                            our_stats, immortal_map, model);
+                            our_stats, immortal_map, model.get());
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
         }
 
-        ModelCalcerDelete(model);
-
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "[picker_gui] Error: %s\n", e.what());
+        LOG_ERR("[picker_gui] Error: " << e.what());
         if (guiState) {
             std::lock_guard<std::mutex> lk(guiState->mtx);
             guiState->active = false;

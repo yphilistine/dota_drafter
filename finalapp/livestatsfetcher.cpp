@@ -95,7 +95,13 @@ static std::string handle_request(const std::string& raw) {
         std::string team     = json_get(body, "team_name");
         std::string slot_str = json_get(body, "team_slot");
 
-        int team_slot = slot_str.empty() ? 0 : std::stoi(slot_str);
+        // safeStoi вместо std::stoi: team_slot приходит из hand-rolled JSON-парсера
+        // непроверенного GSI-payload'а, брошенное здесь исключение убило бы весь
+        // процесс (см. комментарий у client_thread). Клэмп на случай не кидающего,
+        // но всё равно некорректного значения (напр. "99"), которое иначе испортит
+        // индексацию массива слотов 1-5 ниже по стеку.
+        int team_slot = safeStoi(slot_str, 0);
+        if (team_slot < 0 || team_slot > 4) team_slot = 0;
 
         if (!mid.empty()) {
             bool stateChanged = false;
@@ -147,43 +153,53 @@ static std::string handle_request(const std::string& raw) {
            "Connection: close\r\n\r\n" + resp_body;
 }
 
+// Запускается как std::thread(client_thread, client).detach() — без внешней
+// сетки. Необработанное исключение в отсоединённом потоке = std::terminate() =
+// падение всего процесса, поэтому всё тело обёрнуто здесь, а не полагается на
+// installCrashHandlers() как на единственную защиту.
 static void client_thread(SOCKET client) {
-    std::string request;
-    char buf[4096];
+    try {
+        std::string request;
+        char buf[4096];
 
-    // Читаем до конца заголовков (\r\n\r\n)
-    while (true) {
-        int received = recv(client, buf, sizeof(buf), 0);
-        if (received <= 0) break;
-        request.append(buf, received);
-        if (request.find("\r\n\r\n") != std::string::npos) break;
-    }
-
-    // Определяем Content-Length и дочитываем тело
-    auto hdrEnd = request.find("\r\n\r\n");
-    if (hdrEnd != std::string::npos) {
-        int contentLen = 0;
-        std::string hdr = request.substr(0, hdrEnd);
-        auto pos = hdr.find("Content-Length:");
-        if (pos == std::string::npos) pos = hdr.find("content-length:");
-        if (pos != std::string::npos) {
-            pos += 15; // strlen("Content-Length:")
-            while (pos < hdr.size() && hdr[pos] == ' ') pos++;
-            contentLen = std::atoi(hdr.c_str() + pos);
-        }
-        size_t bodyStart = hdrEnd + 4;
-        size_t bodyHave  = request.size() - bodyStart;
-        while ((int)bodyHave < contentLen) {
+        // Читаем до конца заголовков (\r\n\r\n)
+        while (true) {
             int received = recv(client, buf, sizeof(buf), 0);
             if (received <= 0) break;
             request.append(buf, received);
-            bodyHave += received;
+            if (request.find("\r\n\r\n") != std::string::npos) break;
         }
-    }
 
-    if (!request.empty()) {
-        std::string resp = handle_request(request);
-        send(client, resp.c_str(), (int)resp.size(), 0);
+        // Определяем Content-Length и дочитываем тело
+        auto hdrEnd = request.find("\r\n\r\n");
+        if (hdrEnd != std::string::npos) {
+            int contentLen = 0;
+            std::string hdr = request.substr(0, hdrEnd);
+            auto pos = hdr.find("Content-Length:");
+            if (pos == std::string::npos) pos = hdr.find("content-length:");
+            if (pos != std::string::npos) {
+                pos += 15; // strlen("Content-Length:")
+                while (pos < hdr.size() && hdr[pos] == ' ') pos++;
+                contentLen = std::atoi(hdr.c_str() + pos);
+            }
+            size_t bodyStart = hdrEnd + 4;
+            size_t bodyHave  = request.size() - bodyStart;
+            while ((int)bodyHave < contentLen) {
+                int received = recv(client, buf, sizeof(buf), 0);
+                if (received <= 0) break;
+                request.append(buf, received);
+                bodyHave += received;
+            }
+        }
+
+        if (!request.empty()) {
+            std::string resp = handle_request(request);
+            send(client, resp.c_str(), (int)resp.size(), 0);
+        }
+    } catch (const std::exception& e) {
+        LOG_ERR("[GSI] client_thread exception: " << e.what());
+    } catch (...) {
+        LOG_ERR("[GSI] client_thread unknown exception");
     }
     closesocket(client);
 }

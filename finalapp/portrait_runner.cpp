@@ -18,6 +18,8 @@
 #include "dota2_capture.h"
 #include "dhash.h"
 #include "pos_ocr.h"
+#include "common.h"   // LOG_INFO/WARN/ERR — раньше диагностика шла в printf/puts,
+                       // невидимые в GUI-приложении без консоли (см. mainGUI.cpp)
 
 #include <map>
 #include <string>
@@ -493,35 +495,39 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
     sqlite3* db = nullptr;
     if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
-        std::fprintf(stderr, "[portrait] Не удалось открыть БД\n");
+        LOG_ERR("[portrait] Не удалось открыть БД");
         Gdiplus::GdiplusShutdown(gdipToken);
+        // winrt::init_apartment() выше требует парного uninit_apartment() —
+        // раньше пропускался именно на этой ветке ошибки (в отличие от
+        // нормального пути через cleanup: ниже).
+        winrt::uninit_apartment();
         return;
     }
     sqlite3_exec(db, "PRAGMA journal_mode=WAL;",   nullptr, nullptr, nullptr);
     sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
 
     auto nameToId = loadHeroNameToId(db);
-    std::printf("[portrait] Справочник героев: %zu записей\n", nameToId.size());
+    LOG_INFO("[portrait] Справочник героев: " << nameToId.size() << " записей");
 
     auto hashFile = loadHeroHashes("hero_hashes.dat");
     HeroRecognizer recognizer(nullptr, 0);
     if (hashFile.loaded) {
         recognizer = HeroRecognizer(hashFile.entries.data(), hashFile.entries.size());
-        std::printf("[portrait] Hash-база: %zu героев\n", recognizer.size());
+        LOG_INFO("[portrait] Hash-база: " << recognizer.size() << " героев");
     } else {
-        std::puts("[portrait] ВНИМАНИЕ: hero_hashes.dat не найден");
+        LOG_WARN("[portrait] ВНИМАНИЕ: hero_hashes.dat не найден");
     }
 
     PosOcrRecognizer posRecognizer;
     if (!posRecognizer.isAvailable())
-        std::puts("[portrait] ВНИМАНИЕ: Windows OCR недоступен, позиции только вручную");
+        LOG_WARN("[portrait] ВНИМАНИЕ: Windows OCR недоступен, позиции только вручную");
 
     // Отдельный Dota2Capture для захвата (overlay запущен из оркестратора)
     Dota2Capture cap("");
 
     // Ждём Dota 2
     if (!cap.findGameWindow()) {
-        std::puts("[portrait] Dota 2 не найдена, ожидаем...");
+        LOG_INFO("[portrait] Dota 2 не найдена, ожидаем...");
         while (running.load() && !cap.findGameWindow())
             std::this_thread::sleep_for(std::chrono::seconds(2));
     }
@@ -529,15 +535,15 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
     {
         auto res = cap.gameResolution();
-        std::printf("[portrait] Окно Dota 2: %dx%d\n", res.width, res.height);
+        LOG_INFO("[portrait] Окно Dota 2: " << res.width << "x" << res.height);
         clearHeroSlots(db);
 
         int   lastHeroId[10] = {};
         float lastScore[10]  = {};    // хранимая уверенность для каждого слота
-        std::puts("[portrait] Захват каждые 500 мс (HERO_SELECTION)...");
-        std::puts("[portrait] ─────────────────────────────────────────");
+        LOG_INFO("[portrait] Захват каждые 500 мс (HERO_SELECTION)...");
 
         while (running.load()) {
+          try {
             auto frameStart = std::chrono::steady_clock::now();
 
             // Сброс слотов при новой игре
@@ -550,7 +556,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 clearHeroSlots(db);
                 std::memset(lastHeroId, 0, sizeof(lastHeroId));
                 std::memset(lastScore,  0, sizeof(lastScore));
-                std::puts("[portrait] Новая игра — слоты сброшены");
+                LOG_INFO("[portrait] Новая игра — слоты сброшены");
             }
 
             if (!cap.isWindowFound() || !IsWindow(cap.gameWindowHandle())) {
@@ -601,14 +607,15 @@ void runPortraitCapture(GameInfo&           gameInfo,
                             }
                             const char* team = (slot < 5) ? "Radiant" : "Dire";
                             int idx = (slot < 5) ? slot+1 : slot-4;
-                            std::printf("[portrait] %s #%d → NULL  score=%.3f\n",
-                                        team, idx, m.score);
+                            LOG_INFO("[portrait] " << team << " #" << idx
+                                     << " → NULL  score=" << std::fixed << std::setprecision(3) << m.score);
                         } else {
                             updateSlot(db, slot, detectedId);
                             const char* team = (slot < 5) ? "Radiant" : "Dire";
                             int idx = (slot < 5) ? slot+1 : slot-4;
-                            std::printf("[portrait] %s #%d → %-22s  score=%.3f\n",
-                                        team, idx, m.name, m.score);
+                            LOG_INFO("[portrait] " << team << " #" << idx << " → "
+                                     << std::left << std::setw(22) << m.name
+                                     << "  score=" << std::fixed << std::setprecision(3) << m.score);
                         }
                         lastHeroId[slot] = detectedId;
                         lastScore[slot]  = m.score;
@@ -660,6 +667,16 @@ void runPortraitCapture(GameInfo&           gameInfo,
             auto remaining = std::chrono::milliseconds(500) - elapsed;
             if (remaining > std::chrono::milliseconds(0))
                 std::this_thread::sleep_for(remaining);
+          } catch (const std::exception& e) {
+            // На итерацию, а не вокруг всей функции: раньше вся runPortraitCapture
+            // не имела ни одного try/catch, и исключение из распознавания/захвата
+            // кадра прибило бы поток без сетки (detach из orchestratorMain).
+            LOG_ERR("[portrait] capture iteration exception: " << e.what());
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+          } catch (...) {
+            LOG_ERR("[portrait] capture iteration unknown exception");
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+          }
         }
     }
 
@@ -668,5 +685,5 @@ cleanup:
     sqlite3_close(db);
     Gdiplus::GdiplusShutdown(gdipToken);
     winrt::uninit_apartment();
-    std::puts("[portrait] Захват остановлен");
+    LOG_INFO("[portrait] Захват остановлен");
 }

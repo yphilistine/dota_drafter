@@ -79,7 +79,11 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 :: Компиляция
 ::
 :: Исходники:
-::   mainGUI.cpp             — GUI (ImGui/D3D11) + оркестратор фаз 1-3
+::   mainGUI.cpp             — GUI (ImGui/D3D11): WinMain, D3D11, WndProc, RenderFrame
+::   app_state.cpp           — общее состояние (GameInfo/PortraitState/PickerState/PlayerState/AppNotice)
+::   update_window.cpp       — нативное окно апдейтера (Win32, до D3D11/ImGui)
+::   orchestrator.cpp        — фоновый оркестратор (потоки portrait/picker/GSI, livepicks)
+::   gui_draw.cpp            — панели ImGui (Draft/Picks/Meta Heroes), кэш портретов/меты
 ::   portrait_runner.cpp     — захват портретов + overlay [D]
 ::   common.cpp              — логирование, HTTP (curl)
 ::   playerdatafetcher.cpp   — OpenDota / STRATZ / SQLite
@@ -112,6 +116,10 @@ cl.exe ^
     /I"%CATBOOST%" ^
     /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt" ^
     mainGUI.cpp ^
+    app_state.cpp ^
+    update_window.cpp ^
+    orchestrator.cpp ^
+    gui_draw.cpp ^
     portrait_runner.cpp ^
     common.cpp ^
     playerdatafetcher.cpp ^

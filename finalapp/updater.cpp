@@ -227,11 +227,15 @@ bool downloadToStaging(const std::string& url,
     std::string partPath = stagingPath + ".part";
 
     CURL* curl = curl_easy_init();
-    if (!curl) return false;
+    if (!curl) { LOG_ERR("downloadToStaging: curl_easy_init failed for " << url); return false; }
 
     DownloadCtx ctx;
     ctx.fp = fopen(partPath.c_str(), "wb");
-    if (!ctx.fp) { curl_easy_cleanup(curl); return false; }
+    if (!ctx.fp) {
+        LOG_ERR("downloadToStaging: cannot open " << partPath << " for writing");
+        curl_easy_cleanup(curl);
+        return false;
+    }
     ctx.progress = progress;
 
     curl_easy_setopt(curl, CURLOPT_URL,               url.c_str());
@@ -258,6 +262,8 @@ bool downloadToStaging(const std::string& url,
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK || httpCode != 200) {
+        LOG_WARN("downloadToStaging: download failed for " << url
+                 << ": curl=" << curl_easy_strerror(res) << " http=" << httpCode);
         DeleteFileA(partPath.c_str());
         return false;
     }

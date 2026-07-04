@@ -4,6 +4,7 @@
  */
 
 #include "dota2_capture.h"
+#include "common.h"
 #include <algorithm>
 #include <stdexcept>
 #include <chrono>
@@ -38,15 +39,14 @@ static BOOL CALLBACK enumAllCallback(HWND hwnd, LPARAM) {
     GetWindowTextA(hwnd, title, sizeof(title));
     GetClassNameA(hwnd, cls, sizeof(cls));
     if (title[0] != 0)
-        std::printf("  HWND=%p  class=%-30s  title=%s",
-                    static_cast<void*>(hwnd), cls, title);
+        LOG_INFO("  HWND=" << static_cast<void*>(hwnd) << "  class=" << cls << "  title=" << title);
     return TRUE;
 }
 
 void ListAllWindows() {
-    std::puts("--- Visible windows ---");
+    LOG_INFO("--- Visible windows ---");
     EnumWindows(enumAllCallback, 0);
-    std::puts("--- End ---");
+    LOG_INFO("--- End ---");
 }
 
 static BOOL CALLBACK enumCallback(HWND hwnd, LPARAM lp) {
@@ -113,8 +113,8 @@ bool Dota2Capture::findGameWindow() {
             (ratio < 1.467f) ? "4:3" :
             (ratio < 1.689f) ? "16:10" :
             (ratio < 2.056f) ? "16:9" : "21:9";
-        std::printf("[capture] Window %dx%d  ratio=%.3f  layout=%s\n",
-                    res_.width, res_.height, ratio, name);
+        LOG_INFO("[capture] Window " << res_.width << "x" << res_.height
+                 << "  ratio=" << ratio << "  layout=" << name);
     }
 
     computeRegions();
@@ -145,7 +145,7 @@ bool Dota2Capture::refreshResolution() {
     res_.height = newH;
     layout_ = selectStrategyLayout(newW, newH);
     computeRegions();
-    std::printf("[capture] Resolution changed: %dx%d\n", newW, newH);
+    LOG_INFO("[capture] Resolution changed: " << newW << "x" << newH);
     return true;
 }
 

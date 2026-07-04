@@ -23,6 +23,7 @@
 #include <memory>
 
 #include "dhash.h"   // PosMatch
+#include "common.h"  // LOG_INFO
 
 namespace dota2 {
 
@@ -235,8 +236,8 @@ public:
                 if (eng) engines_.push_back(eng);
             } catch (...) {}
         }
-        std::printf("[pos_ocr] engines available: %d/%d\n",
-                    (int)engines_.size(), (int)(sizeof(kLangs)/sizeof(kLangs[0])));
+        LOG_INFO("[pos_ocr] engines available: " << engines_.size()
+                 << "/" << (sizeof(kLangs)/sizeof(kLangs[0])));
     }
 
     bool isAvailable() const { return !engines_.empty(); }

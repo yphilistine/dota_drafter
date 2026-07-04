@@ -89,25 +89,58 @@ public:
     CURL* get() const { return curl; }
 };
 
-// sqlite3_open / close с настройкой PRAGMA
+// sqlite3_open / close с настройкой PRAGMA. readOnly=true — только чтение
+// (SQLITE_OPEN_READONLY, без write-PRAGMA), для коротко- и долгоживущих
+// читателей вроде dota_picker.cpp. busy_timeout выставляется всегда —
+// единая точка защиты от SQLITE_BUSY под конкурентными писателями.
 class SqliteDB {
     sqlite3* db;
 public:
-    SqliteDB(const std::string& filename) : db(nullptr) {
-        int rc = sqlite3_open(filename.c_str(), &db);
+    explicit SqliteDB(const std::string& filename, bool readOnly = false) : db(nullptr) {
+        int rc = readOnly
+            ? sqlite3_open_v2(filename.c_str(), &db,
+                              SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nullptr)
+            : sqlite3_open(filename.c_str(), &db);
         if (rc != SQLITE_OK) {
-            std::string err = sqlite3_errmsg(db);
+            std::string err = db ? sqlite3_errmsg(db) : "неизвестная ошибка";
             if (db) sqlite3_close(db);
             throw std::runtime_error("Не удалось открыть БД: " + err);
         }
-        sqlite3_exec(db, "PRAGMA journal_mode=WAL;",   nullptr, nullptr, nullptr);
-        sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
-        sqlite3_exec(db, "PRAGMA cache_size=-32768;",  nullptr, nullptr, nullptr);
-        sqlite3_exec(db, "PRAGMA temp_store=MEMORY;",  nullptr, nullptr, nullptr);
-        sqlite3_exec(db, "PRAGMA foreign_keys=ON;",    nullptr, nullptr, nullptr);
+        sqlite3_busy_timeout(db, 5000);
+        if (!readOnly) {
+            sqlite3_exec(db, "PRAGMA journal_mode=WAL;",   nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA cache_size=-32768;",  nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA temp_store=MEMORY;",  nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA foreign_keys=ON;",    nullptr, nullptr, nullptr);
+        }
     }
     ~SqliteDB() { if (db) sqlite3_close(db); }
     sqlite3* get() const { return db; }
+    SqliteDB(const SqliteDB&) = delete;
+    SqliteDB& operator=(const SqliteDB&) = delete;
+};
+
+// sqlite3_stmt RAII: prepare/finalize + типизированные bind/column-хелперы.
+// Промоутировано из dota_picker.cpp (было там локальным классом Stmt).
+class SqliteStmt {
+    sqlite3_stmt* s_ = nullptr;
+public:
+    SqliteStmt(sqlite3* db, const char* sql) {
+        if (sqlite3_prepare_v2(db, sql, -1, &s_, nullptr) != SQLITE_OK)
+            throw std::runtime_error(std::string("SQL prepare: ") + sqlite3_errmsg(db));
+    }
+    ~SqliteStmt() { if (s_) sqlite3_finalize(s_); }
+    sqlite3_stmt* get() { return s_; }
+    bool row()                       { return sqlite3_step(s_) == SQLITE_ROW; }
+    void bind_int(int i, int v)      { sqlite3_bind_int(s_, i, v); }
+    int         col_int(int i)       { return sqlite3_column_int(s_, i); }
+    long long   col_int64(int i)     { return sqlite3_column_int64(s_, i); }
+    std::string col_text(int i)      { auto* t = sqlite3_column_text(s_, i); return t ? (const char*)t : ""; }
+    bool col_null(int i)             { return sqlite3_column_type(s_, i) == SQLITE_NULL; }
+    double col_double(int i)         { return sqlite3_column_double(s_, i); }
+    SqliteStmt(const SqliteStmt&) = delete;
+    SqliteStmt& operator=(const SqliteStmt&) = delete;
 };
 
 // BEGIN / COMMIT / ROLLBACK (автоматический откат в деструкторе)
@@ -172,3 +205,19 @@ std::string httpPost(const std::string& url, const std::string& postData, const 
 
 // Замена невалидных UTF-8 последовательностей на U+FFFD
 std::string sanitizeUtf8(const std::string& input);
+
+// Разбор int/long long без исключений — для непроверенных внешних данных
+// (GSI-payload от Dota 2, STRATZ-ответы). fallback возвращается при пустой
+// строке или ошибке разбора вместо проброса std::invalid_argument/out_of_range.
+inline int safeStoi(const std::string& s, int fallback = 0) {
+    try { return s.empty() ? fallback : std::stoi(s); } catch (...) { return fallback; }
+}
+inline long long safeStoll(const std::string& s, long long fallback = -1) {
+    try { return s.empty() ? fallback : std::stoll(s); } catch (...) { return fallback; }
+}
+
+// Устанавливает std::set_terminate + SetUnhandledExceptionFilter — сетка
+// безопасности на уровне процесса: логирует необработанное исключение/SEH
+// в logs/console.log перед завершением, вместо тихого краха без следа.
+// Вызывать один раз при старте, сразу после initConsole().
+void installCrashHandlers();
