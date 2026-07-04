@@ -234,9 +234,13 @@ build_unified.bat debug     :: debug (/Od /Zi)
 
 | Файл | Описание |
 |------|----------|
-| `mainGUI.cpp` | ImGui/D3D11 GUI + оркестратор + окно обновления |
+| `mainGUI.cpp` | ImGui/D3D11 GUI: WinMain (разбит на подфункции), D3D11, WndProc, RenderFrame |
+| `app_state.cpp / .h` | Общее состояние (GameInfo/PortraitState/PickerState/PlayerState/AppNotice), расшаренное между mainGUI/orchestrator/gui_draw |
+| `update_window.cpp / .h` | Нативное Win32-окно апдейтера (до D3D11/ImGui) |
+| `orchestrator.cpp / .h` | Фоновый оркестратор: GSI/portrait/picker потоки, livepicks, запуск фазы 1b |
+| `gui_draw.cpp / .h` | Панели ImGui (Header/StatusBar/Draft/Picks/Meta Heroes), кэш портретов/меты |
 | `shared_types.h` | Общие типы (GameInfo, SharedPortraitState, GuiPickerState) |
-| `common.cpp / .h` | Логирование, HTTP (curl), SQLite RAII |
+| `common.cpp / .h` | Логирование, HTTP (curl), SQLite RAII (`SqliteDB`/`SqliteStmt`, `busy_timeout`), `safeStoi`/`safeStoll`, `installCrashHandlers()` |
 | `version.h` | Константы версии: kAppVersion, kSupportedSchema, kManifestUrl |
 | `version_utils.cpp / .h` | Чтение meta (schema_version/data_version) из _data.db |
 | `updater.cpp / .h` | Система обновлений: manifest, точечная докачка только несовпавших файлов, sha256, swap, rollback, агрегированный прогресс |
