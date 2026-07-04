@@ -582,9 +582,9 @@ static void SetOurPosition(int newPos) {
     requestPositionRefresh();
 }
 
-// ─── Общая строка героя со статистикой (DrawPicksPanel/DrawMetaHeroesPanel) ────
-// Раньше — две почти идентичные лямбды (DrawPickRow/DrawMetaRow): один и тот
-// же расчёт колонок/портрета/бара, отличалась только вторичная строка статы.
+// ─── Общая строка героя со статистикой ───────────────────────────────────────
+// Общий рендер строки (портрет/имя/вторичная стата/win% + бар) для
+// DrawPicksPanel и DrawMetaHeroesPanel — отличается только вторичная строка статы.
 struct HeroStatRowParams {
     int         rank;
     const char* name;
@@ -1077,9 +1077,6 @@ void DrawStatusBar(float fullW) {
         ImVec4 dot1col = !hasPlayer ? kMuted :
             (phase1Error ? kRed : (phase1Done ? kGreen : (phase1Running ? kAmber : kMuted)));
         dl->AddCircleFilled({sp.x+10.f, dotCY}, dotR, C(dot1col));
-        // phase1Msg (реальная причина ошибки, если phase1Error) теперь
-        // действительно показывается — раньше вычислялся, но отбрасывался,
-        // и пользователь всегда видел только заглушку "error".
         char p1buf[320];
         if (!hasPlayer)
             std::snprintf(p1buf, sizeof(p1buf), " Player data: no ID");

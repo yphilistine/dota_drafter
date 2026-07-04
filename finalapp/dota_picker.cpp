@@ -305,8 +305,9 @@ static MatchupData loadMatchupData(sqlite3* db) {
     return md;
 }
 
-// Порог отсечения кандидатов — динамический: 1% от суммарных игр на позиции за неделю
-// (не фиксированное число игр — данные теперь недельный STRATZ-снимок, а не all-time PG-дамп).
+// Порог отсечения кандидатов — динамический: 1% от суммарных игр на позиции за неделю.
+// Данные — недельный STRATZ-снимок, а не all-time агрегат, поэтому фиксированное
+// число игр не подошло бы как порог.
 static std::map<int,PickerHeroStat> loadImmortalHeroStats(sqlite3* db, int position) {
     std::map<int,PickerHeroStat> m;
     if (position <= 0 || position > 5) return m;

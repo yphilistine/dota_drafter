@@ -256,8 +256,8 @@ static void applyCurlNetworkOpts(CURL* curl) {
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE,      30L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL,     10L);
 
-    // Прерывать только если скорость < 100 байт/с в течение 90 сек
-    // (было 30 — слишком мало для медленных ответов OpenDota)
+    // Прерывать только если скорость < 100 байт/с в течение 90 сек —
+    // с запасом на медленные ответы OpenDota.
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT,   100L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME,    90L);
 

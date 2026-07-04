@@ -122,7 +122,6 @@ public:
 };
 
 // sqlite3_stmt RAII: prepare/finalize + типизированные bind/column-хелперы.
-// Промоутировано из dota_picker.cpp (было там локальным классом Stmt).
 class SqliteStmt {
     sqlite3_stmt* s_ = nullptr;
 public:

@@ -17,8 +17,8 @@
 #include "dota2_capture.h"
 #include "dhash.h"
 #include "pos_ocr.h"
-#include "common.h"   // LOG_INFO/WARN/ERR — раньше диагностика шла в printf/puts,
-                       // невидимые в GUI-приложении без консоли (см. mainGUI.cpp)
+#include "common.h"   // LOG_INFO/WARN/ERR — GUI-приложение без консоли, printf/puts
+                       // были бы невидимы (см. mainGUI.cpp)
 
 #include <map>
 #include <string>
@@ -196,8 +196,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
         LOG_ERR("[portrait] Не удалось открыть БД");
         Gdiplus::GdiplusShutdown(gdipToken);
         // winrt::init_apartment() выше требует парного uninit_apartment() —
-        // раньше пропускался именно на этой ветке ошибки (в отличие от
-        // нормального пути через cleanup: ниже).
+        // нужен и на этой ветке ошибки, не только на обычном пути через cleanup: ниже.
         winrt::uninit_apartment();
         return;
     }
@@ -374,9 +373,9 @@ void runPortraitCapture(GameInfo&           gameInfo,
             if (remaining > std::chrono::milliseconds(0))
                 std::this_thread::sleep_for(remaining);
           } catch (const std::exception& e) {
-            // На итерацию, а не вокруг всей функции: раньше вся runPortraitCapture
-            // не имела ни одного try/catch, и исключение из распознавания/захвата
-            // кадра прибило бы поток без сетки (detach из orchestratorMain).
+            // Ловим на итерацию, а не вокруг всей функции — исключение из
+            // распознавания/захвата одного кадра не должно останавливать весь
+            // цикл (поток запущен detached из orchestratorMain, без внешней сетки).
             LOG_ERR("[portrait] capture iteration exception: " << e.what());
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
           } catch (...) {

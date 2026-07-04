@@ -401,9 +401,9 @@ void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::stri
 
     for (auto& [key, matchNode] : jsonResponse["data"].items()) {
         if (matchNode.is_null() || key.size() < 2 || key[0] != 'm') continue;
-        // safeStoll вместо std::stoll: раньше исключение на одном кривом ключе
-        // пробрасывалось во внешний catch fetchAndStorePlayerRecentData и
-        // обрывало разбор ВСЕХ ещё не обработанных батчей, а не только этой записи.
+        // Ключ (matchId) приходит из STRATZ-ответа — safeStoll не бросает
+        // исключение на кривом значении, так что одна плохая запись не
+        // обрывает разбор всего батча.
         long long matchId = safeStoll(key.substr(1), -1);
         if (matchId < 0) continue;
         if (!matchNode.contains("players") || matchNode["players"].is_null()) continue;

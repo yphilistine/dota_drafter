@@ -2,12 +2,9 @@
  * orchestrator.cpp — фоновый оркестратор: управление portrait + picker
  * потоками, GSI-сервер, livepicks/player_info, запуск фазы 1b.
  *
- * Вынесено из mainGUI.cpp (была orchestratorMain, ~315 строк — самая длинная
- * функция в проекте). Цикл раньше не имел ни одного top-level try/catch —
- * необработанное исключение в этом потоке привело бы к std::terminate()
- * и падению всего процесса. Теперь: внешний try/catch вокруг открытия БД
- * (fatal, как и раньше) + внутренний try/catch на каждую итерацию цикла
- * (логирует и продолжает, не убивая поток).
+ * Открытие БД обёрнуто во внешний try/catch (фатальная ошибка — без локальной
+ * БД оркестратор работать не может). Каждая итерация цикла — во внутреннем
+ * try/catch, чтобы исключение на одном шаге не останавливало весь поток.
  */
 
 #include "orchestrator.h"
@@ -24,8 +21,8 @@
 #include <cstring>
 #include <cstdio>
 
-// ─── Управление потоками (было глобальным в mainGUI.cpp; наружу — только
-// функции startOrchestrator/stopOrchestrator/startPhase1/requestPositionRefresh) ─
+// ─── Управление потоками: наружу — только функции startOrchestrator/
+// stopOrchestrator/startPhase1/requestPositionRefresh ────────────────────────
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
 static std::atomic<bool> g_orchestratorRunning{false};
@@ -193,7 +190,7 @@ void startPhase1(long long accountId) {
     }).detach();
 }
 
-// ─── Состояние оркестратора (было function-local static/локальными переменными) ─
+// ─── Состояние оркестратора, живущее между итерациями цикла ─────────────────
 struct OrchestratorLoopState {
     long long   accountId       = 0;
     std::string lastMatchId;
@@ -322,11 +319,8 @@ static void handleNewMatch(sqlite3* db, OrchestratorLoopState& st, const GsiSnap
     g_pickerState.reset();
     st.phase3EndPending = false;
 
-    // safeStoll вместо голого stoll: раньше некорректный matchId молча
-    // проглатывался тем же catch(...){} — поведение сохранено 1:1, но без
-    // риска, что кто-то уберёт try/catch при будущей правке и получит
-    // непойманное исключение в этом потоке (нет top-level сетки была/есть
-    // только внешняя, вокруг всей функции — см. orchestratorMain).
+    // matchId приходит из GSI (непроверенная внешняя строка) — safeStoll
+    // возвращает -1 вместо исключения на некорректном значении.
     long long mid = safeStoll(gs.matchId, -1);
     if (mid >= 0) initLivePicksRow(db, mid, st.accountId, gs.ourSide, gs.ourSlot);
     st.lastMatchId = gs.matchId;
@@ -377,6 +371,11 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
         }
 
     } else {
+        // runOneShotRefresh() тоже временно выставляет g_pickerRunning=true
+        // (ручная смена позиции вне фазы 3) — это не хвост HERO_SELECTION,
+        // поэтому таймер хвоста ниже его не считает.
+        if (st.oneShotActive) return;
+
         // HERO_SELECTION кончился, но игра продолжается — отсчитываем хвост
         if (g_pickerRunning.load() || g_portraitRunning.load()) {
             if (!st.phase3EndPending) {
@@ -520,9 +519,8 @@ static void orchestratorMain() {
                 syncPortraitOnlyToGui(gs);
                 runOneShotRefresh(db, st);
             } catch (const std::exception& e) {
-                // На итерацию, а не вокруг всей функции: раньше здесь не было
-                // ни одного top-level try/catch, необработанное исключение
-                // прибило бы весь процесс (std::terminate из std::thread).
+                // Ловим на уровне одной итерации — исключение на одном шаге
+                // не должно останавливать весь фоновый поток оркестратора.
                 LOG_ERR("[orchestrator] iteration exception: " << e.what());
             } catch (...) {
                 LOG_ERR("[orchestrator] unknown iteration exception");
