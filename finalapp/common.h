@@ -216,6 +216,19 @@ inline long long safeStoll(const std::string& s, long long fallback = -1) {
     try { return s.empty() ? fallback : std::stoll(s); } catch (...) { return fallback; }
 }
 
+// STRATZ "POSITION_n" (n=1..5) → int; 0, если формат не распознан.
+// Используется и в пайплайне живой меты (hero_meta_stats.cpp), и в пайплайне
+// истории матчей игрока (playerdatafetcher.cpp) — общий разбор одного и того
+// же перечисления STRATZ.
+inline int positionToInt(const std::string& pos) {
+    if (pos == "POSITION_1") return 1;
+    if (pos == "POSITION_2") return 2;
+    if (pos == "POSITION_3") return 3;
+    if (pos == "POSITION_4") return 4;
+    if (pos == "POSITION_5") return 5;
+    return 0;
+}
+
 // Устанавливает std::set_terminate + SetUnhandledExceptionFilter — сетка
 // безопасности на уровне процесса: логирует необработанное исключение/SEH
 // в logs/console.log перед завершением, вместо тихого краха без следа.

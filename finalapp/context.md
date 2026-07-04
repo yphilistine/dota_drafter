@@ -62,6 +62,7 @@ GSI-таймаут: если нет обновлений > 15с — сброс �
 | `httpPost(url, body, token)` | HTTP POST с ретраями и авторизацией |
 | `sanitizeUtf8(input)` | Очистка невалидных UTF-8 последовательностей |
 | `safeStoi(s, fallback=0)` / `safeStoll(s, fallback=-1)` | Разбор int/long long без исключений (try/catch + fallback) — для непроверенных внешних данных (GSI-payload от Dota 2, STRATZ-ответы). Используется в `livestatsfetcher.cpp` (team_slot), `playerdatafetcher.cpp` (match id), `orchestrator.cpp` (matchId) вместо голого `std::stoi`/`std::stoll`, чьё исключение в отсоединённом потоке раньше валило весь процесс |
+| `positionToInt(pos)` | STRATZ `"POSITION_n"` (n=1..5) → int, 0 если не распознан. Общий для двух пайплайнов STRATZ, которые раньше жили в одном файле (`playerdatafetcher.cpp`): истории матчей игрока и живой меты (`hero_meta_stats.cpp`) — вынесен сюда при их разделении на отдельные файлы |
 | `installCrashHandlers()` | Устанавливает `std::set_terminate` + `SetUnhandledExceptionFilter` — сетка безопасности на уровне процесса: логирует необработанное исключение/SEH в `logs/console.log` перед завершением вместо тихого краха без следа. Вызывается один раз в `WinMain` (`PlatformStartupFixups()`), сразу после `initConsole()` |
 | `LOG_INFO/WARN/ERR(msg)` | Макросы логирования через ostringstream |
 
@@ -70,7 +71,7 @@ GSI-таймаут: если нет обновлений > 15с — сброс �
 ---
 
 ### playerdatafetcher.h / playerdatafetcher.cpp
-Загрузка данных игрока из OpenDota и STRATZ.
+Загрузка данных игрока из OpenDota и STRATZ (история матчей). Живая мета-стата героев — отдельный файл, см. `hero_meta_stats.h/.cpp` ниже.
 
 | Функция | Описание |
 |---------|----------|
@@ -97,15 +98,26 @@ GSI-таймаут: если нет обновлений > 15с — сброс �
 | `storeRelevantPlayerByPos(db, accountId, rows)` | INSERT OR REPLACE статистика по позициям |
 | `storePlayerHeroVsHeroByPos(db, accountId, rows)` | INSERT OR REPLACE статистика vs |
 | `storePlayerHeroWithHeroByPos(db, accountId, rows)` | INSERT OR REPLACE статистика with |
+
+Структуры: `MatchDraft` (matchId, picks, positions, won), `HeroStats`, `HeroInfo`.
+`positionToInt` (парсинг STRATZ `"POSITION_n"`, используется в `parseAndStoreBatchMatches`) — теперь в `common.h`, общий с `hero_meta_stats.cpp`.
+
+---
+
+### hero_meta_stats.h / hero_meta_stats.cpp
+Живая мета-статистика героев (STRATZ `heroStats`, фаза 1a). Выделена из `playerdatafetcher.cpp` — отдельный от истории матчей игрока пайплайн: не требует accountId, запускается только в фазе 1a, свой источник STRATZ-запроса (`heroStats.stats`, а не батч по матчам).
+
+| Функция | Описание |
+|---------|----------|
 | `lastCompletedWeekTimestamp()` | Понедельник 00:00 UTC последней полностью завершённой недели |
 | `buildHeroStatsQuery(week)` | Формирование GraphQL запроса STRATZ `heroStats.stats` (bracket DIVINE_IMMORTAL, groupByPosition/Bracket) |
 | `sendStratzHeroStats(token, week)` | POST STRATZ GraphQL для heroStats |
-| `parseHeroStatsResponse(response)` | Парсинг ответа → vector\<HeroWeekStat\> (heroId, pos, matchCount, winCount) |
+| `parseHeroStatsResponse(response)` | Парсинг ответа → vector\<HeroWeekStat\> (heroId, pos, matchCount, winCount). Позиция — через `positionToInt` (common.h) |
 | `createHeroStatsTableIfNotExists(db)` | Создание таблицы `stats` |
 | `storeHeroStatsTable(db, rows)` | Полная перезапись `stats` (DELETE + INSERT OR REPLACE) |
-| `fetchAndStoreHeroStats(db, token)` | Главная функция: последняя неделя → STRATZ heroStats → SQLite `stats`. Не бросает исключений наружу (мягкий сбой при недоступности STRATZ) |
+| `fetchAndStoreHeroStats(db, token)` | Главная функция: последняя неделя → STRATZ heroStats → SQLite `stats`. Не бросает исключений наружу (мягкий сбой при недоступности STRATZ). Вызывается из `datafetcher.cpp` (`runDataFetcherInit`, фаза 1a) |
 
-Структуры: `MatchDraft` (matchId, picks, positions, won), `HeroStats`, `HeroInfo`, `HeroWeekStat`.
+Структура: `HeroWeekStat` (heroId, pos, matchCount, winCount).
 
 ---
 
@@ -114,7 +126,7 @@ GSI-таймаут: если нет обновлений > 15с — сброс �
 
 | Функция | Описание |
 |---------|----------|
-| `runDataFetcherInit(stratzToken)` | Фаза 1a: справочник героев + создание таблиц + живая мета-стата героев (`fetchAndStoreHeroStats`, STRATZ `heroStats`, последняя завершённая неделя). Не требует accountId, но требует STRATZ-токен для мета-статы (иначе — мягкий пропуск). Запускается при старте приложения |
+| `runDataFetcherInit(stratzToken)` | Фаза 1a: справочник героев + создание таблиц + живая мета-стата героев (`fetchAndStoreHeroStats` из `hero_meta_stats.cpp`, STRATZ `heroStats`, последняя завершённая неделя). Не требует accountId, но требует STRATZ-токен для мета-статы (иначе — мягкий пропуск). Запускается при старте приложения |
 | `runDataFetcher(accountId, stratzToken)` | Фаза 1b: загрузка данных игрока (статистика героев, матчи). Требует accountId |
 
 ---
@@ -213,24 +225,35 @@ GSI HTTP-сервер.
 ---
 
 ### portrait_runner.h / portrait_runner.cpp
-Захват и распознавание портретов + позиций + overlay-кнопка [D].
+Захват и распознавание портретов + позиций. Overlay-кнопка [D] — отдельный файл, см. `overlay_button.h/.cpp` ниже (раньше жила в этом же файле, хотя не имела ни одной общей функции или общего состояния с циклом захвата).
 
 | Функция | Описание |
 |---------|----------|
-| `startDotaOverlay()` | Запуск прозрачной кнопки [D] поверх Dota 2 (один раз при старте) |
 | `loadHeroHashes(path)` | Загрузка `hero_hashes.dat` (бинарный формат) в vector<HeroHashEntry> для `HeroRecognizer` |
 | `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 500мс → `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций → запись в livepicks. Тело цикла обёрнуто в try/catch на итерацию (логирует и продолжает, не убивая поток — раньше во всей функции не было ни одного try/catch). На ветке ошибки открытия БД теперь вызывается `winrt::uninit_apartment()` (раньше пропускался, в отличие от нормального пути через `cleanup:`). Диагностика — через `LOG_INFO/WARN/ERR` (раньше `printf`/`puts`, невидимые в GUI-приложении без консоли) |
 | `updateSlot(db, slot, heroId)` | Обновление hero в слоте livepicks |
 | `updateSlotPos(db, slot, pos)` | Обновление позиции в слоте livepicks |
 | `clearHeroSlots(db)` | Обнуление всех hero + pos слотов в livepicks |
 | `clearHeroSlot(db, slot)` | Обнуление одного hero-слота |
-| `overlayProc(hwnd, msg, wp, lp)` | WndProc overlay: таймер позиционирования + клик-переключение |
-| `paintLayeredButton(hwnd)` | Per-pixel alpha отрисовка [D] серым цветом через UpdateLayeredWindow |
-| `selectOverlayPos(w, h)` | Выбор позиции кнопки по аспекту |
-| `bringAppToFront()` | Вывод главного окна приложения на передний план |
-| `bringDotaToFront(cap)` | Вывод окна Dota 2 на передний план |
 
 Распознавание позиций: только для своей команды (manualPos override > screen capture > 0). Вражеские позиции = 0.
+
+---
+
+### overlay_button.h / overlay_button.cpp
+Прозрачная кнопка [D] поверх Dota 2 — своё окно (WS_EX_LAYERED, per-pixel alpha), свой WndProc, свой поток сообщений. Выделена из `portrait_runner.cpp`: ноль общих функций и общего состояния с циклом захвата (собственный, независимый экземпляр `Dota2Capture`), оба файла существовали вместе только потому что оба используют Win32/GDI+ и оба запускаются оркестратором.
+
+| Функция | Описание |
+|---------|----------|
+| `startDotaOverlay()` | Запуск кнопки (один раз при старте, из `orchestratorMain`) — создаёт поток `overlayThread`, если ещё не запущен |
+| `overlayThread(param)` | Регистрирует класс окна `DotaDOverlay`, создаёт `WS_EX_LAYERED`-попап, запускает свой message loop |
+| `overlayProc(hwnd, msg, wp, lp)` | WndProc: WM_TIMER — позиционирование + показ/скрытие по видимости Dota/своего окна; WM_LBUTTONDOWN — клик-переключение фокуса |
+| `paintLayeredButton(hwnd, w, h)` | Per-pixel alpha отрисовка [D] серым цветом (как шестерёнка HUD) через `UpdateLayeredWindow` |
+| `selectOverlayLayout(w, h)` | Выбор позиции/размера кнопки по аспекту окна Dota 2 (4:3, 16:10, 16:9, 21:9) |
+| `updateOverlayPos(overlay, cap)` | Пересчёт позиции кнопки относительно окна Dota (DWM extended frame bounds) |
+| `isOverlayOverDota(fg, dotaHwnd)` | Эвристика: сторонний топ-level оверлей (Discord/Steam/Game Bar) поверх Dota не должен прятать кнопку |
+| `bringAppToFront()` | Вывод главного окна приложения на передний план |
+| `bringDotaToFront(cap)` | Вывод окна Dota 2 на передний план |
 
 ---
 
@@ -403,7 +426,7 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 ---
 
 ### build_unified.bat
-Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp` (компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки — по-прежнему один `cl.exe`-инвок, без CMake).
+Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp`, а также более поздней разбивкой `portrait_runner.cpp` (→ `overlay_button.cpp`) и `playerdatafetcher.cpp` (→ `hero_meta_stats.cpp`) — компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки — по-прежнему один `cl.exe`-инвок, без CMake.
 
 Ключевые пути:
 - vcpkg: `C:\vcpkg\installed\x64-windows-static`

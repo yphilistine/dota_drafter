@@ -247,12 +247,14 @@ build_unified.bat debug     :: debug (/Od /Zi)
 | `datafetcher.cpp` | Фаза 1a (init) + 1b (player data) |
 | `clouddatafetcher.cpp / .h` | PostgreSQL → SQLite sync (proherostats/immortalherostats); dev-инструмент, не вызывается в рантайме приложения |
 | `livestatsfetcher.cpp` | GSI HTTP-сервер |
-| `portrait_runner.cpp / .h` | Захват портретов + позиций + overlay [D] |
+| `portrait_runner.cpp / .h` | Захват портретов + позиций (500мс цикл) |
+| `overlay_button.cpp / .h` | Прозрачная кнопка [D] поверх Dota 2 (своё окно/WndProc/поток) |
 | `dota_picker.cpp` | ML-пикер CatBoost + schema gate |
 | `dota2_capture.cpp / .h` | Захват окна Dota 2 (PrintWindow + GDI) |
 | `dhash.h` | Pearson-корреляция 8x8 для распознавания **героев** (база — `hero_hashes.dat`, грузится в рантайме) |
 | `pos_ocr.h` | Распознавание **позиций** через Windows OCR (заменяет старый Pearson-подход) |
-| `playerdatafetcher.cpp / .h` | OpenDota / STRATZ запросы |
+| `playerdatafetcher.cpp / .h` | OpenDota / STRATZ запросы (история матчей игрока) |
+| `hero_meta_stats.cpp / .h` | Живая мета-статистика героев (STRATZ heroStats, фаза 1a) |
 
 ---
 

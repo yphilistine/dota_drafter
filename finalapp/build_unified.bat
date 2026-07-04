@@ -84,9 +84,11 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 ::   update_window.cpp       — нативное окно апдейтера (Win32, до D3D11/ImGui)
 ::   orchestrator.cpp        — фоновый оркестратор (потоки portrait/picker/GSI, livepicks)
 ::   gui_draw.cpp            — панели ImGui (Draft/Picks/Meta Heroes), кэш портретов/меты
-::   portrait_runner.cpp     — захват портретов + overlay [D]
+::   portrait_runner.cpp     — захват портретов + позиций (500мс цикл)
+::   overlay_button.cpp      — прозрачная кнопка [D] поверх Dota 2
 ::   common.cpp              — логирование, HTTP (curl)
-::   playerdatafetcher.cpp   — OpenDota / STRATZ / SQLite
+::   playerdatafetcher.cpp   — OpenDota / STRATZ / SQLite (история матчей игрока)
+::   hero_meta_stats.cpp     — живая мета-статистика героев (STRATZ heroStats, фаза 1a)
 ::   clouddatafetcher.cpp    — PostgreSQL → SQLite
 ::   datafetcher.cpp         — runDataFetcher (фаза 1)
 ::   livestatsfetcher.cpp    — runGsiServer   (фаза 2)
@@ -121,8 +123,10 @@ cl.exe ^
     orchestrator.cpp ^
     gui_draw.cpp ^
     portrait_runner.cpp ^
+    overlay_button.cpp ^
     common.cpp ^
     playerdatafetcher.cpp ^
+    hero_meta_stats.cpp ^
     clouddatafetcher.cpp ^
     datafetcher.cpp ^
     livestatsfetcher.cpp ^
