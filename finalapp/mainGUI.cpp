@@ -646,6 +646,7 @@ static void ShutdownApp(HINSTANCE hInst, HWND hwnd, ULONG_PTR gdipToken) {
 
     if (g_avatarSRV) { g_avatarSRV->Release(); g_avatarSRV = nullptr; }
     unloadHeroPortraits();
+    unloadPoweredByIcons();
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();

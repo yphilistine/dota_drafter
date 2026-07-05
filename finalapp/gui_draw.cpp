@@ -15,6 +15,8 @@
 #include <gdiplus.h>
 #include <objidl.h>
 
+#include <shellapi.h>
+
 #include <map>
 #include <vector>
 #include <algorithm>
@@ -22,6 +24,7 @@
 #include <cstring>
 #include <cstdio>
 #include <mutex>
+#include <thread>
 #include <functional>
 
 // ─── Состояние GUI (только из GUI-потока) ─────────────────────────────────────
@@ -689,6 +692,109 @@ static void DrawWinRateLegend(float rowW) {
     ImGui::Dummy({rowW, lhL + 4.f});
 }
 
+// ─── "Powered by" — иконки источников данных (STRATZ/OpenDota/D2PT) ──────────
+// Иконки — favicon'ы сайтов, тянутся по HTTP (тот же приём, что и аватар игрока
+// в fetchOpenDotaProfile: байты через httpGet в фоновом потоке под мьютексом,
+// декодирование в D3D11-текстуру — только на GUI-потоке, при отрисовке).
+struct PoweredByIcon {
+    const char*                label;
+    const char*                url;
+    const char*                faviconUrl;
+    std::vector<uint8_t>       imgData;
+    bool                       fetched = false;
+    ID3D11ShaderResourceView*  srv = nullptr;
+};
+static std::mutex     g_poweredByMtx;
+static bool            g_poweredByFetchStarted = false;
+static PoweredByIcon   g_poweredByIcons[3] = {
+    { "STRATZ",   "https://stratz.com",       "https://www.google.com/s2/favicons?domain=stratz.com&sz=64"   },
+    { "OpenDota", "https://www.opendota.com", "https://www.google.com/s2/favicons?domain=opendota.com&sz=64" },
+    { "D2PT",     "https://d2pt.gg",          "https://www.google.com/s2/favicons?domain=d2pt.gg&sz=64"      },
+};
+
+static void fetchPoweredByIconsAsync() {
+    std::thread([]{
+        for (auto& ic : g_poweredByIcons) {
+            std::vector<uint8_t> data;
+            try {
+                std::string body = httpGet(ic.faviconUrl);
+                data.assign(body.begin(), body.end());
+            } catch (...) {}
+            std::lock_guard<std::mutex> lk(g_poweredByMtx);
+            ic.imgData = std::move(data);
+            ic.fetched = true;
+        }
+    }).detach();
+}
+
+void unloadPoweredByIcons() {
+    for (auto& ic : g_poweredByIcons)
+        if (ic.srv) { ic.srv->Release(); ic.srv = nullptr; }
+}
+
+static void DrawPoweredBy(float panelW) {
+    if (!g_poweredByFetchStarted) {
+        g_poweredByFetchStarted = true;
+        fetchPoweredByIconsAsync();
+    }
+
+    // Декодируем в текстуру то, что успело докачаться — по одной попытке на иконку.
+    for (auto& ic : g_poweredByIcons) {
+        if (ic.srv) continue;
+        std::vector<uint8_t> data;
+        {
+            std::lock_guard<std::mutex> lk(g_poweredByMtx);
+            if (!ic.fetched || ic.imgData.empty()) continue;
+            data = ic.imgData;
+        }
+        ic.srv = createTextureFromImageData(data.data(), data.size());
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    const int   n        = (int)(sizeof(g_poweredByIcons) / sizeof(g_poweredByIcons[0]));
+    const float iconSz   = 56.f;
+    const float groupGap = 16.f; // расстояние между иконками
+
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::TextUnformatted("POWERED BY");
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    ImDrawList* dl       = ImGui::GetWindowDrawList();
+    ImVec2      rowStart = ImGui::GetCursorScreenPos();
+
+    // Прижаты к левому краю панели, вплотную друг к другу (не растянуты на panelW).
+    float x = rowStart.x;
+    for (int i = 0; i < n; ++i) {
+        const PoweredByIcon& ic = g_poweredByIcons[i];
+        ImVec2 iconPos = { x, rowStart.y };
+
+        if (ic.srv)
+            dl->AddImage((ImTextureID)ic.srv, iconPos, {iconPos.x + iconSz, iconPos.y + iconSz});
+        else {
+            dl->AddRectFilled(iconPos, {iconPos.x + iconSz, iconPos.y + iconSz}, C(kCard2));
+            dl->AddRect      (iconPos, {iconPos.x + iconSz, iconPos.y + iconSz}, C(kBorder));
+        }
+
+        char btnId[24];
+        std::snprintf(btnId, sizeof(btnId), "##poweredBy%d", i);
+        ImGui::SetCursorScreenPos(iconPos);
+        if (ImGui::InvisibleButton(btnId, {iconSz, iconSz}))
+            ShellExecuteA(nullptr, "open", ic.url, nullptr, nullptr, SW_SHOWNORMAL);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", ic.url);
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        }
+
+        x += iconSz + groupGap;
+    }
+
+    ImGui::SetCursorScreenPos({rowStart.x, rowStart.y + iconSz});
+}
+
 // ─── Панель драфта (Radiant/Dire слоты + win probability bar) ────────────────
 void DrawDraftPanel(float panelW) {
     const float PAD  = 8.f;
@@ -762,6 +868,7 @@ void DrawDraftPanel(float panelW) {
         dl2->AddText({bp.x+10.f,cy},C(kMuted),">  Current draft win probability");
         dl2->AddText({bp.x+bW-50.f,cy},C(kMuted),"--.--%");
         ImGui::Dummy({bW,bH});
+        DrawPoweredBy(panelW);
         return;
     }
 
@@ -836,6 +943,8 @@ void DrawDraftPanel(float panelW) {
 
     DrawBar(dl, {bp.x+1.f, bp.y+bH-6.f}, bW-2.f, 4.f, winProb, C(wc));
     ImGui::Dummy({bW, bH});
+
+    DrawPoweredBy(panelW);
 }
 
 // ─── Панель рекомендаций (top-10 / выбранный герой) ───────────────────────────
