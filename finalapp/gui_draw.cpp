@@ -55,6 +55,10 @@ static std::map<int, std::vector<MetaHeroRow>> g_metaHeroStats;
 // выбранного героя, даже если он не попал в топ-10/порог отсечения.
 static std::map<int, std::map<int, MetaHeroRow>> g_metaHeroLookup;
 static bool g_metaHeroStatsLoaded = false;
+// Позиция, выбранная вручную в Meta Heroes, пока нет активной игры (0 = All).
+// Как только начинается реальный драфт/матч, панель переключается на настоящую
+// позицию из g_pickerState.ourPosition — это превью только для просмотра меты.
+static int s_metaPreviewPos = 0;
 
 static void loadMetaHeroStatsIfNeeded() {
     if (g_metaHeroStatsLoaded) return;
@@ -582,6 +586,13 @@ static void SetOurPosition(int newPos) {
     requestPositionRefresh();
 }
 
+// Смена позиции для превью в Meta Heroes вне игры — просто локальный выбор
+// в GUI, без livepicks/оркестратора (нет активного драфта, не с чем сверяться).
+static void SetMetaPreviewPosition(int newPos) {
+    if (newPos < 0 || newPos > 5) return;
+    s_metaPreviewPos = newPos;
+}
+
 // ─── Общая строка героя со статистикой ───────────────────────────────────────
 // Общий рендер строки (портрет/имя/вторичная стата/win% + бар) для
 // DrawPicksPanel и DrawMetaHeroesPanel — отличается только вторичная строка статы.
@@ -947,8 +958,11 @@ void DrawPicksPanel(float panelW) {
 }
 
 // ─── Панель "Meta Heroes" (живая стата по героям из STRATZ, без ML) ───────────
-// Позиция унифицирована с Draft/Picks (см. SetOurPosition): бейдж всегда показывает
-// НАШУ настоящую позицию и позволяет её менять; если позиция не определена — агрегат по всем.
+// Позиция кликабельна всегда, а не только во время игры: вне игры это просто
+// превью меты по позиции (SetMetaPreviewPosition, локальный выбор в GUI, без
+// livepicks/оркестратора). Как только начинается реальный драфт/матч, панель
+// переключается на настоящую позицию из g_pickerState.ourPosition (SetOurPosition,
+// как в Draft/Picks) — превью полностью вытесняется настоящей позицией.
 void DrawMetaHeroesPanel(float panelW) {
     loadMetaHeroStatsIfNeeded();
 
@@ -967,13 +981,10 @@ void DrawMetaHeroesPanel(float panelW) {
         ourHeroId     = g_pickerState.ourHeroId;
         std::memcpy(ourHeroName, g_pickerState.ourHeroName, sizeof(ourHeroName));
     }
+    int displayPos = gameStarted ? ourPosition : s_metaPreviewPos;
 
-    // Заголовок секции + бейдж позиции — то же оформление и тот же эффект, что и
-    // в DrawPicksPanel: клик меняет НАШУ настоящую позицию (SetOurPosition), унифицировано
-    // по всем трём местам выбора позиции (Draft-слот/Picks/Meta), никакого отдельного
-    // "auto"/независимого фильтра здесь больше нет.
-    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, ourPosition,
-                              gameStarted ? SetOurPosition : nullptr);
+    SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "META HEROES", panelW, displayPos,
+                              gameStarted ? SetOurPosition : SetMetaPreviewPosition);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -1008,7 +1019,7 @@ void DrawMetaHeroesPanel(float panelW) {
     if (ourHeroPicked) {
         MetaHeroRow row;
         bool        found = false;
-        auto posIt = g_metaHeroLookup.find(ourPosition);
+        auto posIt = g_metaHeroLookup.find(displayPos);
         if (posIt != g_metaHeroLookup.end()) {
             auto heroIt = posIt->second.find(ourHeroId);
             if (heroIt != posIt->second.end()) { row = heroIt->second; found = true; }
@@ -1021,7 +1032,7 @@ void DrawMetaHeroesPanel(float panelW) {
                                 nm.empty() ? "this hero" : nm.c_str());
         }
     } else {
-        auto it = g_metaHeroStats.find(ourPosition);
+        auto it = g_metaHeroStats.find(displayPos);
         if (it == g_metaHeroStats.end() || it->second.empty()) {
             ImGui::TextColored(kMuted, "  No data for this position yet");
         } else {

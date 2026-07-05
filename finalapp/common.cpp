@@ -280,13 +280,8 @@ std::string httpPost(const std::string& url, const std::string& postData,
         headers.append("Content-Type: application/json");
         headers.append("Accept: application/json, text/plain, */*");
         headers.append("Accept-Encoding: gzip, deflate");
-        headers.append("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        headers.append("User-Agent: dota-drafter/0.4.1");
         headers.append("Accept-Language: en-US,en;q=0.9");
-        headers.append("Origin: https://stratz.com");
-        headers.append("Referer: https://stratz.com/");
-        headers.append("Sec-Fetch-Dest: empty");
-        headers.append("Sec-Fetch-Mode: cors");
-        headers.append("Sec-Fetch-Site: same-site");
         headers.append("Connection: keep-alive");
         if (!authToken.empty())
             headers.append(("Authorization: Bearer " + authToken).c_str());
@@ -295,8 +290,6 @@ std::string httpPost(const std::string& url, const std::string& postData,
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER,    headers.get());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA,     &response);
-        curl_easy_setopt(curl, CURLOPT_COOKIEFILE,    "cookies.txt");
-        curl_easy_setopt(curl, CURLOPT_COOKIEJAR,     "cookies.txt");
         applyCurlNetworkOpts(curl);
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
