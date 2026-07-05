@@ -11,6 +11,7 @@
 #include "gui_draw.h"
 #include "orchestrator.h"
 #include "common.h"
+#include "dota2_capture.h"
 
 #include <gdiplus.h>
 #include <objidl.h>
@@ -832,6 +833,39 @@ void DrawDraftPanel(float panelW) {
     // какой-либо индикации, что матч уже начал загружаться.
     SectionLabel(isWaitingForPlayers ? "LOADING INTO MATCH"
                  : (rCount==5 && dCount==5) ? "STRATEGY PHASE" : "DRAFT PHASE");
+
+    // [screenshot] — сохраняет 10 регионов героев + 10 регионов позиций текущего
+    // кадра HUD в screenshots/ (папка создаётся инсталлятором). Диагностика для
+    // случаев, когда распознавание портретов/позиций ошибается. Оформлен как
+    // position-бейдж (SectionLabelWithPosBadge) — тот же rect/border/text через
+    // ImDrawList + InvisibleButton поверх, а не нативная ImGui::Button.
+    {
+        const float lhBtn = ImGui::GetTextLineHeight();
+        const char* btnLabel = "[screenshot]";
+        ImVec2 lts = ImGui::CalcTextSize(btnLabel);
+        float  bW  = lts.x + 14.f;
+        float  bH  = lhBtn + 6.f;
+        ImGui::SameLine(panelW - bW);
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 bp = ImGui::GetCursorScreenPos();
+        bool hovered = ImGui::IsMouseHoveringRect(bp, {bp.x+bW, bp.y+bH});
+        dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH}, hovered ? C(kCard) : C(kCard2));
+        dl->AddRect      (bp,{bp.x+bW,bp.y+bH}, C(kBorder));
+        dl->AddText({bp.x+7.f,bp.y+3.f}, C(kMuted), btnLabel);
+
+        ImGui::SetCursorScreenPos(bp);
+        if (ImGui::InvisibleButton("##screenshotBtn", {bW, bH})) {
+            std::thread([]{
+                bool ok = dota2::captureDebugScreenshot("screenshots");
+                if (ok) LOG_INFO("[screenshot] Saved draft regions to screenshots/");
+                else    LOG_WARN("[screenshot] Dota 2 window not found — nothing captured");
+            }).detach();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Press in case of draft recognition error");
+    }
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1228,10 +1262,13 @@ void DrawStatusBar(float fullW) {
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(3);
 
+        bool refreshHovered = ImGui::IsItemHovered();
+        if (refreshHovered) ImGui::SetTooltip("Reload player data");
+
         // Иконка refresh: две дуги + наконечники
         constexpr float PI = 3.14159265f;
         float r = btnSz * 0.34f;
-        ImU32 col = ImGui::IsItemHovered() ? IM_COL32(220,220,220,255) : C(kMuted);
+        ImU32 col = refreshHovered ? IM_COL32(220,220,220,255) : C(kMuted);
 
         // Дуга 1: верх (10 → 2 часа по часовой)
         dl->PathArcTo({cx,cy}, r, 200.f*PI/180.f, 340.f*PI/180.f, 12);
@@ -1335,6 +1372,8 @@ float DrawHeader(float fullW) {
             BringWindowToTop(g_Hwnd);
         }
     }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Bring window to front");
 
     // ── Title (вертикально по центру шапки, две строки) ───────────────────
     float tx       = hs.x + LOGO_W + 10.f;
@@ -1399,6 +1438,8 @@ float DrawHeader(float fullW) {
                                        ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine(0, 4.f);
         bool setBtn = ImGui::Button("Set");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Save Friend ID and load player data");
 
         if ((commit || setBtn) && s_inputBuf[0] != '\0') {
             long long newId = 0;
@@ -1425,6 +1466,8 @@ float DrawHeader(float fullW) {
         if (s_editMode && hasPlayer) {
             ImGui::SameLine(0,4.f);
             if (ImGui::SmallButton("x")) s_editMode = false;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Cancel");
         }
         ImGui::PopStyleVar(); // FramePadding (input/Set/x row)
 

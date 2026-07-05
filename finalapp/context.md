@@ -165,7 +165,9 @@ GSI-таймаут: если нет обновлений > 15с — сброс �
 | `.captureFullWindow()` | Захват всего окна (для отладки) |
 | `.saveBitmapAsPng(bmp, path)` | Сохранение Bitmap как PNG через GDI+ |
 | `.savePortraits(dir)` | Сохранение всех портретов как PNG |
+| `.saveDebugRegions(dir)` | Сохранение портретов героев + индикаторов позиций как PNG: `radiant_hero_0..4.png`, `dire_hero_0..4.png`, `radiant_pos_0..4.png`, `dire_pos_0..4.png` (10+10 файлов, индекс — слот 0-4 внутри своей команды) |
 | `.runLoop(interval_ms)` | Цикл захвата с заданным интервалом |
+| `captureDebugScreenshot(dir="screenshots")` | Одноразовый снимок: свой `Dota2Capture` → `findGameWindow()` + `capturePortraits()` → `saveDebugRegions(dir)`. `false`, если окно Dota 2 не найдено (папка тогда не трогается). Вызывается из кнопки `[screenshot]` в `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке — диагностика при ошибке распознавания драфта |
 | `ListAllWindows()` | Диагностика: вывод всех видимых окон |
 
 HudLayout содержит координаты портретов (radiant_x_start, portrait_w, ...) и позиций (pos_x_start, pos_w, ...).
@@ -409,7 +411,7 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 |---------|----------|
 | `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Friend ID |
 | `DrawStatusBar(fullW)` | Полоса статуса: Player data (no ID/pending/fetching/ready/error) + Refresh + Game phase + match ID. При `phase1Error` теперь показывает реальный `phase1Msg`, а не захардкоженную заглушку "error" |
-| `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb |
+| `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb. Кнопка `[screenshot]` справа от заголовка секции ("DRAFT PHASE"/"STRATEGY PHASE") — оформлена как position-бейдж (тот же rect/border/text через ImDrawList + InvisibleButton, что и `SectionLabelWithPosBadge`), а не нативная ImGui-кнопка. По клику на отдельном потоке вызывает `dota2::captureDebugScreenshot("screenshots")` (dota2_capture.h/.cpp): сохраняет 10 регионов героев + 10 регионов позиций текущего кадра HUD в папку `screenshots\` рядом с exe (создаётся инсталлятором). Тултип "Press in case of draft recognition error" — диагностика, когда портреты/позиции распознаются неверно |
 | `DrawPicksPanel(panelW)` | Средняя панель: рекомендации top-10 / выбранный герой (ML) |
 | `DrawMetaHeroesPanel(panelW)` | Правая панель: топ-10 героев по популярности (STRATZ, сумма матчей, без ML), винрейт — вторичная цветная метрика. Оформление как у DrawPicksPanel. Бейдж позиции кликабелен всегда, не только во время игры: вне игры — это локальное превью меты (`SetMetaPreviewPosition`/`s_metaPreviewPos`, без livepicks/оркестратора), с началом реального драфта/матча панель переключается на настоящую позицию (`g_pickerState.ourPosition`, клик вызывает `SetOurPosition`, как в Draft/Picks) — превью полностью вытесняется. Когда наш герой выбран — вместо топ-10 показывает единственную выделенную строку "YOUR HERO" из нефильтрованного `g_metaHeroLookup` (виден даже без прохождения 1%-порога) |
 | `DrawHeroStatRow(rowW, params)` | Общая строка героя со статистикой (портрет/имя/вторичная стата/win%+бар). Раньше — две почти идентичные лямбды `DrawPickRow`/`DrawMetaRow`, продублированные в DrawPicksPanel/DrawMetaHeroesPanel; теперь общая функция + `HeroStatRowParams` (secondaryStats — предформатированная строка, пустая = без колонки статы) |
@@ -423,6 +425,8 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 | `createTextureFromImageData(data, size)` | D3D11-текстура из байт JPEG/PNG — используется и здесь (портреты), и в mainGUI.cpp (RenderFrame — текстура аватара) |
 | `heroDisplayName(heroId, fallback)` | heroId → localized_name для отображения, ленивая загрузка через `SqliteDB(readOnly=true)` |
 | `loadMetaHeroStatsIfNeeded()` | Ленивая загрузка `stats` из `playerandlivestats.db` в `g_metaHeroStats` (по позиции 1-5 + агрегат по всем под ключом 0), с порогом 1% от суммарных игр, сортировка по сумме матчей (games) убыв. Повторяет попытку каждый кадр, пока таблица пуста — тот же паттерн, что `heroDisplayName()`. Читает БД через `SqliteDB(readOnly=true)` |
+
+Все кликабельные элементы (позиционные бейджи/теги, [D]-логотип, Refresh, Set/x в карточке игрока, иконки Powered by, кнопка `[screenshot]`) имеют `ImGui::SetTooltip(...)` при наведении (`ImGui::IsItemHovered()`) — поясняющий текст того, что делает клик. Не покрыты: нативные Win32-кнопки вне ImGui (например "Try again" в `update_window.cpp`, показывается до инициализации ImGui).
 
 ---
 
@@ -442,6 +446,10 @@ Inno Setup скрипт полной установки/апдейта прил�
 Ставит: exe, `catboostmodel.dll`, `draft_helper_abstract.cbm`/`_data.db`, `hero_hashes.dat`, `assets\*.png`, GSI-конфиг.
 
 `[InstallDelete] Type: filesandordirs; Name: "{app}\assets"` — папка `assets` полностью удаляется **перед** копированием новых файлов. Нужно, т.к. `[Files]` с маской `assets\*.png` в Inno Setup только добавляет/перезаписывает файлы, совпадающие с источником, но никогда не удаляет из `{app}\assets` файлы, пропавшие из источника (переименованный/убранный герой) — без этого шага устаревшие PNG копились бы в установке пользователя при каждом обновлении приложения.
+
+`[Dirs] Name: "{app}\screenshots"` — пустая папка создаётся при установке для кнопки `[screenshot]` (`DrawDraftPanel`, gui_draw.cpp): туда сохраняются 10 регионов героев + 10 регионов позиций при диагностике ошибки распознавания драфта (см. `dota2_capture.h/.cpp`, `captureDebugScreenshot`).
+
+`gamestate_integration_dota2.cfg`: `"heartbeat" "5.0"` (было `30.0`) — Dota 2 шлёт GSI-обновление раз в 5с даже без изменений в состоянии игры. Важно: старое значение 30.0 было **больше** watchdog-таймаута оркестратора (15с, `readGameStateWithTimeoutWatchdog` в orchestrator.cpp) — во время затишья в игре (без смены фазы/heroId) обновления от Dota могли не приходить дольше 15с, и watchdog мог ложно сбрасывать статус на IDLE, хотя GSI-соединение оставалось живым. 5.0 < 15с исключает этот сценарий.
 
 ---
 

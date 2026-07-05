@@ -360,6 +360,35 @@ void Dota2Capture::savePortraits(const std::filesystem::path& dir) const {
     }
 }
 
+void Dota2Capture::saveDebugRegions(const std::filesystem::path& dir) const {
+    std::filesystem::path out = dir.empty() ? output_dir_ : dir;
+    std::filesystem::create_directories(out);
+    static const char* teamNames[] = {
+        "radiant","radiant","radiant","radiant","radiant",
+        "dire","dire","dire","dire","dire"
+    };
+    for (size_t i=0;i<portraits_.size();++i) {
+        if (portraits_[i].empty()) continue;
+        char name[64];
+        std::snprintf(name,sizeof(name),"%s_hero_%zu.png",teamNames[i], i % 5);
+        saveBitmapAsPng(portraits_[i],out/name);
+    }
+    for (size_t i=0;i<posPortraits_.size();++i) {
+        if (posPortraits_[i].empty()) continue;
+        char name[64];
+        std::snprintf(name,sizeof(name),"%s_pos_%zu.png",teamNames[i], i % 5);
+        saveBitmapAsPng(posPortraits_[i],out/name);
+    }
+}
+
+bool captureDebugScreenshot(const std::filesystem::path& dir) {
+    Dota2Capture cap;
+    if (!cap.findGameWindow()) return false;
+    if (cap.capturePortraits() == 0) return false;
+    cap.saveDebugRegions(dir);
+    return true;
+}
+
 void Dota2Capture::runLoop(int interval_ms) {
     running_ = true;
     while (running_) {

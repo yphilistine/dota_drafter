@@ -188,6 +188,11 @@ public:
     // Сохранение портретов как PNG: radiant_0.png .. dire_9.png
     void savePortraits(const std::filesystem::path& dir = "") const;
 
+    // Сохранение портретов героев + индикаторов позиций как PNG (для диагностики
+    // ошибок распознавания): radiant_hero_0..4.png, dire_hero_0..4.png,
+    // radiant_pos_0..4.png, dire_pos_0..4.png (10 + 10 файлов).
+    void saveDebugRegions(const std::filesystem::path& dir = "") const;
+
     // Коллбэк после каждого успешного захвата: void(slot, bitmap)
     using PortraitCallback = std::function<void(int, const Bitmap&)>;
     void setCallback(PortraitCallback cb) { callback_ = std::move(cb); }
@@ -228,5 +233,11 @@ private:
  
 // Диагностика: вывод всех видимых окон с именами классов
 void ListAllWindows();
+
+// Одноразовый снимок текущего кадра HUD (найти окно + захватить + сохранить
+// 10 регионов героев + 10 регионов позиций в dir) — для кнопки [screenshot]
+// в GUI ("press in case of draft recognition error"). Возвращает false, если
+// окно Dota 2 не найдено или кадр не захвачен (dir тогда не создаётся).
+bool captureDebugScreenshot(const std::filesystem::path& dir = "screenshots");
  
 } // namespace dota2

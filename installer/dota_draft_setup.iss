@@ -41,6 +41,13 @@ Name: "quicklaunchicon"; Description: "Create Quick Launch shortcut"; GroupDescr
 ; полностью очищаем перед копированием, чтобы не копились устаревшие PNG.
 Type: filesandordirs; Name: "{app}\assets"
 
+[Dirs]
+
+; Папка для кнопки [screenshot] (DrawDraftPanel): 10 регионов героев + 10
+; регионов позиций сохраняются сюда при клике — для диагностики ошибок
+; распознавания драфта. Создаётся пустой, приложение сохраняет в неё по требованию.
+Name: "{app}\screenshots"
+
 [Files]
 
 Source: "C:\Users\ANDREY\Documents\dota_drafter\finalapp\Dota_Drafter.exe"; DestDir: "{app}"; Flags: ignoreversion
