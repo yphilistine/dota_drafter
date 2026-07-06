@@ -184,6 +184,12 @@ a:hover {
   font-size: 14px;
 }
 
+.carousel-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .carousel-btn {
   flex-shrink: 0;
   background: var(--card);
@@ -340,6 +346,48 @@ a:hover {
   line-height: 1.5;
 }
 
+/* ---- FRIEND ID ---- */
+
+.friend-id-steps {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.friend-id-step {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.friend-id-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.friend-id-step-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.friend-id-step-body .step-num {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.friend-id-step-body p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ---- REQUIREMENTS ---- */
 
 .req-list {
@@ -410,6 +458,19 @@ a:hover {
 }
 
 .powered-section .container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.powered-columns {
+  display: flex;
+  gap: 64px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.powered-col {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -489,7 +550,7 @@ a:hover {
     padding: 64px 0 48px;
   }
 
-  .screenshot-placeholder {
+  .carousel-slide {
     height: 240px;
   }
 
@@ -513,10 +574,18 @@ a:hover {
   .step-text {
     flex: 1;
   }
+
+  .powered-columns {
+    gap: 32px;
+  }
 }
 
 @media (max-width: 480px) {
   .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .friend-id-steps {
     grid-template-columns: 1fr;
   }
 

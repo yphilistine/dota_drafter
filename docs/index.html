@@ -28,9 +28,15 @@
           <button class="carousel-btn carousel-prev" aria-label="Previous"></button>
           <div class="carousel-track-wrap">
             <div class="carousel-track">
-              <div class="carousel-slide screenshot-placeholder">Screenshot 1</div>
-              <div class="carousel-slide screenshot-placeholder">Screenshot 2</div>
-              <div class="carousel-slide screenshot-placeholder">Screenshot 3</div>
+              <div class="carousel-slide">
+                <img class="carousel-img" src="screenshot1.png" data-i18n-alt="screenshotAlt" alt="">
+              </div>
+              <div class="carousel-slide">
+                <img class="carousel-img" src="screenshot2.png" data-i18n-alt="screenshotAlt" alt="">
+              </div>
+              <div class="carousel-slide">
+                <img class="carousel-img" src="screenshot3.png" data-i18n-alt="screenshotAlt" alt="">
+              </div>
             </div>
           </div>
           <button class="carousel-btn carousel-next" aria-label="Next"></button>
@@ -64,6 +70,14 @@
         <div class="feature-card">
           <h3 data-i18n="feat4Title"></h3>
           <p data-i18n="feat4Desc"></p>
+        </div>
+        <div class="feature-card">
+          <h3 data-i18n="feat5Title"></h3>
+          <p data-i18n="feat5Desc"></p>
+        </div>
+        <div class="feature-card">
+          <h3 data-i18n="feat6Title"></h3>
+          <p data-i18n="feat6Desc"></p>
         </div>
       </div>
     </div>
@@ -105,6 +119,29 @@
     </div>
   </section>
 
+  <section class="section" id="friend-id">
+    <div class="container">
+      <h2 class="section-title" data-i18n="friendIdTitle"></h2>
+      <p class="section-subtitle" data-i18n="friendIdSubtitle"></p>
+      <div class="friend-id-steps">
+        <div class="friend-id-step">
+          <img class="friend-id-img" src="step1.png" alt="Add Friend button in Steam friends list">
+          <div class="friend-id-step-body">
+            <div class="step-num">1</div>
+            <p data-i18n="friendIdStep1"></p>
+          </div>
+        </div>
+        <div class="friend-id-step">
+          <img class="friend-id-img" src="step2.png" alt="Copy Friend ID in Add Friend dialog">
+          <div class="friend-id-step-body">
+            <div class="step-num">2</div>
+            <p data-i18n="friendIdStep2"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="section" id="requirements">
     <div class="container">
       <h2 class="section-title" data-i18n="reqTitle"></h2>
@@ -134,17 +171,32 @@
 
   <section class="section powered-section">
     <div class="container">
-      <p class="powered-label" data-i18n="poweredBy">Данные предоставлены</p>
-      <div class="powered-grid">
-        <a class="powered-card" href="https://www.opendota.com" target="_blank" rel="noopener">
-          <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=opendota.com&sz=64" alt="OpenDota">
-        </a>
-        <a class="powered-card" href="https://stratz.com" target="_blank" rel="noopener">
-          <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=stratz.com&sz=64" alt="STRATZ">
-        </a>
-        <a class="powered-card" href="https://d2pt.gg" target="_blank" rel="noopener">
-          <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=d2pt.gg&sz=64" alt="D2PT">
-        </a>
+      <div class="powered-columns">
+        <div class="powered-col">
+          <p class="powered-label" data-i18n="poweredBy">Данные предоставлены</p>
+          <div class="powered-grid">
+            <a class="powered-card" href="https://www.opendota.com" target="_blank" rel="noopener">
+              <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=opendota.com&sz=64" alt="OpenDota">
+            </a>
+            <a class="powered-card" href="https://stratz.com" target="_blank" rel="noopener">
+              <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=stratz.com&sz=64" alt="STRATZ">
+            </a>
+            <a class="powered-card" href="https://d2pt.gg" target="_blank" rel="noopener">
+              <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=d2pt.gg&sz=64" alt="D2PT">
+            </a>
+          </div>
+        </div>
+        <div class="powered-col">
+          <p class="powered-label" data-i18n="contactLabel">Контакты</p>
+          <div class="powered-grid">
+            <a class="powered-card" href="https://discordapp.com/users/693097611674255400" target="_blank" rel="noopener">
+              <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=discord.com&sz=64" alt="Discord">
+            </a>
+            <a class="powered-card" href="https://github.com/yphilistine/dota_drafter/tree/main/finalapp" target="_blank" rel="noopener">
+              <img class="powered-icon" src="https://www.google.com/s2/favicons?domain=github.com&sz=64" alt="GitHub">
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -153,7 +205,7 @@
     <div class="container">
       <div class="footer-links">
         <a href="https://github.com/yphilistine/dota_drafter/tree/main/finalapp" data-i18n="footerRepo"></a>
-        <span data-i18n="footerVersion"></span>
+        <span id="footer-version" data-i18n="footerVersion"></span>
       </div>
       <p>&copy; 2025-2026 Dota Drafter</p>
     </div>

@@ -713,17 +713,27 @@ static PoweredByIcon   g_poweredByIcons[3] = {
     { "D2PT",     "https://d2pt.gg",          "https://www.google.com/s2/favicons?domain=d2pt.gg&sz=64"      },
 };
 
-static void fetchPoweredByIconsAsync() {
-    std::thread([]{
-        for (auto& ic : g_poweredByIcons) {
+// Иконки контактов/репозитория — тот же приём (favicon по HTTP), отдельная
+// строка под "POWERED BY": концептуально не источник данных, а ссылки на
+// автора/проект.
+static std::mutex     g_contactMtx;
+static bool            g_contactFetchStarted = false;
+static PoweredByIcon   g_contactIcons[2] = {
+    { "Discord", "https://discordapp.com/users/693097611674255400",  "https://www.google.com/s2/favicons?domain=discord.com&sz=64" },
+    { "GitHub",  "https://github.com/yphilistine/dota_drafter/tree/main/finalapp", "https://www.google.com/s2/favicons?domain=github.com&sz=64"  },
+};
+
+static void fetchIconsAsync(PoweredByIcon* icons, int n, std::mutex* mtx) {
+    std::thread([icons, n, mtx]{
+        for (int i = 0; i < n; ++i) {
             std::vector<uint8_t> data;
             try {
-                std::string body = httpGet(ic.faviconUrl);
+                std::string body = httpGet(icons[i].faviconUrl);
                 data.assign(body.begin(), body.end());
             } catch (...) {}
-            std::lock_guard<std::mutex> lk(g_poweredByMtx);
-            ic.imgData = std::move(data);
-            ic.fetched = true;
+            std::lock_guard<std::mutex> lk(*mtx);
+            icons[i].imgData = std::move(data);
+            icons[i].fetched = true;
         }
     }).detach();
 }
@@ -731,46 +741,62 @@ static void fetchPoweredByIconsAsync() {
 void unloadPoweredByIcons() {
     for (auto& ic : g_poweredByIcons)
         if (ic.srv) { ic.srv->Release(); ic.srv = nullptr; }
+    for (auto& ic : g_contactIcons)
+        if (ic.srv) { ic.srv->Release(); ic.srv = nullptr; }
 }
 
-static void DrawPoweredBy(float panelW) {
-    if (!g_poweredByFetchStarted) {
-        g_poweredByFetchStarted = true;
-        fetchPoweredByIconsAsync();
+// Строка иконок-ссылок с явным origin (не текущий курсор ImGui) — чтобы можно
+// было разместить две такие строки рядом на одном уровне, а не одну под другой.
+// Заголовок + ряд кликабельных favicon'ов (ShellExecute на клик). Общая для
+// "POWERED BY" (источники данных) и "CONTACT INFO" (Discord/GitHub) — раньше
+// это была единственная функция DrawPoweredBy, продублировать её тело для
+// второй строки означало бы два независимых, синхронно поддерживаемых куска кода.
+static constexpr float kIconRowIconSz  = 56.f;
+static constexpr float kIconRowGap     = 16.f; // расстояние между иконками внутри группы
+static constexpr float kIconRowSectGap = 32.f; // расстояние между группами (POWERED BY / CONTACT INFO)
+
+// Ширина группы из n иконок — нужна DrawPoweredBy, чтобы поставить вторую
+// группу сразу после первой, а не на фиксированной доле panelW.
+static float IconRowWidth(int n) {
+    return n * kIconRowIconSz + (n - 1) * kIconRowGap;
+}
+
+static void DrawIconRowAt(ImVec2 origin, const char* title, PoweredByIcon* icons, int n,
+                           std::mutex& mtx, bool& fetchStarted, const char* idPrefix) {
+    if (!fetchStarted) {
+        fetchStarted = true;
+        fetchIconsAsync(icons, n, &mtx);
     }
 
     // Декодируем в текстуру то, что успело докачаться — по одной попытке на иконку.
-    for (auto& ic : g_poweredByIcons) {
+    for (int i = 0; i < n; ++i) {
+        PoweredByIcon& ic = icons[i];
         if (ic.srv) continue;
         std::vector<uint8_t> data;
         {
-            std::lock_guard<std::mutex> lk(g_poweredByMtx);
+            std::lock_guard<std::mutex> lk(mtx);
             if (!ic.fetched || ic.imgData.empty()) continue;
             data = ic.imgData;
         }
         ic.srv = createTextureFromImageData(data.data(), data.size());
     }
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+    const float iconSz   = kIconRowIconSz;
+    const float groupGap = kIconRowGap;
+    const float titleGap = ImGui::GetTextLineHeightWithSpacing();
 
-    const int   n        = (int)(sizeof(g_poweredByIcons) / sizeof(g_poweredByIcons[0]));
-    const float iconSz   = 56.f;
-    const float groupGap = 16.f; // расстояние между иконками
-
+    ImGui::SetCursorScreenPos(origin);
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextUnformatted("POWERED BY");
+    ImGui::TextUnformatted(title);
     ImGui::PopStyleColor();
-    ImGui::Spacing();
 
     ImDrawList* dl       = ImGui::GetWindowDrawList();
-    ImVec2      rowStart = ImGui::GetCursorScreenPos();
+    ImVec2      rowStart = { origin.x, origin.y + titleGap };
 
-    // Прижаты к левому краю панели, вплотную друг к другу (не растянуты на panelW).
+    // Прижаты к левому краю своей группы, вплотную друг к другу.
     float x = rowStart.x;
     for (int i = 0; i < n; ++i) {
-        const PoweredByIcon& ic = g_poweredByIcons[i];
+        const PoweredByIcon& ic = icons[i];
         ImVec2 iconPos = { x, rowStart.y };
 
         if (ic.srv)
@@ -780,8 +806,8 @@ static void DrawPoweredBy(float panelW) {
             dl->AddRect      (iconPos, {iconPos.x + iconSz, iconPos.y + iconSz}, C(kBorder));
         }
 
-        char btnId[24];
-        std::snprintf(btnId, sizeof(btnId), "##poweredBy%d", i);
+        char btnId[32];
+        std::snprintf(btnId, sizeof(btnId), "##%s%d", idPrefix, i);
         ImGui::SetCursorScreenPos(iconPos);
         if (ImGui::InvisibleButton(btnId, {iconSz, iconSz}))
             ShellExecuteA(nullptr, "open", ic.url, nullptr, nullptr, SW_SHOWNORMAL);
@@ -792,8 +818,23 @@ static void DrawPoweredBy(float panelW) {
 
         x += iconSz + groupGap;
     }
+}
 
-    ImGui::SetCursorScreenPos({rowStart.x, rowStart.y + iconSz});
+static void DrawPoweredBy(float panelW) {
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+
+    DrawIconRowAt(origin, "POWERED BY", g_poweredByIcons, 3,
+                  g_poweredByMtx, g_poweredByFetchStarted, "poweredBy");
+
+    float contactX = origin.x + IconRowWidth(3) + kIconRowSectGap;
+    DrawIconRowAt({contactX, origin.y}, "CONTACT INFO", g_contactIcons, 2,
+                  g_contactMtx, g_contactFetchStarted, "contact");
+
+    ImGui::SetCursorScreenPos({origin.x, origin.y + ImGui::GetTextLineHeightWithSpacing() + kIconRowIconSz});
 }
 
 // ─── Панель драфта (Radiant/Dire слоты + win probability bar) ────────────────
