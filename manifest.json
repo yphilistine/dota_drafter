@@ -6,17 +6,17 @@
                 "mandatory":  false
             },
     "data":  {
-                 "version":  "2025.06.27",
+                 "version":  "2025.07.06",
                  "schema":  1,
                  "files":  {
                                "draft_helper_abstract.cbm":  {
-                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract.cbm",
+                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.06/draft_helper_abstract.cbm",
                                                                  "sha256":  "e87fe38768e3b50cd7f45980f29877aba02471e0fb98a901679bb3dcf017407a",
                                                                  "size":  4456928
                                                              },
                                "draft_helper_abstract_data.db":  {
-                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.06.27/draft_helper_abstract_data.db",
-                                                                     "sha256":  "86e9ce2681e7cd9863b48871ae7bf215fcd638c79e2b95c3f65416429fbe415c",
+                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.06/draft_helper_abstract_data.db",
+                                                                     "sha256":  "4b6464dc4a8d40eac99ea8ff057fc306b72cf4b56fa83d595687c564ec564b3c",
                                                                      "size":  1114112
                                                                  },
                                "hero_hashes.dat":  {
