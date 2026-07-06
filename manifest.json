@@ -21,8 +21,8 @@
                                                                  },
                                "hero_hashes.dat":  {
                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/hero_hashes.dat",
-                                                       "sha256":  "59a96ff5571bdc92e29f08628926a6573607ca9fa5a99b0245fd4633b8675d56",
-                                                       "size":  70074
+                                                       "sha256":  "0af35e2ad8cf511e2d46d24f1f84b032013132b9770390d7d1866c74aec32ed5",
+                                                       "size":  70610
                                                    },
                                "assets/abaddon.png":  {
                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/abaddon.png",
@@ -661,8 +661,8 @@
                                                    },
                                "gamestate_integration_dota2.cfg":  {
                                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/installer/gamestate_integration_dota2.cfg",
-                                                                       "sha256":  "e5c862d781432952edcc295f7a48680400e48caf784d36d935631c9b57473aba",
-                                                                       "size":  233
+                                                                       "sha256":  "ec2e82ce25b242b277b5e09751fc02612cd5bf7b2f3ced3129fe9ae233351b70",
+                                                                       "size":  232
                                                                    }
                            }
              }
