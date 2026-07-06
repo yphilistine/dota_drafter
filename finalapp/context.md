@@ -433,6 +433,8 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 ### build_unified.bat
 Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp`, а также более поздней разбивкой `portrait_runner.cpp` (→ `overlay_button.cpp`) и `playerdatafetcher.cpp` (→ `hero_meta_stats.cpp`) — компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки — по-прежнему один `cl.exe`-инвок, без CMake.
 
+Версия ресурса PE (`version.rc` → `FileVersion`/`ProductVersion`) и версия SxS-манифеста (`app.manifest` → `assemblyIdentity/@version`) больше не захардкожены на `1.0.0.0`: перед компиляцией скрипт через временный `.ps1` (`%TEMP%\dd_read_ver.ps1`) читает `kAppVersion` из `version.h` (сейчас `0.5.0`), парсит MAJOR.MINOR.PATCH и передаёт их в `rc.exe /dVER_MAJOR=.../dVER_MINOR=.../dVER_PATCH=...` (VER_BUILD всегда 0). Тем же значением через второй временный `.ps1` (`dd_patch_manifest.ps1`) патчится **копия** `app.manifest` в `%OUT_DIR%\app.manifest` (исходный `app.manifest` в репозитории не трогается, чтобы обычная локальная сборка не пачкала git diff) — именно эта копия встраивается `mt.exe`. Regex патча манифеста намеренно узкий (привязан к `name="DotaDrafter.DraftAssistant"` перед `version="..."`), чтобы не задеть `<?xml version="1.0"...?>` и `manifestVersion="1.0"` на `<assembly>` — широкий `version="[^"]*"` цеплял оба этих атрибута тоже. `release_app.bat` (в `dota_drafter\scripts\`, вне `finalapp/`) не менялся — он только обновляет `kAppVersion` в `version.h` и затем вызывает `build_unified.bat`, который сам подхватывает новую версию.
+
 Ключевые пути:
 - vcpkg: `C:\vcpkg\installed\x64-windows-static`
 - CatBoost: `C:\catboost`

@@ -96,8 +96,31 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 ::   dota2_capture.cpp       — захват окна Dota 2
 :: ─────────────────────────────────────────────────────────────────────────────
 
+:: ── Читаем версию приложения из version.h (kAppVersion) ──────────────────────
+set "PS_VER=%TEMP%\dd_read_ver.ps1"
+(
+    echo $c = Get-Content 'version.h' -Raw
+    echo $m = $c -match 'kAppVersion\s*=\s*"([^^\x22]+)"'
+    echo Write-Output $Matches[1]
+) > "%PS_VER%"
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_VER%"`) do set "APP_VER=%%V"
+del "%PS_VER%" >nul 2>&1
+
+if not defined APP_VER (
+    echo [ERROR] Не удалось прочитать kAppVersion из version.h
+    exit /b 1
+)
+
+for /f "tokens=1,2,3 delims=." %%a in ("%APP_VER%") do (
+    set "VER_MAJOR=%%a"
+    set "VER_MINOR=%%b"
+    set "VER_PATCH=%%c"
+)
+set "VER_BUILD=0"
+echo [INFO] App version: %APP_VER% -^> resource %VER_MAJOR%.%VER_MINOR%.%VER_PATCH%.%VER_BUILD%
+
 :: ── Компилируем version.rc → version.res ─────────────────────────────────────
-rc.exe /nologo /dVER_MAJOR=1 /dVER_MINOR=0 /dVER_PATCH=0 /dVER_BUILD=0 /fo "%OUT_DIR%\version.res" version.rc
+rc.exe /nologo /dVER_MAJOR=%VER_MAJOR% /dVER_MINOR=%VER_MINOR% /dVER_PATCH=%VER_PATCH% /dVER_BUILD=%VER_BUILD% /fo "%OUT_DIR%\version.res" version.rc
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] rc.exe: version.rc
     exit /b 1
@@ -163,8 +186,18 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+:: ── Подставляем версию в manifest (копия в OUT_DIR, исходный app.manifest не трогаем) ──
+set "PS_MANIFEST=%TEMP%\dd_patch_manifest.ps1"
+(
+    echo $c = Get-Content 'app.manifest' -Raw
+    echo $c = $c -replace 'name=\x22DotaDrafter\.DraftAssistant\x22\s+version=\x22[^^\x22]*\x22', 'name="DotaDrafter.DraftAssistant" version="%VER_MAJOR%.%VER_MINOR%.%VER_PATCH%.%VER_BUILD%"'
+    echo Set-Content '%OUT_DIR%\app.manifest' $c -Encoding utf8 -NoNewline
+) > "%PS_MANIFEST%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_MANIFEST%"
+del "%PS_MANIFEST%" >nul 2>&1
+
 :: ── Встраиваем manifest ──────────────────────────────────────────────────────
-mt.exe -nologo -manifest app.manifest -outputresource:"%OUT_DIR%\%TARGET%.exe;1"
+mt.exe -nologo -manifest "%OUT_DIR%\app.manifest" -outputresource:"%OUT_DIR%\%TARGET%.exe;1"
 if %ERRORLEVEL% neq 0 (
     echo [WARN] mt.exe: не удалось встроить manifest
 )
