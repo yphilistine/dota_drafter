@@ -1,7 +1,7 @@
 /*
  * portrait_runner.cpp — захват портретов + позиций.
  *
- * Портреты: захват каждые 500мс → распознавание героев и позиций → запись в livepicks.
+ * Портреты: захват каждые 250мс → распознавание героев и позиций → запись в livepicks.
  * Позиции: своя команда = manualPos override > screen capture > 0. Враг = 0.
  * Работает без accountId. Overlay-кнопка [D] вынесена в overlay_button.cpp.
  */
@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <sqlite3.h>
 
 using namespace dota2;
@@ -237,7 +238,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
         int   lastHeroId[10] = {};
         float lastScore[10]  = {};    // хранимая уверенность для каждого слота
-        LOG_INFO("[portrait] Захват каждые 500 мс (HERO_SELECTION)...");
+        LOG_INFO("[portrait] Захват каждые 250 мс (HERO_SELECTION)...");
 
         while (running.load()) {
           try {
@@ -258,7 +259,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
             if (!cap.isWindowFound() || !IsWindow(cap.gameWindowHandle())) {
                 cap.findGameWindow();
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 continue;
             }
 
@@ -266,7 +267,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
             int captured = cap.capturePortraits();
             if (captured <= 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 continue;
             }
 
@@ -377,7 +378,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
             }
 
             auto elapsed   = std::chrono::steady_clock::now() - frameStart;
-            auto remaining = std::chrono::milliseconds(500) - elapsed;
+            auto remaining = std::chrono::milliseconds(250) - elapsed;
             if (remaining > std::chrono::milliseconds(0))
                 std::this_thread::sleep_for(remaining);
           } catch (const std::exception& e) {
@@ -385,10 +386,10 @@ void runPortraitCapture(GameInfo&           gameInfo,
             // распознавания/захвата одного кадра не должно останавливать весь
             // цикл (поток запущен detached из orchestratorMain, без внешней сетки).
             LOG_ERR("[portrait] capture iteration exception: " << e.what());
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
           } catch (...) {
             LOG_ERR("[portrait] capture iteration unknown exception");
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
           }
         }
     }
@@ -399,4 +400,89 @@ cleanup:
     Gdiplus::GdiplusShutdown(gdipToken);
     winrt::uninit_apartment();
     LOG_INFO("[portrait] Захват остановлен");
+}
+
+// ─── Диагностический снимок для кнопки [screenshot] ──────────────────────────
+
+static std::string wideToUtf8(const std::wstring& w) {
+    if (w.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(),
+                                   nullptr, 0, nullptr, nullptr);
+    std::string out(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(),
+                        out.data(), len, nullptr, nullptr);
+    return out;
+}
+
+bool captureDebugScreenshotWithReport(const std::string& dbPath, const std::string& dir) {
+    Dota2Capture cap;
+    if (!cap.findGameWindow()) return false;
+    if (cap.capturePortraits() == 0) return false;
+
+    std::filesystem::path outDir = dir.empty() ? std::filesystem::path("screenshots")
+                                                : std::filesystem::path(dir);
+    cap.saveDebugRegions(outDir);
+
+    // Своя, независимая от фонового runPortraitCapture пара recognizer/OCR —
+    // не трогаем состояние живого 250мс-цикла распознавания.
+    std::map<std::string, int> nameToId;
+    try {
+        SqliteDB db(dbPath, /*readOnly=*/true);
+        nameToId = loadHeroNameToId(db.get());
+    } catch (...) {}
+
+    auto hashFile = loadHeroHashes("hero_hashes.dat");
+    HeroRecognizer recognizer(nullptr, 0);
+    if (hashFile.loaded)
+        recognizer = HeroRecognizer(hashFile.entries.data(), hashFile.entries.size());
+
+    PosOcrRecognizer posRecognizer;
+
+    const auto& portraits    = cap.portraits();
+    const auto& posPortraits = cap.posPortraits();
+    static const char* teamNames[10] = {
+        "Radiant","Radiant","Radiant","Radiant","Radiant",
+        "Dire","Dire","Dire","Dire","Dire"
+    };
+
+    std::ofstream report((outDir / "report.txt").string(), std::ios::trunc);
+    report << "Dota Drafter -- draft recognition debug report\n"
+              "================================================\n\n"
+              "Heroes (Pearson hash match):\n";
+    for (size_t slot = 0; slot < 10; ++slot) {
+        int idx = static_cast<int>(slot % 5) + 1;
+        report << "  " << teamNames[slot] << " #" << idx << ": ";
+        if (slot >= portraits.size() || portraits[slot].empty()) {
+            report << "(no capture)\n";
+            continue;
+        }
+        HeroMatch m = recognizer.recognize(portraits[slot]);
+        if (!m.name) {
+            report << "(no hash database loaded)\n";
+            continue;
+        }
+        bool isNullHero = (std::strcmp(m.name, "null") == 0);
+        int  heroId     = isNullHero ? 0 : lookupHeroId(nameToId, m.name);
+        report << (isNullHero ? "NULL" : m.name)
+               << "  heroId=" << heroId
+               << "  score=" << std::fixed << std::setprecision(3) << m.score << "\n";
+    }
+
+    report << "\nPositions (Windows OCR):\n";
+    for (size_t slot = 0; slot < 10; ++slot) {
+        int idx = static_cast<int>(slot % 5) + 1;
+        report << "  " << teamNames[slot] << " #" << idx << ": ";
+        if (slot >= posPortraits.size() || posPortraits[slot].empty()) {
+            report << "(no capture)\n";
+            continue;
+        }
+        PosOcrRaw raw = posRecognizer.recognizeDebug(posPortraits[slot]);
+        report << "text=\"" << wideToUtf8(raw.text) << "\""
+               << "  pos=" << raw.pos
+               << "  score=" << std::fixed << std::setprecision(2) << raw.score << "\n";
+    }
+    report.close();
+
+    LOG_INFO("[screenshot] Report saved to " << (outDir / "report.txt").string());
+    return true;
 }

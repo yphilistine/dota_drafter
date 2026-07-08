@@ -381,14 +381,6 @@ void Dota2Capture::saveDebugRegions(const std::filesystem::path& dir) const {
     }
 }
 
-bool captureDebugScreenshot(const std::filesystem::path& dir) {
-    Dota2Capture cap;
-    if (!cap.findGameWindow()) return false;
-    if (cap.capturePortraits() == 0) return false;
-    cap.saveDebugRegions(dir);
-    return true;
-}
-
 void Dota2Capture::runLoop(int interval_ms) {
     running_ = true;
     while (running_) {

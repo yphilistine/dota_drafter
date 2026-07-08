@@ -11,7 +11,7 @@
 #include "gui_draw.h"
 #include "orchestrator.h"
 #include "common.h"
-#include "dota2_capture.h"
+#include "portrait_runner.h"
 
 #include <gdiplus.h>
 #include <objidl.h>
@@ -898,8 +898,8 @@ void DrawDraftPanel(float panelW) {
         ImGui::SetCursorScreenPos(bp);
         if (ImGui::InvisibleButton("##screenshotBtn", {bW, bH})) {
             std::thread([]{
-                bool ok = dota2::captureDebugScreenshot("screenshots");
-                if (ok) LOG_INFO("[screenshot] Saved draft regions to screenshots/");
+                bool ok = captureDebugScreenshotWithReport(DB_PATH, "screenshots");
+                if (ok) LOG_INFO("[screenshot] Saved draft regions + report.txt to screenshots/");
                 else    LOG_WARN("[screenshot] Dota 2 window not found — nothing captured");
             }).detach();
         }

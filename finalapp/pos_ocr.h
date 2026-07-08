@@ -213,6 +213,15 @@ static int textToPosition(const std::wstring& raw) {
 
 // ─── PosOcrRecognizer ───────────────────────────────────────────────────────
 
+// Полный результат одного OCR-прохода: та же (pos, score), что PosMatch, плюс
+// сырой распознанный текст — нужен только для report.txt кнопки [screenshot]
+// (recognize() в горячем цикле 500мс текст отбрасывает).
+struct PosOcrRaw {
+    int          pos   = 0;
+    float        score = 0.f;
+    std::wstring text;
+};
+
 class PosOcrRecognizer {
 public:
     // Порядок — от языков с реальной локализацией Dota 2/наибольшей вероятностью
@@ -243,26 +252,40 @@ public:
     bool isAvailable() const { return !engines_.empty(); }
 
     PosMatch recognize(const uint8_t* bgra, int w, int h) const {
-        if (!isAvailable() || w <= 0 || h <= 0) return {0, 0.f};
-
-        constexpr int SCALE = 4;
-        auto upscaled = upscaleBgra(bgra, w, h, SCALE);
-        int uw = w * SCALE, uh = h * SCALE;
-
-        auto bmp = bgraToSoftwareBitmap(upscaled.data(), uw, uh);
-        if (!bmp) return {0, 0.f};
-
-        for (auto& engine : engines_) {
-            auto result = tryOcr(engine, bmp);
-            if (result.pos > 0) return result;
-        }
-        return {0, 0.f};
+        auto raw = recognizeDebug(bgra, w, h);
+        return {raw.pos, raw.score};
     }
 
     template<typename BitmapT>
     PosMatch recognize(const BitmapT& bmp) const {
         if (bmp.empty()) return {0, 0.f};
         return recognize(bmp.pixels.data(), bmp.width, bmp.height);
+    }
+
+    // Тот же пайплайн, что recognize(), плюс сырой OCR-текст (для report.txt).
+    PosOcrRaw recognizeDebug(const uint8_t* bgra, int w, int h) const {
+        if (!isAvailable() || w <= 0 || h <= 0) return {};
+
+        constexpr int SCALE = 4;
+        auto upscaled = upscaleBgra(bgra, w, h, SCALE);
+        int uw = w * SCALE, uh = h * SCALE;
+
+        auto bmp = bgraToSoftwareBitmap(upscaled.data(), uw, uh);
+        if (!bmp) return {};
+
+        std::wstring firstText; // текст первого движка, если ни один не дал pos>0
+        for (auto& engine : engines_) {
+            auto raw = tryOcr(engine, bmp);
+            if (raw.pos > 0) return raw;
+            if (firstText.empty() && !raw.text.empty()) firstText = raw.text;
+        }
+        return {0, 0.f, firstText};
+    }
+
+    template<typename BitmapT>
+    PosOcrRaw recognizeDebug(const BitmapT& bmp) const {
+        if (bmp.empty()) return {};
+        return recognizeDebug(bmp.pixels.data(), bmp.width, bmp.height);
     }
 
 private:
@@ -281,16 +304,19 @@ private:
         }
     }
 
-    PosMatch tryOcr(const wmo::OcrEngine& engine, const wgi::SoftwareBitmap& bmp) const {
+    // Текст возвращается даже при pos==0 (нераспознанное ключевое слово) —
+    // нужно recognizeDebug()/report.txt, чтобы показать, что реально увидел OCR.
+    PosOcrRaw tryOcr(const wmo::OcrEngine& engine, const wgi::SoftwareBitmap& bmp) const {
         try {
             auto ocrResult = engine.RecognizeAsync(bmp).get();
             auto text = ocrResult.Text();
-            if (text.empty()) return {0, 0.f};
+            if (text.empty()) return {};
 
-            int pos = textToPosition(std::wstring(text.c_str()));
-            if (pos > 0) return {pos, 1.0f};
+            std::wstring rawText(text.c_str());
+            int pos = textToPosition(rawText);
+            return {pos, pos > 0 ? 1.0f : 0.f, rawText};
         } catch (...) {}
-        return {0, 0.f};
+        return {};
     }
 
     std::vector<wmo::OcrEngine> engines_;

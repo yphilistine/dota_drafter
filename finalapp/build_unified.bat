@@ -84,7 +84,7 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 ::   update_window.cpp       — нативное окно апдейтера (Win32, до D3D11/ImGui)
 ::   orchestrator.cpp        — фоновый оркестратор (потоки portrait/picker/GSI, livepicks)
 ::   gui_draw.cpp            — панели ImGui (Draft/Picks/Meta Heroes), кэш портретов/меты
-::   portrait_runner.cpp     — захват портретов + позиций (500мс цикл)
+::   portrait_runner.cpp     — захват портретов + позиций (250мс цикл)
 ::   overlay_button.cpp      — прозрачная кнопка [D] поверх Dota 2
 ::   common.cpp              — логирование, HTTP (curl)
 ::   playerdatafetcher.cpp   — OpenDota / STRATZ / SQLite (история матчей игрока)

@@ -167,12 +167,13 @@ GSI-таймаут: если нет обновлений > 15с — сброс �
 | `.savePortraits(dir)` | Сохранение всех портретов как PNG |
 | `.saveDebugRegions(dir)` | Сохранение портретов героев + индикаторов позиций как PNG: `radiant_hero_0..4.png`, `dire_hero_0..4.png`, `radiant_pos_0..4.png`, `dire_pos_0..4.png` (10+10 файлов, индекс — слот 0-4 внутри своей команды) |
 | `.runLoop(interval_ms)` | Цикл захвата с заданным интервалом |
-| `captureDebugScreenshot(dir="screenshots")` | Одноразовый снимок: свой `Dota2Capture` → `findGameWindow()` + `capturePortraits()` → `saveDebugRegions(dir)`. `false`, если окно Dota 2 не найдено (папка тогда не трогается). Вызывается из кнопки `[screenshot]` в `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке — диагностика при ошибке распознавания драфта |
 | `ListAllWindows()` | Диагностика: вывод всех видимых окон |
 
 HudLayout содержит координаты портретов (radiant_x_start, portrait_w, ...) и позиций (pos_x_start, pos_w, ...).
 Раскладки: `STRATEGY_LAYOUT_16_9`, `_16_10`, `_21_9`, `_4_3`.
 Диагностика (смена разрешения/раскладки, список окон) — через `LOG_INFO` (common.h), раньше `std::printf`/`std::puts`.
+
+Одноразовый диагностический снимок для кнопки `[screenshot]` (захват + сохранение PNG + распознавание + report.txt) больше не живёт здесь — это `captureDebugScreenshotWithReport` в `portrait_runner.h/.cpp` (нужны `HeroRecognizer`/`PosOcrRecognizer`, которых у этого файла нет и не должно быть — он отвечает только за захват, не за распознавание).
 
 ---
 
@@ -202,10 +203,12 @@ HudLayout содержит координаты портретов (radiant_x_st
 
 | Тип / Функция | Описание |
 |---------------|----------|
-| `PosOcrRecognizer` | Создаёт `OcrEngine` для en-US и ru (fallback — язык профиля пользователя) |
+| `PosOcrRecognizer` | Создаёт `OcrEngine` по списку языков (en-US, ru, uk, be, kk, de, pl, fr, es — от наиболее вероятного к менее; отсутствующие в Windows языковые пакеты просто выпадают), fallback — язык профиля пользователя |
 | `.isAvailable()` | true, если хотя бы один движок OCR создан |
-| `.recognize(bmp)` | Апскейл BGRA x4 → SoftwareBitmap → OCR (en, затем ru) → `textToPosition` |
-| `textToPosition(text)` | Ключевые слова EN ("safe/mid/off/soft/hard/supp/lane") и RU ("центр/мид/сложн/полн.../жёстк/лёгк/мягк/поддерж") → позиция 1-5 |
+| `.recognize(bmp)` | Апскейл BGRA x4 → SoftwareBitmap → OCR по всем движкам до первого `pos>0` → `PosMatch{pos, score}`. Реализован поверх `.recognizeDebug()` |
+| `.recognizeDebug(bmp)` | То же самое, но возвращает `PosOcrRaw{pos, score, text}` — с сырым распознанным OCR-текстом (сохраняется, даже если ключевое слово не распознано, т.е. `pos==0`). Нужен только для диагностического report.txt кнопки `[screenshot]` (`captureDebugScreenshotWithReport`, `portrait_runner.cpp`) — в горячем 250мс-цикле (`.recognize()`) текст не нужен и отбрасывается |
+| `PosOcrRaw` | `{pos, score, text}` — результат `.recognizeDebug()` |
+| `textToPosition(text)` | Ключевые слова EN ("safe/mid/off/soft/hard/supp/lane") и RU + UK/BE/KK/DE/PL/FR/ES ("центр/мид/сложн/полн.../жёстк/лёгк/мягк/поддерж" и аналоги) → позиция 1-5 |
 
 OCR либо уверенно распознаёт (score=1.0), либо возвращает pos=0 (score=0) — бинарный результат, порог `confident()` из `dhash.h` (>=0.50) здесь не критичен.
 Инклюдит `common.h` (для `LOG_INFO`) — диагностика количества доступных OCR-движков теперь через `LOG_INFO`, раньше через `std::printf` (невидимо без консоли).
@@ -232,11 +235,13 @@ GSI HTTP-сервер.
 | Функция | Описание |
 |---------|----------|
 | `loadHeroHashes(path)` | Загрузка `hero_hashes.dat` (бинарный формат) в vector<HeroHashEntry> для `HeroRecognizer` |
-| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 500мс → `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций → запись в livepicks. Тело цикла обёрнуто в try/catch на итерацию (логирует и продолжает, не убивая поток — раньше во всей функции не было ни одного try/catch). На ветке ошибки открытия БД теперь вызывается `winrt::uninit_apartment()` (раньше пропускался, в отличие от нормального пути через `cleanup:`). Диагностика — через `LOG_INFO/WARN/ERR` (раньше `printf`/`puts`, невидимые в GUI-приложении без консоли) |
+| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 250мс → `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций → запись в livepicks. Тело цикла обёрнуто в try/catch на итерацию (логирует и продолжает, не убивая поток — раньше во всей функции не было ни одного try/catch). На ветке ошибки открытия БД теперь вызывается `winrt::uninit_apartment()` (раньше пропускался, в отличие от нормального пути через `cleanup:`). Диагностика — через `LOG_INFO/WARN/ERR` (раньше `printf`/`puts`, невидимые в GUI-приложении без консоли). Гистерезис смены героя в занятом слоте: обычная смена (герой→другой герой) — только если `m.score > lastScore[slot]`; смена герой→null — отдельный фиксированный порог `score > 0.6` (сравнение с `lastScore` там почти недостижимо, т.к. там обычно лежит уверенность ~0.99 прежнего героя) |
 | `updateSlot(db, slot, heroId)` | Обновление hero в слоте livepicks |
 | `updateSlotPos(db, slot, pos)` | Обновление позиции в слоте livepicks |
 | `clearHeroSlots(db)` | Обнуление всех hero + pos слотов в livepicks |
 | `clearHeroSlot(db, slot)` | Обнуление одного hero-слота |
+| `captureDebugScreenshotWithReport(dbPath, dir="screenshots")` | Одноразовый диагностический снимок для кнопки `[screenshot]`: свой `Dota2Capture` → `findGameWindow()` + `capturePortraits()` → `saveDebugRegions(dir)` (10+10 PNG, как раньше `dota2::captureDebugScreenshot`) + **`report.txt`** — по каждому герою-слоту: распознанное имя (или `NULL`) / `heroId` / Pearson-score; по каждому позиционному слоту: сырой OCR-текст (`.recognizeDebug()` из `pos_ocr.h`), итоговая позиция и score. Использует свою, независимую от фонового `runPortraitCapture`, пару `HeroRecognizer`/`PosOcrRecognizer` (не трогает состояние живого 250мс-цикла). `false`, если окно Dota 2 не найдено или кадр не захвачен (папка тогда не трогается). Вызывается из `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке |
+| `wideToUtf8(w)` | `std::wstring` → UTF-8 `std::string` через `WideCharToMultiByte` — нужен, чтобы записать сырой OCR-текст (может быть на любом из 9 поддерживаемых языков) в `report.txt` |
 
 Распознавание позиций: только для своей команды (manualPos override > screen capture > 0). Вражеские позиции = 0.
 
@@ -411,7 +416,7 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 |---------|----------|
 | `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Friend ID |
 | `DrawStatusBar(fullW)` | Полоса статуса: Player data (no ID/pending/fetching/ready/error) + Refresh + Game phase + match ID. При `phase1Error` теперь показывает реальный `phase1Msg`, а не захардкоженную заглушку "error" |
-| `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb. Кнопка `[screenshot]` справа от заголовка секции ("DRAFT PHASE"/"STRATEGY PHASE") — оформлена как position-бейдж (тот же rect/border/text через ImDrawList + InvisibleButton, что и `SectionLabelWithPosBadge`), а не нативная ImGui-кнопка. По клику на отдельном потоке вызывает `dota2::captureDebugScreenshot("screenshots")` (dota2_capture.h/.cpp): сохраняет 10 регионов героев + 10 регионов позиций текущего кадра HUD в папку `screenshots\` рядом с exe (создаётся инсталлятором). Тултип "Press in case of draft recognition error" — диагностика, когда портреты/позиции распознаются неверно |
+| `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb. Кнопка `[screenshot]` справа от заголовка секции ("DRAFT PHASE"/"STRATEGY PHASE") — оформлена как position-бейдж (тот же rect/border/text через ImDrawList + InvisibleButton, что и `SectionLabelWithPosBadge`), а не нативная ImGui-кнопка. По клику на отдельном потоке вызывает `captureDebugScreenshotWithReport(DB_PATH, "screenshots")` (portrait_runner.h/.cpp): сохраняет 10 регионов героев + 10 регионов позиций текущего кадра HUD + `report.txt` (распознанное имя/score героя на слот, сырой OCR-текст/позиция/score на позиционный слот) в папку `screenshots\` рядом с exe (создаётся инсталлятором). Тултип "Press in case of draft recognition error" — диагностика, когда портреты/позиции распознаются неверно |
 | `DrawPicksPanel(panelW)` | Средняя панель: рекомендации top-10 / выбранный герой (ML) |
 | `DrawMetaHeroesPanel(panelW)` | Правая панель: топ-10 героев по популярности (STRATZ, сумма матчей, без ML), винрейт — вторичная цветная метрика. Оформление как у DrawPicksPanel. Бейдж позиции кликабелен всегда, не только во время игры: вне игры — это локальное превью меты (`SetMetaPreviewPosition`/`s_metaPreviewPos`, без livepicks/оркестратора), с началом реального драфта/матча панель переключается на настоящую позицию (`g_pickerState.ourPosition`, клик вызывает `SetOurPosition`, как в Draft/Picks) — превью полностью вытесняется. Когда наш герой выбран — вместо топ-10 показывает единственную выделенную строку "YOUR HERO" из нефильтрованного `g_metaHeroLookup` (виден даже без прохождения 1%-порога) |
 | `DrawHeroStatRow(rowW, params)` | Общая строка героя со статистикой (портрет/имя/вторичная стата/win%+бар). Раньше — две почти идентичные лямбды `DrawPickRow`/`DrawMetaRow`, продублированные в DrawPicksPanel/DrawMetaHeroesPanel; теперь общая функция + `HeroStatRowParams` (secondaryStats — предформатированная строка, пустая = без колонки статы) |
@@ -449,7 +454,7 @@ Inno Setup скрипт полной установки/апдейта прил�
 
 `[InstallDelete] Type: filesandordirs; Name: "{app}\assets"` — папка `assets` полностью удаляется **перед** копированием новых файлов. Нужно, т.к. `[Files]` с маской `assets\*.png` в Inno Setup только добавляет/перезаписывает файлы, совпадающие с источником, но никогда не удаляет из `{app}\assets` файлы, пропавшие из источника (переименованный/убранный герой) — без этого шага устаревшие PNG копились бы в установке пользователя при каждом обновлении приложения.
 
-`[Dirs] Name: "{app}\screenshots"` — пустая папка создаётся при установке для кнопки `[screenshot]` (`DrawDraftPanel`, gui_draw.cpp): туда сохраняются 10 регионов героев + 10 регионов позиций при диагностике ошибки распознавания драфта (см. `dota2_capture.h/.cpp`, `captureDebugScreenshot`).
+`[Dirs] Name: "{app}\screenshots"` — пустая папка создаётся при установке для кнопки `[screenshot]` (`DrawDraftPanel`, gui_draw.cpp): туда сохраняются 10 регионов героев + 10 регионов позиций + `report.txt` при диагностике ошибки распознавания драфта (см. `portrait_runner.h/.cpp`, `captureDebugScreenshotWithReport`).
 
 `gamestate_integration_dota2.cfg`: `"heartbeat" "5.0"` (было `30.0`) — Dota 2 шлёт GSI-обновление раз в 5с даже без изменений в состоянии игры. Важно: старое значение 30.0 было **больше** watchdog-таймаута оркестратора (15с, `readGameStateWithTimeoutWatchdog` в orchestrator.cpp) — во время затишья в игре (без смены фазы/heroId) обновления от Dota могли не приходить дольше 15с, и watchdog мог ложно сбрасывать статус на IDLE, хотя GSI-соединение оставалось живым. 5.0 < 15с исключает этот сценарий.
 

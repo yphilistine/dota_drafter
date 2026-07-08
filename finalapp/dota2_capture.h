@@ -234,10 +234,4 @@ private:
 // Диагностика: вывод всех видимых окон с именами классов
 void ListAllWindows();
 
-// Одноразовый снимок текущего кадра HUD (найти окно + захватить + сохранить
-// 10 регионов героев + 10 регионов позиций в dir) — для кнопки [screenshot]
-// в GUI ("press in case of draft recognition error"). Возвращает false, если
-// окно Dota 2 не найдено или кадр не захвачен (dir тогда не создаётся).
-bool captureDebugScreenshot(const std::filesystem::path& dir = "screenshots");
- 
 } // namespace dota2
