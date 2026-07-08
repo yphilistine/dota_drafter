@@ -291,9 +291,17 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
                 if (detectedId != lastHeroId[slot]) {
                     bool slotEmpty   = (lastHeroId[slot] == 0);
-                    bool shouldUpdate = slotEmpty
-                        ? (detectedId > 0)
-                        : (m.score > lastScore[slot]);
+                    bool shouldUpdate;
+                    if (slotEmpty) {
+                        shouldUpdate = (detectedId > 0);
+                    } else if (detectedId == 0) {
+                        // Занятый слот → null: lastScore там — уверенность прежнего
+                        // героя (часто ~0.99), с ней null почти никогда не сравнится,
+                        // поэтому для этого перехода свой фиксированный порог.
+                        shouldUpdate = (m.score > 0.6f);
+                    } else {
+                        shouldUpdate = (m.score > lastScore[slot]);
+                    }
 
                     if (shouldUpdate) {
                         if (detectedId == 0) {
