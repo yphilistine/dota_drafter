@@ -10,7 +10,7 @@
 2. **DataFetcher** (фаза 1b) — загрузка данных игрока (OpenDota, STRATZ → SQLite), требует accountId
 3. **GSI-сервер** — приём состояния игры от Dota 2 через Game State Integration
 4. **Portrait capture** — захват портретов HUD + распознавание героев и позиций (без accountId)
-5. **Picker** — ML-рекомендации CatBoost (требует accountId для mastery)
+5. **Picker** — ML-рекомендации CatBoost (требует accountId — оркестратор гейтит запуск по accountId; сама модель, Component A, от аккаунта не зависит, см. `dota_picker.cpp` в списке файлов и раздел "ML-модель (CatBoost)")
 
 Ключевой принцип: portrait capture и отображение драфта работают **без accountId**.
 Picker (модель + рекомендации) запускается только при наличии accountId.
@@ -265,21 +265,31 @@ GSI HTTP-сервер.
 ---
 
 ### dota_picker.cpp
-ML-пикер: CatBoost инференс + рекомендации героев.
+ML-пикер: CatBoost инференс + рекомендации героев. Component A (командная
+CatBoost-модель, "чисто про драфт") + Component B (персональная поправка,
+портирована из `personal_score.py` датафетчер-репо) — см. `plan.md` в
+датафетчер-репо, миграция на 127-признаковый контракт завершена.
 
 | Функция / Класс | Описание |
 |------------------|----------|
-| `FeatureVector` | 10 категориальных + 42 числовых признака для CatBoost |
-| `buildVector(v, lp, ...)` | Заполнение вектора признаков из LivePick + matchup-данных + mastery |
+| `FeatureVector` | 10 категориальных + **117** числовых признаков для CatBoost (было 42 в дореформенной версии) |
+| `TeamAgg` / `computeTeamAgg(...)` | Агрегаты по стороне (n_revealed, mean/std vs_adv/with_adv/global_wr/pick_rate, best_vs_max, worst_vs_min) — портирует `_team_aggregates` из `draft_features.py` |
+| `heroDimPresence(hid, md, presence[5])` | Доля игр героя по 5 ролевым размерностям (core/support/safe/mid/off), из `md.hero_pos_games` — портирует `_hero_dim_presence` |
+| `teamComposition(base, ids, positions, md, out[5])` | Дефицит ролевой формы стороны: `-max(0, target-filled)/target` на размерность — портирует `_team_composition` |
+| `buildVector(v, lp, hero_map, md, candidate_hero_id)` | Заполнение вектора Component A: global_wr → vs_adv → with_adv → hero_pos_wr → best_vs → worst_vs → pick_rate → best_with → worst_with → team aggregates(17) → composition(10), порядок побитово соответствует `ALL_FEATURES` в `draft_features.py`. Без mastery и без `our_stats` — параметр убран из сигнатуры |
+| `personalAdjustment(hero_id, pos, heroAlltime, heroRanked, heroPos, basePosStats)` | Component B: персональная поправка (all-time WR + recent-ranked "форма" + comfort-бонус за наигранность, сглаживание к `base_wr`). База `base_wr` — из `immortal_map` (живая STRATZ-стата), а не из `immortalherostats` (та таблица удалена, см. ниже) |
+| `combinePersonal(pOurs, adj, beta)` | `sigmoid(logit(p_ours) + beta*adj)`. `PERSONAL_BETA = 0.0f` — как в Python, по калибровке (`calibrate_personal.py` не нашёл прироста accuracy при beta>0) слой посчитан и подключён к ранжированию, но эффективно выключен |
 | `ModelHandle` | RAII для `ModelCalcerHandle*` (CatBoost C API) — раньше модель освобождалась вручную только на пути нормального завершения цикла, при исключении посреди инференса память утекала |
 | `loadHeroes(db)` | SQLite → map\<id, name\> (через общие `SqliteDB`/`SqliteStmt` из common.h) |
-| `loadMatchupData(dataDb)` | Data DB → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr) |
-| `loadImmortalHeroStats(db, pos)` | Player DB, таблица `stats` (живой STRATZ, DIVINE_IMMORTAL) → map\<hero_id, PickerHeroStat\>. Порог отсечения — динамический: 1% от суммарных игр на позиции за неделю (не фиксированное число) |
-| `loadPlayerStats(db, account_id)` | Player DB → map\<hero_id, PlayerStats\> |
+| `loadMatchupData(dataDb)` | Data DB → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr, **hero_pos_games**, pick_rates). `hero_pos_wr.games` грузится отдельным запросом от `wr` — на БД со старой схемой (`schema_version=1`, без колонки `games`) падает только этот запрос, `hero_pos_wr` остаётся рабочим, composition деградирует до нулевого presence вместо падения |
+| `loadImmortalHeroStats(db, pos)` | Player DB, таблица `stats` (живой STRATZ, DIVINE_IMMORTAL) → map\<hero_id, PickerHeroStat\>. Порог отсечения — динамический: 1% от суммарных игр на позиции за неделю. Двойное назначение: пул кандидатов + источник `base_wr` для Component B |
+| `loadPlayerStats(db, account_id)` | Player DB, `playerheroes` → map\<hero_id, PlayerStats\> (all-time). Источник `heroAlltime` для Component B |
+| `loadPlayerHeroesRanked(db, account_id)` | Player DB, `playerheroesranked` → map\<hero_id, PlayerStats\>. Источник "формы" (recent ranked) для Component B |
+| `loadPlayerHeroPos(db, account_id)` | Player DB, `relevantplayerherobyposstats` → map\<(hero_id,pos), PlayerStats\>, без фильтра по позиции. Источник перс. WR hero+pos для Component B |
 | `loadLatestLivePick(db, lp)` | Последняя строка livepicks → LivePick |
-| `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(radiant_win) |
-| `renderToGui(state, lp, ...)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) + inferenceGen++ |
-| `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс |
+| `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(radiant_win) (сырая, ещё не ориентированная под сторону/персонализацию) |
+| `renderToGui(state, lp, hero_map, md, our_stats, our_stats_ranked, our_stats_pos, immortal_map, model)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) + inferenceGen++. Ранжирование кандидатов и `winProb` уже выбранного героя проходят через `combinePersonal` (Component B) |
+| `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс. При смене `account_id` перезагружает `our_stats`/`our_stats_ranked`/`our_stats_pos` |
 
 Matchup-данные читаются из `{modelPath}_data.db` (отдельная БД). Immortal/мета-стата — из `playerandlivestats.db` (`stats`), не из data.db.
 Schema gate: перед загрузкой модели проверяет `meta.schema_version == kSupportedSchema` (мета-стата в схему не входит — `buildVector` её не использует).
@@ -479,6 +489,11 @@ Inno Setup скрипт полной установки/апдейта прил�
 
 ### draft_helper_abstract_data.db — данные модели
 
+`schema_version = 2` (было 1) — бампнуто вместе с миграцией на 127-признаковый
+контракт, см. `plan.md` в датафетчер-репо. Генерируется из PostgreSQL скриптом
+`create_db.py` (датафетчер-репо), а не вручную — считает те же формулы/приоры
+сглаживания, что и Python serve-сторона (`draft_features.py`).
+
 | Таблица | Ключ | Описание |
 |---------|------|----------|
 | `meta` | key | Метаданные: `schema_version`, `data_version` |
@@ -486,9 +501,10 @@ Inno Setup скрипт полной установки/апдейта прил�
 | `vs_wr` | (hero_id, opp_hero_id) | Пайрвайзный winrate hero vs hero (prior=20) |
 | `with_wr` | (hero_id, ally_hero_id) | Пайрвайзный winrate hero with hero (prior=20) |
 | `modal_pos` | hero_id | Модальная позиция героя (1-5) |
-| `hero_pos_wr` | (hero_id, pos) | Winrate героя на позиции (prior=50) |
+| `hero_pos_wr` | (hero_id, pos) | Winrate героя на позиции (prior=50) + **`games`** (сырое число игр, новая колонка в schema_version=2 — нужна composition/role-shape фиче на C++-стороне) |
+| `pick_rates` | hero_id | Доля пиков героя в мете |
 
-`immortalherostats` больше не входит в эту БД — удалена (`DROP TABLE`, была статичной, без автообновления). Immortal/мета-стата теперь живая и лежит в `playerandlivestats.db` (`stats`).
+`immortalherostats` больше не входит в эту БД — удалена (`DROP TABLE`, была статичной, без автообновления). Immortal/мета-стата теперь живая и лежит в `playerandlivestats.db` (`stats`) — Component B (`dota_picker.cpp`) использует её и как пул кандидатов, и как источник `base_wr` для персональной поправки.
 
 ---
 
@@ -552,33 +568,70 @@ VS Code Tasks: "Release App", "Release Data", "Update Assets".
 
 ## ML-модель (CatBoost)
 
-Одна модель: `draft_helper_abstract.cbm`.
-Данные модели: `draft_helper_abstract_data.db`.
+Одна модель: `draft_helper_abstract.cbm` (127-признаковый контракт, синхронизирован
+с Python-проектом `draft_features.py` в датафетчер-репо — см. `plan.md` там же).
+Данные модели: `draft_helper_abstract_data.db` (`schema_version=2`).
 
-Вход: **10 категориальных** (имена героев) + **42 числовых** признака.
-Выход: logit → sigmoid → P(radiant_win).
+Вход: **10 категориальных** (имена героев) + **117 числовых** признаков (Component A,
+"чисто про драфт", без mastery). Выход Component A: logit → sigmoid → P(radiant_win).
+Поверх — Component B (персонализация, опционально): `sigmoid(logit(p_ours) +
+beta*personal_adj)`, `beta` по умолчанию 0 (см. `dota_picker.cpp` в списке файлов
+выше).
 
-### Вектор признаков (buildVector)
+### Вектор признаков Component A (buildVector)
+
+Порядок побитово соответствует `ALL_FEATURES` из `draft_features.py`:
 
 | Индексы | Группа | Размер | Описание |
 |---------|--------|--------|----------|
 | cat 0-4 | r_hero | 5 cat | Имена героев Radiant. `"unknown"` для пустых |
 | cat 5-9 | d_hero | 5 cat | Имена героев Dire |
-| flt 0-29 | matchup | 30 | По 3 на слот: global_wr, avg_vs, avg_with |
-| flt 30 | mastery_wr | 1 | Smoothed WR игрока на герое-кандидате (prior=30) |
-| flt 31 | mastery_games | 1 | log1p(games) игрока на кандидате |
-| flt 32-41 | hero_pos_wr | 10 | WR героя на позиции. Своя команда = из livepicks, враг = modal_pos |
+| flt 0-9 | global_wr | 10 | Smoothed winrate героя (prior=100) |
+| flt 10-19 | vs_adv | 10 | Среднее (pairwise_wr - global_wr) против раскрытых врагов |
+| flt 20-29 | with_adv | 10 | Среднее (pairwise_wr - global_wr) с раскрытыми союзниками |
+| flt 30-39 | hero_pos_wr | 10 | WR героя на позиции. Своя команда = из livepicks, враг = modal_pos |
+| flt 40-49 | best_vs | 10 | Макс. vs_adv среди врагов |
+| flt 50-59 | worst_vs | 10 | Мин. vs_adv среди врагов |
+| flt 60-69 | pick_rate | 10 | Доля пиков героя в мете |
+| flt 70-79 | best_with | 10 | Макс. with_adv среди союзников |
+| flt 80-89 | worst_with | 10 | Мин. with_adv среди союзников |
+| flt 90-106 | team aggregates | 17 | На сторону: n_revealed, mean/std vs_adv/with_adv/global_wr, mean_pick_rate, best_vs_max, worst_vs_min (метрика-внешний/сторона-внутренний цикл) + `team_vs_adv_diff` |
+| flt 107-116 | composition/role-shape | 10 | Дефицит ролевой формы (`{r,d}_p_{core,support,safe,mid,off}`), сторона-внешний/dim-внутренний цикл |
 
-**Итого**: 10 categorical + 42 float = 52 признака.
+**Итого**: 10 categorical + 117 float = 127 признаков. Mastery (было flt 30-31 в
+дореформенной версии) убрана из Component A целиком — перенесена в Component B
+(см. ниже), которая живёт вне feature-контракта модели.
 
 ### Matchup-фичи (per slot)
 
 - `global_wr`: smoothed winrate героя из `global_wr` таблицы
-- `avg_vs`: среднее vs_wr против раскрытых врагов (из `vs_wr` таблицы)
-- `avg_with`: среднее with_wr с раскрытыми союзниками (из `with_wr` таблицы)
-- Для пустых слотов: все значения = 0.5
+- `vs_adv`: pairwise_wr (из `vs_wr`) минус собственный `global_wr` слота — нормализованное преимущество/слабость против конкретного врага, не просто "герой сильный"
+- `with_adv`: аналогично, но с союзниками (`with_wr`)
+- `best_vs`/`worst_vs`/`best_with`/`worst_with`: max/min по врагам/союзникам поверх тех же массивов — экстремумы не размываются средним
+- Для пустых слотов: все значения = 0.5 (wr) / 0.0 (adv/extremes)
 
 ### Позиции
 
 - Своя команда: из livepicks (screen capture или GUI manual override)
 - Вражеская команда: из `modal_pos` таблицы (модальная позиция героя)
+
+### Component B — персонализация
+
+Портирована из `personal_score.py` (датафетчер-репо), живёт вне feature-контракта
+Component A — пересчитывает готовый `p_team` на инференсе, не трогает `.cbm`/`_data.db`.
+
+```
+adj = W_ALLTIME*(smoothed_alltime - base_wr) + W_RANKED*(smoothed_ranked - base_wr) + comfort
+final = sigmoid(logit(p_ours) + beta * adj)
+```
+
+- `smoothed_alltime`/`smoothed_ranked` — перс. WR (hero+pos если >=3 игр, иначе
+  hero all-time) и recent-ranked "форма", сглаженные к `base_wr` с приорами
+  `PERSONAL_PRIOR_ALLTIME=40`/`PERSONAL_PRIOR_RANKED=15`
+- `comfort` — `min(0.03, 0.01 * log1p(games_all))`, бонус за наигранность
+- `base_wr` — из `immortal_map` (живая STRATZ-стата `stats`, не из удалённой
+  `immortalherostats`), порог доверия `PERSONAL_BASE_WR_MIN_GAMES=200` игр
+- `beta` — константа `PERSONAL_BETA=0.0f` в `dota_picker.cpp`. Как и в Python
+  (`calibrate_personal.py`), калибровка не нашла прироста accuracy при `beta>0`
+  ни на одном протестированном приоре — слой посчитан и подключён к
+  ранжированию/`winProb`, но эффективно выключен, пока константу не поменяют.

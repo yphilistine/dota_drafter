@@ -2,11 +2,27 @@
  * dota_picker.cpp — ML-пикер: CatBoost инференс + рекомендации героев.
  *
  * Модель: draft_helper_abstract.cbm (одна, все фазы драфта).
- * Данные: draft_helper_abstract_data.db (matchup, modal_pos, hero_pos_wr).
+ * Данные: draft_helper_abstract_data.db (matchup, modal_pos, hero_pos_wr, pick_rates).
  * Мета-стата (immortal, DIVINE_IMMORTAL): playerandlivestats.db, таблица `stats`
  * (живой STRATZ heroStats, обновляется фазой 1a при каждом старте — см. datafetcher.cpp).
- * Фичи: 10 cat (hero names) + 42 float (30 matchup + 2 mastery + 10 hero_pos_wr).
- * Требует accountId для mastery-фич.
+ *
+ * Фичи: 10 cat (hero names) + 117 float, порядок побитово соответствует
+ * ALL_FEATURES из draft_features.py (datafetcher-репо, Python-сторона модели):
+ *   global_wr(10) → vs_adv(10) → with_adv(10) → hero_pos_wr(10) →
+ *   best_vs(10) → worst_vs(10) → pick_rate(10) → best_with(10) → worst_with(10) →
+ *   team aggregates(17) → composition/role-shape(10)
+ * Без mastery в самом векторе — Component A "чисто про драфт", без привязки к
+ * аккаунту. Персонализация (Component B, portировано из personal_score.py,
+ * датафетчер-репо) применяется ПОСЛЕ модели: sigmoid(logit(p_ours) + beta*adj),
+ * см. personalAdjustment/combinePersonal ниже. beta по умолчанию 0.0 — датафетчер
+ * `calibrate_personal.py` не нашёл прироста accuracy при beta>0 ни при одном
+ * протестированном приоре сглаживания; Component B посчитан и подключён к
+ * ранжированию, но эффективно выключен, пока PERSONAL_BETA не поменяют осознанно.
+ *
+ * Composition/role-shape нужен hero_pos_wr.games (raw), которого в старых
+ * draft_helper_abstract_data.db (schema_version=1) нет — loadMatchupData тянет
+ * его отдельным запросом и деградирует до нулевого presence (макс. дефицит по
+ * всем измерениям), если колонки нет, вместо падения.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -37,8 +53,6 @@
 static const char* UNKNOWN_HERO      = "unknown";
 static constexpr int TOP_N           = 10;
 static constexpr int POLL_INTERVAL_MS = 500;
-
-static constexpr float MASTERY_PRIOR = 30.0f;
 
 // ─── Внутренние структуры ────────────────────────────────────────────────────
 
@@ -75,12 +89,114 @@ struct MatchupData {
     std::map<std::pair<int,int>, float> with_wr;
     std::map<int, int> modal_pos;
     std::map<std::pair<int,int>, float> hero_pos_wr;
+    std::map<std::pair<int,int>, int>   hero_pos_games; // raw games — для composition
     std::map<int, float> pick_rates;
 };
 
+// ─── Team aggregates helper ──────────────────────────────────────────────────
+
+struct TeamAgg {
+    int n=0;
+    float meanVs=0.f, meanWith=0.f, meanGwr=0.5f, stdGwr=0.f, meanPr=0.f,
+          bestVsMax=0.f, worstVsMin=0.f;
+};
+
+// base=0 → слоты 0..4 (radiant), base=5 → слоты 5..9 (dire). Портирует
+// _team_aggregates из draft_features.py: при n==0 — те же дефолты
+// (meanGwr=0.5, остальное 0), иначе среднее/std по раскрытым слотам стороны.
+static TeamAgg computeTeamAgg(int base, const int ids[10], const float gwr[10],
+    const float vsAdvAvg[10], const float withAdvAvg[10], const float vsAdvBest[10],
+    const float vsAdvWorst[10], const float pickrate[10])
+{
+    TeamAgg a;
+    float sumVs=0.f, sumWith=0.f, sumGwr=0.f, sumPr=0.f;
+    bool first = true;
+    for (int i = 0; i < 5; ++i) {
+        int s = base + i;
+        if (!ids[s]) continue;
+        ++a.n;
+        sumVs += vsAdvAvg[s]; sumWith += withAdvAvg[s]; sumGwr += gwr[s]; sumPr += pickrate[s];
+        if (first) { a.bestVsMax = vsAdvBest[s]; a.worstVsMin = vsAdvWorst[s]; first = false; }
+        else {
+            if (vsAdvBest[s]  > a.bestVsMax)  a.bestVsMax  = vsAdvBest[s];
+            if (vsAdvWorst[s] < a.worstVsMin) a.worstVsMin = vsAdvWorst[s];
+        }
+    }
+    if (a.n == 0) return a;
+    a.meanVs = sumVs / a.n; a.meanWith = sumWith / a.n;
+    a.meanGwr = sumGwr / a.n; a.meanPr = sumPr / a.n;
+    float var = 0.f;
+    for (int i = 0; i < 5; ++i) {
+        int s = base + i;
+        if (!ids[s]) continue;
+        float d = gwr[s] - a.meanGwr;
+        var += d * d;
+    }
+    a.stdGwr = std::sqrt(var / a.n);
+    return a;
+}
+
+// ─── Composition / role-shape helper ─────────────────────────────────────────
+// Портирует _team_composition/_hero_dim_presence из draft_features.py дословно.
+// ROLE_DIMS порядок: core, support, safe, mid, off.
+
+static constexpr int N_ROLE_DIMS = 5;
+static constexpr float DIM_TARGET[N_ROLE_DIMS] = {3.f, 2.f, 2.f, 1.f, 2.f};
+// POS_DIMS_MASK[pos], pos=1..5 (0 не используется) — бит i = вклад в dim i.
+static constexpr int POS_DIMS_MASK[6] = {
+    0,
+    (1<<0)|(1<<2), // pos1 carry:        core, safe
+    (1<<0)|(1<<3), // pos2 mid:          core, mid
+    (1<<0)|(1<<4), // pos3 offlane:      core, off
+    (1<<1)|(1<<4), // pos4 soft support: support, off
+    (1<<1)|(1<<2), // pos5 hard support: support, safe
+};
+
+// presence(hero, dim) = доля игр героя (по всем позициям) в данной ролевой
+// размерности. Без данных по герою (games=0 везде) — все 0, деградация
+// graceful (не UB, не exception) для старых БД без колонки hero_pos_wr.games.
+static void heroDimPresence(int hid, const MatchupData& md, float presence[N_ROLE_DIMS]) {
+    int games[6] = {}; int total = 0;
+    for (int p = 1; p <= 5; ++p) {
+        auto it = md.hero_pos_games.find({hid, p});
+        games[p] = (it != md.hero_pos_games.end()) ? it->second : 0;
+        total += games[p];
+    }
+    for (int i = 0; i < N_ROLE_DIMS; ++i) presence[i] = 0.f;
+    if (total <= 0) return;
+    float freq[6];
+    for (int p = 1; p <= 5; ++p) freq[p] = (float)games[p] / (float)total;
+    presence[0] = freq[1] + freq[2] + freq[3]; // core
+    presence[1] = freq[4] + freq[5];           // support
+    presence[2] = freq[1] + freq[5];           // safe
+    presence[3] = freq[2];                     // mid
+    presence[4] = freq[3] + freq[4];           // off
+}
+
+// out[d] = -max(0, target(d) - filled(d)) / target(d) — 0 = размерность
+// закрыта (или переукомплектована), -1 = совсем не закрыта.
+static void teamComposition(int base, const int ids[10], const int positions[10],
+    const MatchupData& md, float out[N_ROLE_DIMS])
+{
+    float filled[N_ROLE_DIMS] = {};
+    for (int i = 0; i < 5; ++i) {
+        int s = base + i;
+        if (!ids[s] || positions[s] <= 0) continue;
+        float presence[N_ROLE_DIMS];
+        heroDimPresence(ids[s], md, presence);
+        int mask = POS_DIMS_MASK[positions[s]];
+        for (int d = 0; d < N_ROLE_DIMS; ++d)
+            if (mask & (1 << d)) filled[d] += presence[d];
+    }
+    for (int d = 0; d < N_ROLE_DIMS; ++d) {
+        float deficit = std::max(0.f, DIM_TARGET[d] - filled[d]) / DIM_TARGET[d];
+        out[d] = -deficit;
+    }
+}
+
 // ─── Вектор признаков для CatBoost ───────────────────────────────────────────
 
-static constexpr int N_CAT=10, N_FLOAT=72;
+static constexpr int N_CAT=10, N_FLOAT=117;
 struct FeatureVector {
     std::string cat_str[N_CAT];
     const char* cat[N_CAT];
@@ -91,7 +207,6 @@ struct FeatureVector {
 static void buildVector(FeatureVector& v, const LivePick& lp,
     const std::map<int,std::string>& hero_map,
     const MatchupData& md,
-    const std::map<int,PlayerStats>& our_stats,
     int candidate_hero_id)
 {
     int our_r = (lp.our_side==1) ? (lp.our_slot-1) : -1;
@@ -130,7 +245,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     for (int i = 0; i < 10; ++i)
         v.cat_str[i] = hero_name(ids[i]);
 
-    // Precompute global_wr per slot
+    // ── Per-slot precompute: global_wr ──
     float gwr[10];
     for (int s = 0; s < 10; ++s) {
         gwr[s] = 0.5f;
@@ -140,117 +255,101 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         }
     }
 
-    // Precompute per-slot vs_adv arrays for best/worst
-    float vs_adv_arr[10][5];
-    int   vs_adv_cnt[10] = {};
+    // ── Per-slot precompute: vs_adv / with_adv raw arrays (для avg+best+worst) ──
+    float vs_adv_arr[10][5];   int vs_adv_cnt[10] = {};
+    float with_adv_arr[10][5]; int with_adv_cnt[10] = {};
     for (int s = 0; s < 10; ++s) {
         if (!ids[s]) continue;
         int enemyStart = (s < 5) ? 5 : 0;
         for (int e = enemyStart; e < enemyStart + 5; ++e) {
             if (!ids[e]) continue;
             auto it = md.vs_wr.find({ids[s], ids[e]});
-            if (it != md.vs_wr.end()) {
+            if (it != md.vs_wr.end())
                 vs_adv_arr[s][vs_adv_cnt[s]++] = it->second - gwr[s];
+        }
+        int allyStart = (s < 5) ? 0 : 5;
+        for (int a = allyStart; a < allyStart + 5; ++a) {
+            if (a == s || !ids[a]) continue;
+            auto it = md.with_wr.find({ids[s], ids[a]});
+            if (it != md.with_wr.end())
+                with_adv_arr[s][with_adv_cnt[s]++] = it->second - gwr[s];
+        }
+    }
+
+    // ── Per-slot reduce: avg/best/worst для vs_adv и with_adv ──
+    float vs_adv_avg[10]={}, vs_adv_best[10]={}, vs_adv_worst[10]={};
+    float with_adv_avg[10]={}, with_adv_best[10]={}, with_adv_worst[10]={};
+    for (int s = 0; s < 10; ++s) {
+        if (vs_adv_cnt[s] > 0) {
+            float sum = 0.f, best = vs_adv_arr[s][0], worst = vs_adv_arr[s][0];
+            for (int j = 0; j < vs_adv_cnt[s]; ++j) {
+                sum += vs_adv_arr[s][j];
+                if (vs_adv_arr[s][j] > best)  best  = vs_adv_arr[s][j];
+                if (vs_adv_arr[s][j] < worst) worst = vs_adv_arr[s][j];
             }
+            vs_adv_avg[s] = sum / vs_adv_cnt[s];
+            vs_adv_best[s] = best; vs_adv_worst[s] = worst;
         }
-    }
-
-    int fi = 0;
-
-    // ── [0..9] 10 global_wr ──
-    for (int s = 0; s < 10; ++s)
-        v.flt[fi++] = ids[s] ? gwr[s] : 0.5f;
-
-    // ── [10..19] 10 vs_adv: avg(pairwise_wr - global_wr) vs enemies ──
-    for (int s = 0; s < 10; ++s) {
-        float val = 0.f;
-        if (ids[s] && vs_adv_cnt[s] > 0) {
-            float sum = 0.f;
-            for (int j = 0; j < vs_adv_cnt[s]; ++j) sum += vs_adv_arr[s][j];
-            val = sum / vs_adv_cnt[s];
-        }
-        v.flt[fi++] = val;
-    }
-
-    // ── [20..29] 10 with_adv: avg(pairwise_wr - global_wr) with allies ──
-    for (int s = 0; s < 10; ++s) {
-        float val = 0.f;
-        if (ids[s]) {
-            int allyStart = (s < 5) ? 0 : 5;
-            float sum = 0.f; int cnt = 0;
-            for (int a = allyStart; a < allyStart + 5; ++a) {
-                if (a == s || !ids[a]) continue;
-                auto it = md.with_wr.find({ids[s], ids[a]});
-                if (it != md.with_wr.end()) {
-                    sum += it->second - gwr[s];
-                    ++cnt;
-                }
+        if (with_adv_cnt[s] > 0) {
+            float sum = 0.f, best = with_adv_arr[s][0], worst = with_adv_arr[s][0];
+            for (int j = 0; j < with_adv_cnt[s]; ++j) {
+                sum += with_adv_arr[s][j];
+                if (with_adv_arr[s][j] > best)  best  = with_adv_arr[s][j];
+                if (with_adv_arr[s][j] < worst) worst = with_adv_arr[s][j];
             }
-            if (cnt > 0) val = sum / cnt;
-        }
-        v.flt[fi++] = val;
-    }
-
-    // ── [30..31] 2 mastery: target hero ──
-    int target_hid = 0;
-    if (our_r >= 0 && our_r < 5) target_hid = ids[our_r];
-    if (our_d >= 0 && our_d < 5) target_hid = ids[5+our_d];
-
-    float mastery_wr = 0.5f;
-    float mastery_games = 0.f;
-    if (target_hid) {
-        auto it = our_stats.find(target_hid);
-        if (it != our_stats.end()) {
-            float g = (float)it->second.games;
-            float w = (float)it->second.wins;
-            mastery_wr    = (w + MASTERY_PRIOR * 0.5f) / (g + MASTERY_PRIOR);
-            mastery_games = std::log1p(g);
+            with_adv_avg[s] = sum / with_adv_cnt[s];
+            with_adv_best[s] = best; with_adv_worst[s] = worst;
         }
     }
-    v.flt[fi++] = mastery_wr;
-    v.flt[fi++] = mastery_games;
 
-    // ── [32..41] 10 hero_pos_wr ──
+    // ── Per-slot precompute: hero_pos_wr, pick_rate ──
+    float hpwr[10], pickrate[10];
     for (int s = 0; s < 10; ++s) {
-        float hpwr = 0.5f;
+        hpwr[s] = 0.5f;
         if (ids[s] && positions[s] > 0) {
             auto it = md.hero_pos_wr.find({ids[s], positions[s]});
-            if (it != md.hero_pos_wr.end()) hpwr = it->second;
+            if (it != md.hero_pos_wr.end()) hpwr[s] = it->second;
         }
-        v.flt[fi++] = ids[s] ? hpwr : 0.5f;
-    }
-
-    // ── [42..51] 10 best_vs: max(vs_adv) across enemies ──
-    for (int s = 0; s < 10; ++s) {
-        float val = 0.f;
-        if (ids[s] && vs_adv_cnt[s] > 0) {
-            val = vs_adv_arr[s][0];
-            for (int j = 1; j < vs_adv_cnt[s]; ++j)
-                if (vs_adv_arr[s][j] > val) val = vs_adv_arr[s][j];
-        }
-        v.flt[fi++] = val;
-    }
-
-    // ── [52..61] 10 worst_vs: min(vs_adv) across enemies ──
-    for (int s = 0; s < 10; ++s) {
-        float val = 0.f;
-        if (ids[s] && vs_adv_cnt[s] > 0) {
-            val = vs_adv_arr[s][0];
-            for (int j = 1; j < vs_adv_cnt[s]; ++j)
-                if (vs_adv_arr[s][j] < val) val = vs_adv_arr[s][j];
-        }
-        v.flt[fi++] = val;
-    }
-
-    // ── [62..71] 10 pick_rate ──
-    for (int s = 0; s < 10; ++s) {
-        float pr = 0.f;
+        pickrate[s] = 0.f;
         if (ids[s]) {
             auto it = md.pick_rates.find(ids[s]);
-            if (it != md.pick_rates.end()) pr = it->second;
+            if (it != md.pick_rates.end()) pickrate[s] = it->second;
         }
-        v.flt[fi++] = pr;
     }
+
+    // ── Запись в порядке ALL_FEATURES (draft_features.py) ──
+    int fi = 0;
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = ids[s] ? gwr[s] : 0.5f;      // global_wr
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = vs_adv_avg[s];              // vs_adv
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = with_adv_avg[s];            // with_adv
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = ids[s] ? hpwr[s] : 0.5f;    // hero_pos_wr
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = vs_adv_best[s];             // best_vs
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = vs_adv_worst[s];            // worst_vs
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = pickrate[s];                // pick_rate
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = with_adv_best[s];           // best_with
+    for (int s = 0; s < 10; ++s) v.flt[fi++] = with_adv_worst[s];          // worst_with
+
+    // ── Team aggregates (17): метрика-внешний-цикл / сторона-внутренний ──
+    TeamAgg rAgg = computeTeamAgg(0, ids, gwr, vs_adv_avg, with_adv_avg,
+                                  vs_adv_best, vs_adv_worst, pickrate);
+    TeamAgg dAgg = computeTeamAgg(5, ids, gwr, vs_adv_avg, with_adv_avg,
+                                  vs_adv_best, vs_adv_worst, pickrate);
+    v.flt[fi++] = (float)rAgg.n;   v.flt[fi++] = (float)dAgg.n;
+    v.flt[fi++] = rAgg.meanVs;     v.flt[fi++] = dAgg.meanVs;
+    v.flt[fi++] = rAgg.meanWith;   v.flt[fi++] = dAgg.meanWith;
+    v.flt[fi++] = rAgg.meanGwr;    v.flt[fi++] = dAgg.meanGwr;
+    v.flt[fi++] = rAgg.stdGwr;     v.flt[fi++] = dAgg.stdGwr;
+    v.flt[fi++] = rAgg.meanPr;     v.flt[fi++] = dAgg.meanPr;
+    v.flt[fi++] = rAgg.bestVsMax;  v.flt[fi++] = dAgg.bestVsMax;
+    v.flt[fi++] = rAgg.worstVsMin; v.flt[fi++] = dAgg.worstVsMin;
+    v.flt[fi++] = rAgg.meanVs - dAgg.meanVs; // team_vs_adv_diff
+
+    // ── Composition/role-shape (10): сторона-внешний / dim-внутренний ──
+    float rComp[N_ROLE_DIMS], dComp[N_ROLE_DIMS];
+    teamComposition(0, ids, positions, md, rComp);
+    teamComposition(5, ids, positions, md, dComp);
+    for (int d = 0; d < N_ROLE_DIMS; ++d) v.flt[fi++] = rComp[d];
+    for (int d = 0; d < N_ROLE_DIMS; ++d) v.flt[fi++] = dComp[d];
 
     v.finalize();
 }
@@ -294,6 +393,15 @@ static MatchupData loadMatchupData(sqlite3* db) {
         while (st.row()) md.hero_pos_wr[{st.col_int(0),st.col_int(1)}] = (float)st.col_double(2);
     } catch (...) { LOG_WARN("[picker] hero_pos_wr not found"); }
 
+    // Отдельный запрос от wr — на старой БД (schema_version=1, без колонки games)
+    // должен упасть только этот try, не потеряв уже загруженный hero_pos_wr.
+    // Без games composition-фича деградирует до нулевого presence (см. heroDimPresence),
+    // не падает.
+    try {
+        SqliteStmt st(db,"SELECT hero_id,pos,games FROM hero_pos_wr");
+        while (st.row()) md.hero_pos_games[{st.col_int(0),st.col_int(1)}] = st.col_int(2);
+    } catch (...) { LOG_WARN("[picker] hero_pos_wr.games not found (old schema — composition feature degraded)"); }
+
     try {
         SqliteStmt st(db,"SELECT hero_id,rate FROM pick_rates");
         while (st.row()) md.pick_rates[st.col_int(0)] = (float)st.col_double(1);
@@ -301,7 +409,8 @@ static MatchupData loadMatchupData(sqlite3* db) {
 
     LOG_INFO("[picker] Matchup data: gwr=" << md.global_wr.size() << " vs=" << md.vs_wr.size()
         << " with=" << md.with_wr.size() << " modal=" << md.modal_pos.size()
-        << " hpwr=" << md.hero_pos_wr.size() << " pr=" << md.pick_rates.size());
+        << " hpwr=" << md.hero_pos_wr.size() << " hpwr_games=" << md.hero_pos_games.size()
+        << " pr=" << md.pick_rates.size());
     return md;
 }
 
@@ -334,6 +443,29 @@ static std::map<int,PlayerStats> loadPlayerStats(sqlite3* db, int account_id) {
         SqliteStmt st(db,"SELECT hero_id,games,wins FROM playerheroes WHERE account_id=?");
         st.bind_int(1,account_id);
         while (st.row()) m[st.col_int(0)] = {st.col_int(1), st.col_int(2)};
+    } catch (...) {}
+    return m;
+}
+
+// Component B: "форма" — recent ranked, короче история/слабее приор, чем all-time.
+static std::map<int,PlayerStats> loadPlayerHeroesRanked(sqlite3* db, int account_id) {
+    std::map<int,PlayerStats> m;
+    try {
+        SqliteStmt st(db,"SELECT hero_id,games,wins FROM playerheroesranked WHERE account_id=?");
+        st.bind_int(1,account_id);
+        while (st.row()) m[st.col_int(0)] = {st.col_int(1), st.col_int(2)};
+    } catch (...) {}
+    return m;
+}
+
+// Component B: перс. WR героя на конкретной позиции. Без фильтра по позиции —
+// как в personal_score.py, все позиции аккаунта загружаются одним запросом.
+static std::map<std::pair<int,int>,PlayerStats> loadPlayerHeroPos(sqlite3* db, int account_id) {
+    std::map<std::pair<int,int>,PlayerStats> m;
+    try {
+        SqliteStmt st(db,"SELECT heroId,position,games,wins FROM relevantplayerherobyposstats WHERE account_id=?");
+        st.bind_int(1,account_id);
+        while (st.row()) m[{st.col_int(0),st.col_int(1)}] = {st.col_int(2), st.col_int(3)};
     } catch (...) {}
     return m;
 }
@@ -376,6 +508,72 @@ static std::vector<double> runBatch(ModelCalcerHandle* model, std::vector<Featur
     return result;
 }
 
+// ─── Component B: персональная поправка (personal_score.py, датафетчер-репо) ──
+// Портирует personal_adjustment/combine дословно, кроме источника base_wr: там
+// это immortalherostats (таблица удалена из finalapp — см. header-комментарий),
+// здесь — уже загруженный immortal_map (живая STRATZ-стата,
+// playerandlivestats.db::stats), с тем же порогом PERSONAL_BASE_WR_MIN_GAMES.
+
+static constexpr float PERSONAL_PRIOR_ALLTIME     = 40.0f;
+static constexpr float PERSONAL_PRIOR_RANKED      = 15.0f;
+static constexpr float PERSONAL_W_ALLTIME         = 0.6f;
+static constexpr float PERSONAL_W_RANKED          = 0.4f;
+static constexpr float PERSONAL_COMFORT_SCALE     = 0.01f;
+static constexpr float PERSONAL_COMFORT_CAP       = 0.03f;
+static constexpr int   PERSONAL_BASE_WR_MIN_GAMES = 200;
+// Дефолт 0.0 по калибровке (calibrate_personal.py): AUC монотонно падает при
+// beta>0 для всех протестированных приоров сглаживания, оптимум везде beta=0.
+// Component B посчитан и подключён к ранжированию, но эффективно выключен,
+// пока эту константу не поменяют осознанно.
+static constexpr float PERSONAL_BETA              = 0.0f;
+
+static float personalAdjustment(int hero_id, int pos,
+    const std::map<int,PlayerStats>&                heroAlltime,
+    const std::map<int,PlayerStats>&                heroRanked,
+    const std::map<std::pair<int,int>,PlayerStats>& heroPos,
+    const std::map<int,PickerHeroStat>&              basePosStats)
+{
+    if (pos <= 0 || !hero_id) return 0.f;
+
+    float baseWr = 0.5f;
+    auto bit = basePosStats.find(hero_id);
+    if (bit != basePosStats.end() && bit->second.games >= PERSONAL_BASE_WR_MIN_GAMES)
+        baseWr = (float)bit->second.wins / (float)bit->second.games;
+
+    int wAt = 0, gAt = 0;
+    auto pit = heroPos.find({hero_id, pos});
+    if (pit != heroPos.end() && pit->second.games >= 3) {
+        wAt = pit->second.wins; gAt = pit->second.games;
+    } else {
+        auto ait = heroAlltime.find(hero_id);
+        if (ait != heroAlltime.end()) { wAt = ait->second.wins; gAt = ait->second.games; }
+    }
+    float smoothedAlltime = (wAt + PERSONAL_PRIOR_ALLTIME * baseWr) / (gAt + PERSONAL_PRIOR_ALLTIME);
+
+    int wRk = 0, gRk = 0;
+    auto rit = heroRanked.find(hero_id);
+    if (rit != heroRanked.end()) { wRk = rit->second.wins; gRk = rit->second.games; }
+    float smoothedRanked = (wRk + PERSONAL_PRIOR_RANKED * baseWr) / (gRk + PERSONAL_PRIOR_RANKED);
+
+    int gAll = 0;
+    auto ait2 = heroAlltime.find(hero_id);
+    if (ait2 != heroAlltime.end()) gAll = ait2->second.games;
+    float comfort = std::min(PERSONAL_COMFORT_CAP,
+                             PERSONAL_COMFORT_SCALE * std::log1p((float)gAll));
+
+    return PERSONAL_W_ALLTIME * (smoothedAlltime - baseWr) +
+           PERSONAL_W_RANKED  * (smoothedRanked  - baseWr) +
+           comfort;
+}
+
+// final = sigmoid(logit(p_ours) + beta*adj). p_ours — вероятность победы НАШЕЙ
+// стороны (уже ориентированная), не сырой radiant-вероятности — см. вызов ниже.
+static inline double combinePersonal(double pOurs, float adj, float beta) {
+    double p = std::min(std::max(pOurs, 1e-6), 1.0 - 1e-6);
+    double logit = std::log(p / (1.0 - p));
+    return 1.0 / (1.0 + std::exp(-(logit + (double)beta * (double)adj)));
+}
+
 // ─── GUI режим: результаты → GuiPickerState ─────────────────────────────────
 
 static void renderToGui(
@@ -384,6 +582,8 @@ static void renderToGui(
     const std::map<int,std::string>&       hero_map,
     const MatchupData&                     md,
     const std::map<int,PlayerStats>&       our_stats,
+    const std::map<int,PlayerStats>&       our_stats_ranked,
+    const std::map<std::pair<int,int>,PlayerStats>& our_stats_pos,
     const std::map<int,PickerHeroStat>&    immortal_map,
     ModelCalcerHandle*                     model)
 {
@@ -436,10 +636,15 @@ static void renderToGui(
 
     if (our_hero != 0) {
         FeatureVector v;
-        buildVector(v, lp, hero_map, md, our_stats, 0);
+        buildVector(v, lp, hero_map, md, 0);
         std::vector<FeatureVector> batch = {v};
         auto probs = runBatch(model, batch);
-        state->winProb = flipProb ? 1.f - (float)probs[0] : (float)probs[0];
+        bool rad = (lp.our_side == 1);
+        double pOurs = rad ? probs[0] : (1.0 - probs[0]);
+        float adj = personalAdjustment(our_hero, state->ourPosition, our_stats,
+                                       our_stats_ranked, our_stats_pos, immortal_map);
+        double pOursFinal = combinePersonal(pOurs, adj, PERSONAL_BETA);
+        state->winProb = (float)pOursFinal;
         auto on = hname(our_hero);
         std::snprintf(state->ourHeroName, sizeof(state->ourHeroName), "%s", on.c_str());
         state->ourHeroId = our_hero;
@@ -448,7 +653,7 @@ static void renderToGui(
     } else {
         {
             FeatureVector v0;
-            buildVector(v0, lp, hero_map, md, our_stats, 0);
+            buildVector(v0, lp, hero_map, md, 0);
             std::vector<FeatureVector> b0 = {v0};
             auto p0 = runBatch(model, b0);
             state->winProb = flipProb ? 1.f - (float)p0[0] : (float)p0[0];
@@ -470,14 +675,26 @@ static void renderToGui(
         if (!pool.empty()) {
             std::vector<FeatureVector> batch(pool.size());
             for (size_t i = 0; i < pool.size(); i++)
-                buildVector(batch[i], lp, hero_map, md, our_stats, pool[i]);
+                buildVector(batch[i], lp, hero_map, md, pool[i]);
             auto probs = runBatch(model, batch);
 
             bool rad = (lp.our_side == 1);
+            int our_pos = state->ourPosition;
+
+            // Component B: probs[i] — сырая radiant-вероятность; ориентируем в
+            // "нашу" сторону, применяем персональную поправку, ориентируем обратно
+            // — дальше сортировка/флип для дисплея работают как раньше, без
+            // изменений (при PERSONAL_BETA=0.0 pRawFinal == probs[i] побитово).
             std::vector<std::pair<double,int>> ranked;
             ranked.reserve(pool.size());
-            for (size_t i = 0; i < pool.size(); i++)
-                ranked.push_back({probs[i], pool[i]});
+            for (size_t i = 0; i < pool.size(); i++) {
+                double pOurs = rad ? probs[i] : (1.0 - probs[i]);
+                float adj = personalAdjustment(pool[i], our_pos, our_stats,
+                                               our_stats_ranked, our_stats_pos, immortal_map);
+                double pOursFinal = combinePersonal(pOurs, adj, PERSONAL_BETA);
+                double pRawFinal = rad ? pOursFinal : (1.0 - pOursFinal);
+                ranked.push_back({pRawFinal, pool[i]});
+            }
             if (rad)
                 std::sort(ranked.begin(), ranked.end(),
                     [](auto& a, auto& b){ return a.first > b.first; });
@@ -487,7 +704,6 @@ static void renderToGui(
 
             int n = (int)std::min(ranked.size(), (size_t)10);
             state->recCount = n;
-            int our_pos = state->ourPosition;
 
             for (int i = 0; i < n; i++) {
                 auto& [prob, hid] = ranked[i];
@@ -581,7 +797,9 @@ int runPickerGui(const char* model_path, const char* db_path,
         }
 
         LivePick last_lp; last_lp.match_id = -1;
-        std::map<int, PlayerStats>       our_stats;
+        std::map<int, PlayerStats>                      our_stats;
+        std::map<int, PlayerStats>                      our_stats_ranked;
+        std::map<std::pair<int,int>, PlayerStats>       our_stats_pos;
         std::map<int, PickerHeroStat>    immortal_map;
         int last_account_id = -1, last_our_pos = -1;
 
@@ -602,6 +820,12 @@ int runPickerGui(const char* model_path, const char* db_path,
                 our_stats = (lp.our_account_id != 0)
                     ? loadPlayerStats(db.get(), lp.our_account_id)
                     : std::map<int,PlayerStats>{};
+                our_stats_ranked = (lp.our_account_id != 0)
+                    ? loadPlayerHeroesRanked(db.get(), lp.our_account_id)
+                    : std::map<int,PlayerStats>{};
+                our_stats_pos = (lp.our_account_id != 0)
+                    ? loadPlayerHeroPos(db.get(), lp.our_account_id)
+                    : std::map<std::pair<int,int>,PlayerStats>{};
                 last_account_id = lp.our_account_id;
             }
 
@@ -619,7 +843,8 @@ int runPickerGui(const char* model_path, const char* db_path,
             if (lp != last_lp) {
                 last_lp = lp;
                 renderToGui(guiState, lp, hero_map, md,
-                            our_stats, immortal_map, model.get());
+                            our_stats, our_stats_ranked, our_stats_pos,
+                            immortal_map, model.get());
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
