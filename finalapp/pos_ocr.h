@@ -62,9 +62,12 @@ static std::vector<uint8_t> upscaleBgra(const uint8_t* src, int sw, int sh, int 
 
 // ─── Keyword → position mapping ─────────────────────────────────────────────
 
+// CharLowerW (а не towlower) — свёртка регистра не зависит от текущей C-локали
+// (нигде в проекте нет setlocale) и корректно работает для не-ASCII: кириллица
+// (Ш/ш и т.п.), немецкие/польские/французские диакритики.
 static std::wstring toLowerW(const std::wstring& s) {
     std::wstring r = s;
-    for (auto& ch : r) ch = towlower(ch);
+    if (!r.empty()) CharLowerW(&r[0]);
     return r;
 }
 
@@ -72,8 +75,39 @@ static bool containsW(const std::wstring& hay, const wchar_t* needle) {
     return hay.find(needle) != std::wstring::npos;
 }
 
+struct ExactPhrase { const wchar_t* text; int pos; };
+
+static const ExactPhrase kExactPhrases[] = {
+    // EN — Safe Lane / Mid Lane / Off Lane / Soft Support / Hard Support
+    { L"Safe Lane", 1 }, { L"Mid Lane", 2 }, { L"Off Lane", 3 }, { L"Soft Support", 4 }, { L"Hard Support", 5 },
+    // RU
+    { L"Легкая", 1 }, { L"Центр", 2 }, { L"Сложная", 3 }, { L"Поддержка", 4 }, { L"Полная поддержка", 5 },
+    // UK
+    { L"Легкий", 1 }, { L"Центральний", 2 }, { L"Складний", 3 }, { L"Підтримка", 4 }, { L"Повна підтримка", 5 },
+    // DE
+    { L"Leicht", 1 }, { L"Mitte", 2 }, { L"Schwer", 3 }, { L"Soft Support", 4 }, { L"Hard Support", 5 },
+    // PL
+    { L"Łatwy", 1 }, { L"Środkowy", 2 }, { L"Trudny", 3 }, { L"Wsparcie Miękkie", 4 }, { L"Wsparcie Twarde", 5 },
+    // FR
+    { L"Facile", 1 }, { L"Centre", 2 }, { L"Difficile", 3 }, { L"Support Doux", 4 }, { L"Support Dur", 5 },
+    // ES
+    { L"Facil", 1 }, { L"Centro", 2 }, { L"Difícil", 3 }, { L"Support Suave", 4 }, { L"Support Duro", 5 },
+};
+
 static int textToPosition(const std::wstring& raw) {
     std::wstring t = toLowerW(raw);
+
+    static const std::vector<std::wstring> kExactLower = [] {
+        std::vector<std::wstring> v;
+        v.reserve(sizeof(kExactPhrases) / sizeof(kExactPhrases[0]));
+        for (const auto& ep : kExactPhrases) v.push_back(toLowerW(ep.text));
+        return v;
+    }();
+
+    for (size_t i = 0; i < kExactLower.size(); ++i) {
+        if (!kExactLower[i].empty() && containsW(t, kExactLower[i].c_str()))
+            return kExactPhrases[i].pos;
+    }
 
     // EN keywords (unambiguous prefixes)
     if (containsW(t, L"safe"))  return 1;
@@ -112,9 +146,9 @@ static int textToPosition(const std::wstring& raw) {
 
     if (hasSupport) return 4;
 
-    // Ниже — блоки для UK/BE/KK/DE/PL/FR/ES. В каждом только те корни, которые
+    // Ниже — блоки для UK/DE/PL/FR/ES. В каждом только те корни, которые
     // ДЕЙСТВИТЕЛЬНО не перехватываются уже отработавшими блоками выше (напр.
-    // "легк"/"лёгк"/"центр" для UK/BE не дублируются — их уже ловит RU-блок
+    // "легк"/"лёгк"/"центр" для UK не дублируются — их уже ловит RU-блок
     // благодаря общим славянским корням) — иначе получились бы недостижимые ветки.
 
     // UK (украинский)
@@ -128,28 +162,6 @@ static int textToPosition(const std::wstring& raw) {
     if (containsW(t, L"м'як") || containsW(t, L"мяк"))
         return 4;
     if (ukSupport) return 4;
-
-    // BE (белорусский)
-    bool beSupport = containsW(t, L"падтрымк");
-    if (containsW(t, L"складан"))
-        return 3;
-    if (containsW(t, L"цвёрд"))
-        return 5;
-    if (beSupport) return 4;
-
-    // KK (казахский)
-    bool kkSupport = containsW(t, L"қолдау");
-    if (containsW(t, L"орталық"))
-        return 2;
-    if (containsW(t, L"қиын"))
-        return 3;
-    if (containsW(t, L"қатаң"))
-        return 5;
-    if (containsW(t, L"жеңіл"))
-        return 1;
-    if (containsW(t, L"жұмсақ"))
-        return 4;
-    if (kkSupport) return 4;
 
     // DE (немецкий)
     bool deSupport = containsW(t, L"unterst");
@@ -185,7 +197,6 @@ static int textToPosition(const std::wstring& raw) {
         return 2;
     if (containsW(t, L"difficile"))
         return 3;
-    // "dur" короткое и само по себе неоднозначное — учитываем только вместе с "soutien"
     if (containsW(t, L"renforc") || (frSupport && containsW(t, L"dur")))
         return 5;
     if (containsW(t, L"sûre") || containsW(t, L"sure"))
@@ -228,9 +239,10 @@ public:
     // установленного OCR-пакета к менее вероятным. TryCreateFromLanguage не бросает
     // и возвращает nullptr, если языковой OCR-пакет не установлен в Windows — так что
     // отсутствующие языки просто выпадают из списка ниже, без ошибок.
+    // BE/KK не входят: у Dota 2 нет официальной локализации на эти языки.
     PosOcrRecognizer() {
         static const wchar_t* kLangs[] = {
-            L"en-US", L"ru", L"uk", L"be", L"kk", L"de", L"pl", L"fr", L"es"
+            L"en-US", L"ru", L"uk", L"de", L"pl", L"fr", L"es"
         };
         for (auto lang : kLangs) {
             wmo::OcrEngine eng{nullptr};

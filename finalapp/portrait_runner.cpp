@@ -236,8 +236,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
         LOG_INFO("[portrait] Окно Dota 2: " << res.width << "x" << res.height);
         clearHeroSlots(db);
 
-        int   lastHeroId[10] = {};
-        float lastScore[10]  = {};    // хранимая уверенность для каждого слота
+        int   lastHeroId[10] = {};    // последний записанный герой слота, только для dedup записи в БД
         LOG_INFO("[portrait] Захват каждые 250 мс (HERO_SELECTION)...");
 
         while (running.load()) {
@@ -253,7 +252,6 @@ void runPortraitCapture(GameInfo&           gameInfo,
             if (gameChanged) {
                 clearHeroSlots(db);
                 std::memset(lastHeroId, 0, sizeof(lastHeroId));
-                std::memset(lastScore,  0, sizeof(lastScore));
                 LOG_INFO("[portrait] Новая игра — слоты сброшены");
             }
 
@@ -277,8 +275,15 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 const Bitmap& bmp = portraits[slot];
                 if (bmp.empty()) continue;
 
+                // Никакой "фиксации"/гистерезиса: всегда доверяем ближайшему по Пирсону
+                // кандидату текущего кадра (среди героев и "null" — он такая же запись в
+                // базе хешей). Один плохой кадр (перекрытие чатом/scoreboard/шопом) даёт
+                // максимум один неверный кадр слота — самоисправляется на следующем
+                // цикле (250мс), т.к. ничего не "запоминается" против нового результата.
+                // Порог 0.4 — не решающий фильтр (это делает argmax по всей базе, включая
+                // null), а просто отсев совсем нечитаемых кадров (пустой/чёрный кадр и т.п.).
                 HeroMatch m = recognizer.recognize(bmp);
-                if (!m.name || m.score < 0.5f) continue;
+                if (!m.name || m.score < 0.4f) continue;
 
                 bool isNullHero  = (std::strcmp(m.name, "null") == 0);
                 int  detectedId  = isNullHero ? 0 : lookupHeroId(nameToId, m.name);
@@ -291,43 +296,25 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 }
 
                 if (detectedId != lastHeroId[slot]) {
-                    bool slotEmpty   = (lastHeroId[slot] == 0);
-                    bool shouldUpdate;
-                    if (slotEmpty) {
-                        shouldUpdate = (detectedId > 0);
-                    } else if (detectedId == 0) {
-                        // Занятый слот → null: lastScore там — уверенность прежнего
-                        // героя (часто ~0.99), с ней null почти никогда не сравнится,
-                        // поэтому для этого перехода свой фиксированный порог.
-                        shouldUpdate = (m.score > 0.6f);
-                    } else {
-                        shouldUpdate = (m.score > lastScore[slot]);
-                    }
-
-                    if (shouldUpdate) {
-                        if (detectedId == 0) {
-                            clearHeroSlot(db, slot);
-                            {
-                                std::lock_guard<std::mutex> lk(out.mtx);
-                                out.slots[slot] = {};
-                            }
-                            const char* team = (slot < 5) ? "Radiant" : "Dire";
-                            int idx = (slot < 5) ? slot+1 : slot-4;
-                            LOG_INFO("[portrait] " << team << " #" << idx
-                                     << " → NULL  score=" << std::fixed << std::setprecision(3) << m.score);
-                        } else {
-                            updateSlot(db, slot, detectedId);
-                            const char* team = (slot < 5) ? "Radiant" : "Dire";
-                            int idx = (slot < 5) ? slot+1 : slot-4;
-                            LOG_INFO("[portrait] " << team << " #" << idx << " → "
-                                     << std::left << std::setw(22) << m.name
-                                     << "  score=" << std::fixed << std::setprecision(3) << m.score);
+                    if (detectedId == 0) {
+                        clearHeroSlot(db, slot);
+                        {
+                            std::lock_guard<std::mutex> lk(out.mtx);
+                            out.slots[slot] = {};
                         }
-                        lastHeroId[slot] = detectedId;
-                        lastScore[slot]  = m.score;
+                        const char* team = (slot < 5) ? "Radiant" : "Dire";
+                        int idx = (slot < 5) ? slot+1 : slot-4;
+                        LOG_INFO("[portrait] " << team << " #" << idx
+                                 << " → NULL  score=" << std::fixed << std::setprecision(3) << m.score);
+                    } else {
+                        updateSlot(db, slot, detectedId);
+                        const char* team = (slot < 5) ? "Radiant" : "Dire";
+                        int idx = (slot < 5) ? slot+1 : slot-4;
+                        LOG_INFO("[portrait] " << team << " #" << idx << " → "
+                                 << std::left << std::setw(22) << m.name
+                                 << "  score=" << std::fixed << std::setprecision(3) << m.score);
                     }
-                } else if (m.score > lastScore[slot]) {
-                    lastScore[slot] = m.score;
+                    lastHeroId[slot] = detectedId;
                 }
             }
 
