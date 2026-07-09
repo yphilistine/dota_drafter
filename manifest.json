@@ -2,21 +2,20 @@
     "app":  {
                 "version":  "0.5.4",
                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/v0.5.4/dota_drafter_setup.exe",
-                "sha256":  "6abf9a67ebe3fcb4b790447477c48a0689eb259d5cf0599a21c80d330f9da93e",
-                "mandatory":  false
+                "sha256":  "6abf9a67ebe3fcb4b790447477c48a0689eb259d5cf0599a21c80d330f9da93e"
             },
     "data":  {
-                 "version":  "2025.07.09",
+                 "version":  "2026.07.09",
                  "schema":  2,
                  "files":  {
                                "draft_helper_abstract.cbm":  {
-                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.09/draft_helper_abstract.cbm",
+                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2026.07.09/draft_helper_abstract.cbm",
                                                                  "sha256":  "9ed124858f58479035a52bb80636a45acb9aca43f09675786615d9b024393807",
                                                                  "size":  2189744
                                                              },
                                "draft_helper_abstract_data.db":  {
-                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.09/draft_helper_abstract_data.db",
-                                                                     "sha256":  "7483661c864dfba9de733341253aafad8ea3664adc5eb636aa991cf7ae0da990",
+                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2026.07.09/draft_helper_abstract_data.db",
+                                                                     "sha256":  "bdf9a670410d5c114583e7c24ec61d75345504f28d7c3437ae5be69d9ebe4178",
                                                                      "size":  1089536
                                                                  },
                                "hero_hashes.dat":  {
