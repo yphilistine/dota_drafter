@@ -72,6 +72,11 @@ echo SHA-256: %SHA%
 :: ── 5. GitHub release ────────────────────────────────────────────────────
 echo [5/6] Creating GitHub release v%VER%...
 gh release create "v%VER%" installer\dota_drafter_setup.exe --title "v%VER%" --notes "App version %VER%"
+if %ERRORLEVEL% neq 0 (
+    echo [INFO] Release v%VER% already exists, uploading asset instead...
+    gh release upload "v%VER%" installer\dota_drafter_setup.exe --clobber
+    if %ERRORLEVEL% neq 0 ( echo [FAIL] Could not upload installer to release v%VER% & exit /b 1 )
+)
 
 :: ── 6. Update manifest.json ──────────────────────────────────────────────
 echo [6/6] Updating manifest.json...
