@@ -92,7 +92,7 @@ screenshots/                        Регионы героев/позиций +
 
 ### Правила релиза
 
-- **schema++** + `app.mandatory=true`: изменена раскладка фич/таблиц или buildVector
+- **schema++**: изменена раскладка фич/таблиц или buildVector (Release Data + Release App)
 - Только **data_version++**: чистый ретрейн на тех же фичах
 - Только **app_version++**: изменения в UI/логике без изменения формата данных
 

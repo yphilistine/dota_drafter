@@ -147,7 +147,6 @@ bool fetchManifest(ManifestInfo& out) {
         out.appVersion   = app.value("version",   std::string());
         out.appUrl       = app.value("url",       std::string());
         out.appSha256    = app.value("sha256",    std::string());
-        out.appMandatory = app.value("mandatory", false);
 
         auto& data = j["data"];
         out.dataVersion = data.value("version", std::string());

@@ -325,7 +325,7 @@ Schema gate: перед загрузкой модели проверяет `meta
 | Функция / Тип | Описание |
 |----------------|----------|
 | `UpdateAction` | Enum: NONE, APP_UPDATE, DATA_UPDATE, SCHEMA_TOO_NEW |
-| `ManifestInfo` | Структура: версии app/data, URL, SHA-256, mandatory, dataFiles (map) |
+| `ManifestInfo` | Структура: версии app/data, URL, SHA-256, dataFiles (map) |
 | `fetchManifest(out)` | GET manifest.json с SSL verify, connect 5с, total 10с |
 | `checkForUpdates(manifest)` | App: kAppVersion vs manifest. Data: SHA-256 **каждого** файла из dataFiles на диске vs манифест → UpdateAction |
 | `downloadToStaging(url, sha256, path, progress)` | Скачивание в .part + SHA-256 через BCrypt + rename. Создаёт вложенные директории назначения (`ensureParentDir`). Логирует `LOG_ERR`/`LOG_WARN` на всех путях отказа (`curl_easy_init`, открытие .part, сетевая ошибка/не-200) — раньше эти ветки были беззвучными |

@@ -24,7 +24,6 @@ struct ManifestInfo {
     std::string appVersion;
     std::string appUrl;
     std::string appSha256;
-    bool        appMandatory = false;
 
     std::string dataVersion;
     int         dataSchema   = 0;
