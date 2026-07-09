@@ -20,8 +20,8 @@
                                                                  },
                                "hero_hashes.dat":  {
                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/hero_hashes.dat",
-                                                       "sha256":  "0af35e2ad8cf511e2d46d24f1f84b032013132b9770390d7d1866c74aec32ed5",
-                                                       "size":  70610
+                                                       "sha256":  "d361a77f33bf62806ce8b410433d8398c9faee373e701d1bcd9a22688fc18d9e",
+                                                       "size":  71140
                                                    },
                                "assets/abaddon.png":  {
                                                           "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/assets/abaddon.png",
