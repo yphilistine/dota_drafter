@@ -86,7 +86,7 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_9 = {
     /* pos_y           */ 0.09896f,
     /* pos_w           */ 0.05547f,
     /* pos_h           */ 0.01528f,
-    /* pos_gap         */ 0.00799f,
+    /* pos_gap         */ 0.00898f,
     /* pos_x_start_dire*/ 0.57148f,
 };
 
@@ -118,7 +118,7 @@ static constexpr HudLayout STRATEGY_LAYOUT_21_9 = {
     /* pos_y           */ 0.09830f,
     /* pos_w           */ 0.06299f,
     /* pos_h           */ 0.01562f,
-    /* pos_gap         */ 0.08398f,
+    /* pos_gap         */ 0.00709f,
     /* pos_x_start_dire*/ 0.59423f,
 };
 
@@ -134,7 +134,7 @@ static constexpr HudLayout STRATEGY_LAYOUT_4_3 = {
     /* pos_y           */ 0.09924f,
     /* pos_w           */ 0.04252f,
     /* pos_h           */ 0.01526f,
-    /* pos_gap         */ 0.01653f,
+    /* pos_gap         */ 0.00781f,
     /* pos_x_start_dire*/ 0.55507f,
 };
 
