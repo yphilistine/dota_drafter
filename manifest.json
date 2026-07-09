@@ -6,18 +6,18 @@
                 "mandatory":  false
             },
     "data":  {
-                 "version":  "2025.07.06",
-                 "schema":  1,
+                 "version":  "2025.07.09",
+                 "schema":  2,
                  "files":  {
                                "draft_helper_abstract.cbm":  {
-                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.06/draft_helper_abstract.cbm",
-                                                                 "sha256":  "e87fe38768e3b50cd7f45980f29877aba02471e0fb98a901679bb3dcf017407a",
-                                                                 "size":  4456928
+                                                                 "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.09/draft_helper_abstract.cbm",
+                                                                 "sha256":  "9ed124858f58479035a52bb80636a45acb9aca43f09675786615d9b024393807",
+                                                                 "size":  2189744
                                                              },
                                "draft_helper_abstract_data.db":  {
-                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.06/draft_helper_abstract_data.db",
-                                                                     "sha256":  "4b6464dc4a8d40eac99ea8ff057fc306b72cf4b56fa83d595687c564ec564b3c",
-                                                                     "size":  1114112
+                                                                     "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2025.07.09/draft_helper_abstract_data.db",
+                                                                     "sha256":  "7483661c864dfba9de733341253aafad8ea3664adc5eb636aa991cf7ae0da990",
+                                                                     "size":  1089536
                                                                  },
                                "hero_hashes.dat":  {
                                                        "url":  "https://raw.githubusercontent.com/yphilistine/dota_drafter/main/finalapp/hero_hashes.dat",
