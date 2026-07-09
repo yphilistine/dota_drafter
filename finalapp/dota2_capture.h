@@ -86,7 +86,7 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_9 = {
     /* pos_y           */ 0.09896f,
     /* pos_w           */ 0.05547f,
     /* pos_h           */ 0.01528f,
-    /* pos_gap         */ 0.01597f,
+    /* pos_gap         */ 0.00799f,
     /* pos_x_start_dire*/ 0.57148f,
 };
 
