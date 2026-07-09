@@ -43,11 +43,15 @@ struct HeroMatch {
     bool confident() const { return score >= 0.80f; }
 };
 
-// Корреляция Пирсона (обе матрицы уже нормализованы: dot / (N-1))
+// Корреляция Пирсона (обе матрицы уже нормализованы zero-mean/unit-variance
+// популяционной дисперсией — computeMatrix делит var на N=64, поэтому здесь
+// тоже N=64, а не N-1=63: у нормализованного вектора dot(v,v)==64 ровно, и
+// самокорреляция обязана давать 1.0, а не 64/63≈1.016 — иначе score вылезает
+// за пределы математически допустимого диапазона [-1,1] корреляции Пирсона.
 inline float pearson(const Matrix8& a, const Matrix8& b) {
     float dot = 0.0f;
     for (int i = 0; i < 64; ++i) dot += a.v[i] * b.v[i];
-    return dot / 63.0f;
+    return dot / 64.0f;
 }
 
 // BGRA-пиксели → Matrix8 (greyscale BT.601 → bilinear resize 8x8 → нормализация)

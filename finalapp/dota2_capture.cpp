@@ -78,27 +78,21 @@ bool Dota2Capture::findGameWindow() {
 
     if (IsIconic(hwnd_)) { hwnd_ = nullptr; return false; }
 
+    // Процесс объявлен Per-Monitor-V2 DPI aware (SetProcessDpiAwarenessContext
+    // в PlatformStartupFixups, mainGUI.cpp) — GetClientRect уже возвращает
+    // настоящие физические пиксели, без DPI-виртуализации, домножать не нужно.
+    // Раньше здесь пересчитывали через GetDeviceCaps(DESKTOPHORZRES)/
+    // GetSystemMetrics(SM_CXSCREEN), но SM_CXSCREEN всегда берёт только ГЛАВНЫЙ
+    // монитор — на мультимониторных конфигурациях (Dota 2 не на главном экране)
+    // или в момент DPI/display transition эти два API рассинхронизировались и
+    // давали случайное несуществующее разрешение (напр. 1834x786 вместо
+    // реальных 2560x1600), из-за чего выбиралась не та HudLayout и все 20
+    // регионов промахивались мимо HUD.
     {
-        HDC wdc = GetDC(hwnd_);
-        int phys_w = GetDeviceCaps(wdc, DESKTOPHORZRES);
-        int phys_h = GetDeviceCaps(wdc, DESKTOPVERTRES);
-
         RECT cr{};
         GetClientRect(hwnd_, &cr);
-        int log_w = cr.right  - cr.left;
-        int log_h = cr.bottom - cr.top;
-
-        int desk_log_w = GetSystemMetrics(SM_CXSCREEN);
-        int desk_log_h = GetSystemMetrics(SM_CYSCREEN);
-
-        if (desk_log_w > 0 && desk_log_h > 0) {
-            res_.width  = MulDiv(log_w, phys_w, desk_log_w);
-            res_.height = MulDiv(log_h, phys_h, desk_log_h);
-        } else {
-            res_.width  = log_w;
-            res_.height = log_h;
-        }
-        ReleaseDC(hwnd_, wdc);
+        res_.width  = cr.right  - cr.left;
+        res_.height = cr.bottom - cr.top;
     }
 
     if (res_.width < 640 || res_.height < 480) {
@@ -124,20 +118,14 @@ bool Dota2Capture::findGameWindow() {
 
 bool Dota2Capture::refreshResolution() {
     if (!hwnd_ || !IsWindow(hwnd_)) return false;
+    // См. комментарий в findGameWindow() — Per-Monitor-V2 DPI aware процесс,
+    // GetClientRect уже отдаёт физические пиксели, лишний MulDiv через
+    // GetDeviceCaps/GetSystemMetrics(SM_CXSCREEN) только вносил случайные
+    // рассинхронизации на мультимониторных конфигурациях/DPI transition.
     RECT cr{};
     GetClientRect(hwnd_, &cr);
-    int w = cr.right - cr.left;
-    int h = cr.bottom - cr.top;
-
-    HDC wdc = GetDC(hwnd_);
-    int phys_w = GetDeviceCaps(wdc, DESKTOPHORZRES);
-    int phys_h = GetDeviceCaps(wdc, DESKTOPVERTRES);
-    ReleaseDC(hwnd_, wdc);
-
-    int desk_w = GetSystemMetrics(SM_CXSCREEN);
-    int desk_h = GetSystemMetrics(SM_CYSCREEN);
-    int newW = (desk_w > 0 && desk_h > 0) ? MulDiv(w, phys_w, desk_w) : w;
-    int newH = (desk_w > 0 && desk_h > 0) ? MulDiv(h, phys_h, desk_h) : h;
+    int newW = cr.right - cr.left;
+    int newH = cr.bottom - cr.top;
 
     if (newW == res_.width && newH == res_.height) return false;
     if (newW < 640 || newH < 480) return false;
