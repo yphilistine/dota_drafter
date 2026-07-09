@@ -66,7 +66,7 @@ static Matrix8 matrixPng(const fs::path& path, CropRect crop) {
 // пустого слота выбора (null_*/event_null* варианты заглушки).
 static const char* canonicalHeroName(const std::string& stem) {
     static const struct { const char* k; const char* n; } MAP[] = {
-        {"sf1","nevermore"},{"drow1","drow_ranger"},
+        {"sf1","nevermore"},{"drow1","drow_ranger"},{"lion1","lion"},{"jugg1","juggernaut"},
         {"abaddon","abaddon"},{"alchemist","alchemist"},{"NULL","null"},{"io","wisp"},
         {"ancient_apparition","ancient_apparition"},{"kez","kez"},{"largo","largo"},
         {"anti_mage","antimage"},{"antimage","antimage"}, {"timbersaw","shredder"},
