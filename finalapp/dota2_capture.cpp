@@ -11,6 +11,7 @@
 #include <thread>
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
 
 namespace dota2 {
 
@@ -379,6 +380,58 @@ void Dota2Capture::saveDebugRegions(const std::filesystem::path& dir) const {
         std::snprintf(name,sizeof(name),"%s_pos_%zu.png",teamNames[i], i % 5);
         saveBitmapAsPng(posPortraits_[i],out/name);
     }
+}
+
+bool Dota2Capture::saveFullScreenshotWithRegions(const std::filesystem::path& dir) {
+    Bitmap full = captureWindow();
+    if (full.empty()) return false;
+
+    Gdiplus::Bitmap gdiBmp(full.width, full.height, PixelFormat32bppARGB);
+    Gdiplus::BitmapData bdata{};
+    Gdiplus::Rect lock_rect(0, 0, full.width, full.height);
+    gdiBmp.LockBits(&lock_rect, Gdiplus::ImageLockModeWrite, PixelFormat32bppARGB, &bdata);
+    std::memcpy(bdata.Scan0, full.pixels.data(),
+                static_cast<size_t>(full.width) * full.height * 4);
+    gdiBmp.UnlockBits(&bdata);
+
+    Gdiplus::Graphics g(&gdiBmp);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeNone);
+
+    Gdiplus::Pen heroPen(Gdiplus::Color(255, 255, 50, 50), 2.0f);   // красный — портреты героев
+    Gdiplus::Pen posPen (Gdiplus::Color(255, 50, 220, 255), 2.0f);  // голубой — индикаторы позиций
+    Gdiplus::FontFamily fontFamily(L"Segoe UI");
+    Gdiplus::Font font(&fontFamily, 12.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::SolidBrush labelBgBrush(Gdiplus::Color(190, 0, 0, 0));
+
+    auto drawRegion = [&](const PortraitRegion& reg, Gdiplus::Pen& pen) {
+        const RECT& r = reg.rect;
+        const int w = r.right - r.left, h = r.bottom - r.top;
+        if (w <= 0 || h <= 0) return;
+        g.DrawRectangle(&pen, r.left, r.top, w, h);
+
+        int idx = (reg.slot < 5) ? reg.slot + 1 : reg.slot - 4;
+        wchar_t label[8];
+        swprintf_s(label, L"%c%d", (reg.slot < 5) ? L'R' : L'D', idx);
+
+        Gdiplus::RectF bbox;
+        g.MeasureString(label, -1, &font, Gdiplus::PointF(0, 0), &bbox);
+        const float lx = static_cast<float>(r.left);
+        const float ly = static_cast<float>(r.bottom) + 2.0f;
+        g.FillRectangle(&labelBgBrush, lx, ly, bbox.Width, bbox.Height);
+        g.DrawString(label, -1, &font, Gdiplus::PointF(lx, ly), &textBrush);
+    };
+
+    for (const auto& reg : regions_)    drawRegion(reg, heroPen);
+    for (const auto& reg : posRegions_) drawRegion(reg, posPen);
+
+    std::filesystem::path out = dir.empty() ? output_dir_ : dir;
+    std::filesystem::create_directories(out);
+
+    CLSID pngClsid{};
+    if (!getEncoderClsid(L"image/png", &pngClsid)) return false;
+    std::wstring wpath = (out / "fullscreen_regions.png").wstring();
+    return gdiBmp.Save(wpath.c_str(), &pngClsid) == Gdiplus::Ok;
 }
 
 void Dota2Capture::runLoop(int interval_ms) {

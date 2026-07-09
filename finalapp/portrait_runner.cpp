@@ -409,6 +409,7 @@ bool captureDebugScreenshotWithReport(const std::string& dbPath, const std::stri
     std::filesystem::path outDir = dir.empty() ? std::filesystem::path("screenshots")
                                                 : std::filesystem::path(dir);
     cap.saveDebugRegions(outDir);
+    cap.saveFullScreenshotWithRegions(outDir);
 
     // Своя, независимая от фонового runPortraitCapture пара recognizer/OCR —
     // не трогаем состояние живого 250мс-цикла распознавания.

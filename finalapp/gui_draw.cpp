@@ -876,8 +876,9 @@ void DrawDraftPanel(float panelW) {
                  : (rCount==5 && dCount==5) ? "STRATEGY PHASE" : "DRAFT PHASE");
 
     // [screenshot] — сохраняет 10 регионов героев + 10 регионов позиций текущего
-    // кадра HUD в screenshots/ (папка создаётся инсталлятором). Диагностика для
-    // случаев, когда распознавание портретов/позиций ошибается. Оформлен как
+    // кадра HUD + fullscreen_regions.png (полный кадр с рамками всех 20 регионов)
+    // в screenshots/ (папка создаётся инсталлятором). Диагностика для случаев,
+    // когда распознавание портретов/позиций ошибается. Оформлен как
     // position-бейдж (SectionLabelWithPosBadge) — тот же rect/border/text через
     // ImDrawList + InvisibleButton поверх, а не нативная ImGui::Button.
     {
@@ -899,7 +900,7 @@ void DrawDraftPanel(float panelW) {
         if (ImGui::InvisibleButton("##screenshotBtn", {bW, bH})) {
             std::thread([]{
                 bool ok = captureDebugScreenshotWithReport(DB_PATH, "screenshots");
-                if (ok) LOG_INFO("[screenshot] Saved draft regions + report.txt to screenshots/");
+                if (ok) LOG_INFO("[screenshot] Saved draft regions + fullscreen_regions.png + report.txt to screenshots/");
                 else    LOG_WARN("[screenshot] Dota 2 window not found — nothing captured");
             }).detach();
         }

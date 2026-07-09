@@ -193,6 +193,12 @@ public:
     // radiant_pos_0..4.png, dire_pos_0..4.png (10 + 10 файлов).
     void saveDebugRegions(const std::filesystem::path& dir = "") const;
 
+    // Захват полного кадра HUD с наложенными рамками всех 20 регионов (10
+    // портретов героев + 10 индикаторов позиций) — по одному PNG на весь
+    // экран для быстрой визуальной сверки разметки, вместо 20 обрезанных
+    // файлов из saveDebugRegions(). Сохраняет fullscreen_regions.png в dir.
+    bool saveFullScreenshotWithRegions(const std::filesystem::path& dir = "");
+
     // Коллбэк после каждого успешного захвата: void(slot, bitmap)
     using PortraitCallback = std::function<void(int, const Bitmap&)>;
     void setCallback(PortraitCallback cb) { callback_ = std::move(cb); }
