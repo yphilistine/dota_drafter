@@ -107,12 +107,12 @@ static constexpr HudLayout STRATEGY_LAYOUT_16_10 = {
 };
 
 static constexpr HudLayout STRATEGY_LAYOUT_4_3 = {
-    /* radiant_x_start */ 0.0994f,
+    /* radiant_x_start */ 0.08105f,
     /* radiant_y_start */ 0.0065f,
-    /* portrait_w      */ 0.0266f,
+    /* portrait_w      */ 0.0210f,
     /* portrait_h      */ 0.0300f,
-    /* portrait_gap    */ 0.0693f,
-    /* dire_x_start    */ 0.5841f,
+    /* portrait_gap    */ 0.04834f,
+    /* dire_x_start    */ 0.61767f,
     //
     /* pos_x_start     */ 0.05664f,
     /* pos_y           */ 0.09830f,
