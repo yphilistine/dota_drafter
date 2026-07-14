@@ -67,8 +67,8 @@ static Matrix8 matrixPng(const fs::path& path, CropRect crop) {
 static const char* canonicalHeroName(const std::string& stem) {
     static const struct { const char* k; const char* n; } MAP[] = {
         {"pudge2","pudge"},
-        {"sf1","nevermore"},{"drow1","drow_ranger"},{"lion1","lion"},{"jugg1","juggernaut"},
-        {"abaddon","abaddon"},{"alchemist","alchemist"},{"NULL","null"},{"io","wisp"},
+        {"nevermore1","nevermore"},{"drow_ranger1","drow_ranger"},{"lion1","lion"},{"juggernaut1","juggernaut"},
+        {"abaddon","abaddon"},{"alchemist","alchemist"},{"NULL","null"},{"wisp","wisp"},
         {"ancient_apparition","ancient_apparition"},{"kez","kez"},{"largo","largo"},
         {"anti_mage","antimage"},{"antimage","antimage"}, {"timbersaw","shredder"},
         {"arc_warden","arc_warden"},{"axe","axe"},{"bane","bane"},
@@ -155,7 +155,7 @@ static const char* canonicalHeroName(const std::string& stem) {
         {  "null_faceless_void","null"},{"null_grimstroke","null"},
         {"null_gyrocopter","null"},{"null_hoodwink","null"},
         {"null_huskar","null"},{"null_invoker","null"},
-        {"null_io","null"},
+        {"null_wisp","null"},
         {"null_jakiro","null"},
         {"null_juggernaut","null"},
         {"null_keeper_of_the_light","null"},
