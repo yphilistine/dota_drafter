@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 :: удаления файлов героев в assets/ или после regen hero_hashes.dat.
 :: Run from repo root (dota_drafter\)
 
-screencapture\build\build_hero_db.exe --dir screencapture\allheroes --out screencapture\hero_hashes.dat
+screencapture\build\build_hero_db.exe --dir C:\Users\ANDREY\Desktop\heropngs --out screencapture\hero_hashes.dat
 if %ERRORLEVEL% neq 0 ( echo [FAIL] build_hero_db.exe failed & exit /b 1 )
 
 copy /Y screencapture\hero_hashes.dat finalapp\hero_hashes.dat >nul
