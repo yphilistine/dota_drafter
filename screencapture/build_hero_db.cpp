@@ -203,40 +203,17 @@ static const char* canonicalHeroName(const std::string& stem) {
     return nullptr;
 }
 
-static std::vector<fs::path> findPortraits(const fs::path& root) {
-    std::vector<fs::path> cands = {
-        root/"game"/"dota"/"pak01_dir"/"panorama"/"images"/"heroes",
-        root/"game"/"dota"/"panorama"/"images"/"heroes",
-        root/"dota"/"resource"/"flash3"/"images"/"heroes",
-    };
-    for (const auto& p : cands) {
-        if (!fs::exists(p)) continue;
-        std::vector<fs::path> r;
-        for (const auto& e : fs::directory_iterator(p)) {
-            auto ext = e.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext == ".png") r.push_back(e.path());
-        }
-        if (!r.empty()) {
-            std::printf("Found %zu portraits in: %s\n", r.size(), p.string().c_str());
-            return r;
-        }
-    }
-    return {};
-}
-
 int main(int argc, char* argv[]) {
     Gdiplus::GdiplusStartupInput gi; ULONG_PTR gt;
     Gdiplus::GdiplusStartup(&gt, &gi, nullptr);
 
-    std::string dota_root, custom_dir, output = "hero_hashes.dat";
+    std::string custom_dir, output = "hero_hashes.dat";
 
     CropRect crop = {0.0f, 0.0f, 1.0f, 1.0f};
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if      (a == "--dota" && i+1 < argc) dota_root  = argv[++i];
-        else if (a == "--dir"  && i+1 < argc) custom_dir = argv[++i];
+        if      (a == "--dir"  && i+1 < argc) custom_dir = argv[++i];
         else if (a == "--out"  && i+1 < argc) output     = argv[++i];
         else if (a == "--crop" && i+4 < argc) {
             crop.x0 = std::stof(argv[++i]);
@@ -248,17 +225,11 @@ int main(int argc, char* argv[]) {
             std::puts(
                 "build_hero_db.exe  — generates hero_hashes.dat\n"
                 "\n"
-                "RECOMMENDED: hash already-captured HUD portraits\n"
                 "  1. Run dota2_portraits.exe --loop during a game\n"
                 "  2. Rename saved PNGs to hero names:  anti_mage.png, axe.png ...\n"
                 "  3. build_hero_db.exe --dir C:\\portraits\\\n"
                 "\n"
-                "FROM GAME FILES (with crop to match HUD region):\n"
-                "  build_hero_db.exe --dota \"C:\\...\\dota 2 beta\" --crop 0 0 1 0.72\n"
-                "  --crop x0 y0 x1 y1   fractions of source image (default: 0 0 1 1)\n"
-                "\n"
                 "OPTIONS:\n"
-                "  --dota <path>   Dota 2 install root\n"
                 "  --dir  <path>   folder with hero PNG files\n"
                 "  --out  <file>   output filename (default: hero_hashes.dat)\n"
                 "  --crop x0 y0 x1 y1  crop before hashing (0..1 fractions)\n"
@@ -267,39 +238,20 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (dota_root.empty() && custom_dir.empty()) {
-        const char* paths[] = {
-            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\dota 2 beta",
-            "C:\\Program Files\\Steam\\steamapps\\common\\dota 2 beta",
-            "D:\\Steam\\steamapps\\common\\dota 2 beta",
-            "D:\\SteamLibrary\\steamapps\\common\\dota 2 beta",
-            nullptr
-        };
-        for (int i = 0; paths[i]; ++i) {
-            if (fs::exists(paths[i])) {
-                dota_root = paths[i];
-                std::printf("Auto-detected: %s\n", dota_root.c_str());
-
-                if (crop.x1 == 1.0f && crop.y1 == 1.0f) {
-                    crop = {0.0f, 0.0f, 1.0f, 0.72f};
-                    std::puts("Applying default HUD crop: top 72% of portrait");
-                }
-                break;
-            }
-        }
+    if (custom_dir.empty()) {
+        std::fputs(
+            "ERROR: --dir is required.\n"
+            "  See --help for usage.\n", stderr);
+        return 1;
     }
 
     std::vector<fs::path> pngs;
-    if (!custom_dir.empty()) {
-        for (const auto& e : fs::directory_iterator(custom_dir)) {
-            auto ext = e.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext == ".png") pngs.push_back(e.path());
-        }
-        std::printf("Found %zu PNGs in %s\n", pngs.size(), custom_dir.c_str());
-    } else if (!dota_root.empty()) {
-        pngs = findPortraits(dota_root);
+    for (const auto& e : fs::directory_iterator(custom_dir)) {
+        auto ext = e.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".png") pngs.push_back(e.path());
     }
+    std::printf("Found %zu PNGs in %s\n", pngs.size(), custom_dir.c_str());
 
     if (pngs.empty()) {
         std::fputs(
