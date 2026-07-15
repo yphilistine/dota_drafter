@@ -13,6 +13,10 @@ if %ERRORLEVEL% neq 0 ( echo [FAIL] build_hero_db.exe failed & exit /b 1 )
 copy /Y screencapture\hero_hashes.dat finalapp\hero_hashes.dat >nul
 if %ERRORLEVEL% neq 0 ( echo [FAIL] copy hero_hashes.dat to finalapp failed & exit /b 1 )
 
+git add screencapture\hero_hashes.dat screencapture\hero_hashes.h
+git commit -m "Update hero assets/hashes"
+git push
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\update_assets.ps1"
 if %ERRORLEVEL% neq 0 ( echo [FAIL] update_assets.ps1 failed & exit /b 1 )
 
