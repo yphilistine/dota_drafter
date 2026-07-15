@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cstring>
+#include <cctype>
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -55,152 +56,12 @@ static Matrix8 matrixPng(const fs::path& path, CropRect crop) {
     return m;
 }
 
-// Отображает вариант имени файла портрета (engine shortname, каким его
-// сохранила Dota/сам пайплайн капчура) на канонический идентификатор героя —
-// суффикс поля heroes.name (npc_dota_hero_<suffix>), стабильный ключ, который
-// не зависит от localized_name. localized_name Valve иногда временно/некорректно
-// меняет (напр. в живой БД встречалось "Axe?" вместо "Axe"), из-за чего
-// сопоставление по display-имени ломалось. Несколько исходных вариантов файла
-// могут указывать на одного героя (алиасы вроде anti_mage/antimage) — тогда
-// они схлопываются в один и тот же суффикс. "null" — не герой, а сентинел
-// пустого слота выбора (null_*/event_null* варианты заглушки).
+
 static const char* canonicalHeroName(const std::string& stem) {
-    static const struct { const char* k; const char* n; } MAP[] = {
-        {"pudge2","pudge"},
-        {"nevermore1","nevermore"},{"drow_ranger1","drow_ranger"},{"lion1","lion"},{"juggernaut1","juggernaut"},
-        {"abaddon","abaddon"},{"alchemist","alchemist"},{"NULL","null"},{"wisp","wisp"},
-        {"ancient_apparition","ancient_apparition"},{"kez","kez"},{"largo","largo"},
-        {"anti_mage","antimage"},{"antimage","antimage"}, {"timbersaw","shredder"},
-        {"arc_warden","arc_warden"},{"axe","axe"},{"bane","bane"},
-        {"batrider","batrider"},{"beastmaster","beastmaster"},
-        {"bloodseeker","bloodseeker"},{"bounty_hunter","bounty_hunter"},
-        {"brewmaster","brewmaster"},{"bristleback","bristleback"},
-        {"broodmother","broodmother"},{"centaur","centaur"},
-        {"chaos_knight","chaos_knight"},{"chen","chen"},{"clinkz","clinkz"},
-        {"crystal_maiden","crystal_maiden"},{"dark_seer","dark_seer"},
-        {"dark_willow","dark_willow"},{"dawnbreaker","dawnbreaker"},
-        {"dazzle","dazzle"},{"death_prophet","death_prophet"},
-        {"disruptor","disruptor"},{"doom_bringer","doom_bringer"},
-        {"dragon_knight","dragon_knight"},{"drow_ranger","drow_ranger"},
-        {"earth_spirit","earth_spirit"},{"earthshaker","earthshaker"},
-        {"elder_titan","elder_titan"},{"ember_spirit","ember_spirit"},
-        {"enchantress","enchantress"},{"enigma","enigma"},
-        {"faceless_void","faceless_void"},{"grimstroke","grimstroke"},
-        {"gyrocopter","gyrocopter"},{"hoodwink","hoodwink"},
-        {"huskar","huskar"},{"invoker","invoker"},{"jakiro","jakiro"},
-        {"juggernaut","juggernaut"},
-        {"keeper_of_the_light","keeper_of_the_light"},{"kunkka","kunkka"},
-        {"legion_commander","legion_commander"},{"leshrac","leshrac"},
-        {"lich","lich"},{"life_stealer","life_stealer"},{"lina","lina"},
-        {"lion","lion"},{"lone_druid","lone_druid"},{"luna","luna"},
-        {"lycan","lycan"},{"magnus","magnataur"},{"marci","marci"},
-        {"mars","mars"},{"medusa","medusa"},{"meepo","meepo"},{"mirana1","mirana"},
-        {"mirana","mirana"},{"monkey_king","monkey_king"},{"monkey_king1","monkey_king"},
-        {"morphling","morphling"},{"muerta","muerta"},
-        {"naga_siren","naga_siren"},{"natures_prophet","furion"},
-        {"necrolyte","necrolyte"},{"nevermore","nevermore"},
-        {"shadow_fiend","nevermore"},{"night_stalker","night_stalker"},
-        {"nyx_assassin","nyx_assassin"},{"ogre_magi","ogre_magi"},
-        {"omniknight","omniknight"},{"oracle","oracle"},
-        {"outworld_destroyer","obsidian_destroyer"},
-        {"pangolier","pangolier"},{"phantom_assassin","phantom_assassin"},
-        {"phantom_lancer","phantom_lancer"},{"phoenix","phoenix"},
-        {"primal_beast","primal_beast"},{"puck","puck"},{"pudge","pudge"},{"pudge1","pudge"},
-        {"pugna","pugna"},{"queen_of_pain","queenofpain"},
-        {"queenofpain","queenofpain"},{"razor","razor"},
-        {"rattletrap","rattletrap"},{"riki","riki"},
-        {"ringmaster","ringmaster"},{"rubick","rubick"},
-        {"sand_king","sand_king"},{"shadow_demon","shadow_demon"},
-        {"shadow_shaman","shadow_shaman"},{"silencer","silencer"},
-        {"skywrath_mage","skywrath_mage"},{"slardar","slardar"},
-        {"slark","slark"},{"snapfire","snapfire"},{"sniper","sniper"},
-        {"spectre","spectre"},{"spirit_breaker","spirit_breaker"},
-        {"storm_spirit","storm_spirit"},{"sven","sven"},
-        {"techies","techies"},{"templar_assassin","templar_assassin"},
-        {"terrorblade","terrorblade"},{"tidehunter","tidehunter"},{"terrorblade1","terrorblade"},
-        {"tinker","tinker"},{"tiny","tiny"},
-        {"treant","treant"},{"troll_warlord","troll_warlord"},
-        {"tusk","tusk"},{"underlord","abyssal_underlord"},
-        {"abyssal_underlord","abyssal_underlord"},{"undying","undying"},
-        {"ursa","ursa"},{"vengefulspirit","vengefulspirit"},
-        {"venomancer","venomancer"},{"viper","viper"},{"visage","visage"},
-        {"void_spirit","void_spirit"},{"warlock","warlock"},
-        {"weaver","weaver"},{"windrunner","windrunner"},
-        {"winter_wyvern","winter_wyvern"},{"witch_doctor","witch_doctor"},
-        {"wraith_king","skeleton_king"},{"zeus","zuus"},{"zuus","zuus"}, {"null_abaddon","null"},{"null_alchemist","null"},
-        {"event_null1","null"},{"event_null2","null"},{"event_null3","null"},
-        {"event_null4","null"},{"event_null5","null"},{"event_null6","null"},
-        {"event_null7","null"},{"event_null8","null"},{"event_null9","null"},
-        {"event_null10","null"},{"event_null11","null"},{"event_null12","null"},
-        {"event_null13","null"},{"event_null14","null"},{"event_null15","null"},
-        {"event_null16","null"},{"event_null17","null"},{"event_null18","null"},
-        {"event_null19","null"},{"event_null20","null"},{"null_abaddon","null"},
-        {"null_alchemist","null"},
-        {"null_ancient_apparition","null"},
-        {"null_anti_mage","null"},
-        {"null_arc_warden","null"},{"null_axe","null"},{"null_bane","null"},
-        {"null_batrider","null"},{"null_beastmaster","null"},
-        {"null_bloodseeker","null"},{"null_bounty_hunter","null"},
-        {"null_brewmaster","null"},{"null_bristleback","null"},
-        {"null_broodmother","null"},{"null_centaur","null"},
-        {"null_chaos_knight","null"},{"null_chen","null"},{"null_clinkz","null"},
-        {"null_crystal_maiden","null"},{"null_dark_seer","null"},
-        {"null_dark_willow","null"},{"null_dawnbreaker","null"},
-        {"null_dazzle","null"},{"null_death_prophet","null"},
-        {"null_disruptor","null"},{"null_doom_bringer","null"},
-        {"null_dragon_knight","null"},{"null_drow_ranger","null"},
-        {"null_earth_spirit","null"},{"null_earthshaker","null"},
-        {"null_elder_titan","null"},{"null_ember_spirit","null"},
-        {"null_enchantress","null"},{"null_enigma","null"},
-        {  "null_faceless_void","null"},{"null_grimstroke","null"},
-        {"null_gyrocopter","null"},{"null_hoodwink","null"},
-        {"null_huskar","null"},{"null_invoker","null"},
-        {"null_wisp","null"},
-        {"null_jakiro","null"},
-        {"null_juggernaut","null"},
-        {"null_keeper_of_the_light","null"},
-        {"null_kez","null"},
-        {"null_kunkka","null"},
-        {"null_largo","null"},
-        {"null_legion_commander","null"},{"null_leshrac","null"},
-        {"null_lich","null"},{"null_life_stealer","null"},{"null_lina","null"},
-        {"null_lion","null"},{"null_lone_druid","null"},{"null_luna","null"},
-        {"null_lycan","null"},{"null_magnus","null"},{"null_marci","null"},
-        {"null_mars","null"},{"null_medusa","null"},{"null_meepo","null"},
-        {"null_mirana","null"},{"null_monkey_king","null"},
-        {"null_morphling","null"},{"null_muerta","null"},
-        {"null_naga_siren","null"},{"null_natures_prophet","null"},
-        {"null_necrolyte","null"},
-        {"null_shadow_fiend","null"},{"null_night_stalker","null"},
-        {"null_nyx_assassin","null"},{"null_ogre_magi","null"},
-        {"null_omniknight","null"},{"null_oracle","null"},
-        {"null_outworld_destroyer","null"},
-        {"null_pangolier","null"},{"null_phantom_assassin","null"},
-        {"null_phantom_lancer","null"},{"null_phoenix","null"},
-        {"null_primal_beast","null"},{"null_puck","null"},{"null_pudge","null"},
-        {"null_pugna","null"},{"null_queen_of_pain","null"},
-        {"null_razor","null"},{"null_rattletrap","null"},{"null_riki","null"},
-        {"null_ringmaster","null"},{"null_rubick","null"},
-        {"null_sand_king","null"},{"null_shadow_demon","null"},
-        {"null_shadow_shaman","null"},{"null_silencer","null"},
-        {"null_skywrath_mage","null"},{"null_slardar","null"},
-        {"null_slark","null"},{"null_snapfire","null"},{"null_sniper","null"},
-        {"null_spectre","null"},{"null_spirit_breaker","null"},
-        {"null_storm_spirit","null"},{"null_sven","null"},
-        {"null_techies","null"},{"null_templar_assassin","null"},
-        {"null_terrorblade","null"},{"null_tidehunter","null"}, {"null_timbersaw","null"},
-        {"null_tinker","null"},{"null_tiny","null"},
-        {"null_treant","null"},{"null_troll_warlord","null"},
-        {"null_tusk","null"},{"null_underlord","null"},
-        {"null_undying","null"},{"null_ursa","null"},{"null_vengefulspirit","null"},
-        {"null_venomancer","null"},{"null_viper","null"},{"null_visage","null"},
-        {"null_void_spirit","null"},{"null_warlock","null"},
-        {"null_weaver","null"},{"null_windrunner","null"},
-        {"null_winter_wyvern","null"},{"null_witch_doctor","null"},
-        {"null_wraith_king","null"},{"null_zeus","null"}
-    };
-    for (const auto& e : MAP) if (stem == e.k) return e.n;
-    return nullptr;
+    std::string s = stem;
+    s.pop_back();
+    if(s.find("null")!= std::string::npos) return "null";
+    return s.c_str();
 }
 
 int main(int argc, char* argv[]) {
