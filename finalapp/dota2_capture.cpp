@@ -224,6 +224,12 @@ void Dota2Capture::computePosRegions() {
 Bitmap Dota2Capture::captureWindow() {
     if (!IsWindow(hwnd_)) { hwnd_ = nullptr; return {}; }
     if (IsIconic(hwnd_)) return {};
+    // Зависшее (не отвечающее) окно всё ещё валидно для IsWindow/IsIconic, но
+    // PrintWindow шлёт WM_PRINT синхронно (SendMessage) — если целевой процесс
+    // упал/завис, вызов блокирует этот поток на неопределённое время. Один такой
+    // кадр вешает весь цикл захвата, а следом и оркестратор (join() на этом
+    // потоке в orchestrator.cpp) — лечится пропуском кадра без вызова PrintWindow.
+    if (IsHungAppWindow(hwnd_)) return {};
 
     const int W = res_.width;
     const int H = res_.height;
@@ -266,6 +272,9 @@ int Dota2Capture::capturePortraits() {
     posPortraits_.clear();
     posPortraits_.resize(10);
     if (IsIconic(hwnd_)) return 0;
+    // См. комментарий в captureWindow() — то же самое: не звать PrintWindow в
+    // зависшее окно, иначе SendMessage внутри блокирует поток захвата навсегда.
+    if (IsHungAppWindow(hwnd_)) return 0;
     const int W = res_.width, H = res_.height;
     if (W<=0||H<=0) return 0;
 

@@ -58,9 +58,12 @@ static Matrix8 matrixPng(const fs::path& path, CropRect crop) {
 
 
 static const char* canonicalHeroName(const std::string& stem) {
-    std::string s = stem;
-    s.pop_back();
-    if(s.find("null")!= std::string::npos) return "null";
+    static std::string s;
+    s = stem;
+    s.erase(std::remove_if(s.begin(), s.end(),
+        [](unsigned char c){ return std::isdigit(c); }), s.end());
+
+    if (s.find("null") != std::string::npos) return "null";
     return s.c_str();
 }
 
