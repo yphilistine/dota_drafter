@@ -286,6 +286,12 @@ static void RenderFrame() {
     ImGui::End();
 }
 
+// Sync interval для Present(): рендер на каждый 2-й vblank. Present()
+// блокируется до нужного vblank'а, поэтому частота полной пересборки ImGui
+// draw-list (RenderFrame/Render) в RunMessageLoop масштабируется вместе с Гц
+// монитора, а не привязана к фиксированному FPS.
+static constexpr UINT kPresentSyncInterval = 2;
+
 static void PresentFrame() {
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -296,7 +302,7 @@ static void PresentFrame() {
     g_Context->OMSetRenderTargets(1, &g_RTV, nullptr);
     g_Context->ClearRenderTargetView(g_RTV, bg);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    g_SwapChain->Present(1, 0);
+    g_SwapChain->Present(kPresentSyncInterval, 0);
 }
 
 // ─── Иконка приложения [D] (программно через GDI) ────────────────────────────
@@ -622,11 +628,26 @@ static bool InitGuiAndAssets(HWND hwnd) {
     return true;
 }
 
+// Safety-net для события redrawEventHandle(): курсор InputText, hover-тултипы
+// и подобная ImGui-анимация не сигналят requestRedraw() сами по себе, поэтому
+// луп всё равно просыпается сам не реже этого интервала, даже без сообщений
+// и без сигналов от фоновых потоков.
+static constexpr DWORD kRedrawTimeoutMs = 300;
+
 static void RunMessageLoop() {
     MSG msg{};
+    HANDLE redrawEvt = redrawEventHandle();
     while (msg.message != WM_QUIT) {
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg); DispatchMessage(&msg);
+            continue;
+        }
+        // Окно свёрнуто — рендерить нечего (DWM всё равно не показывает
+        // бэкбуфер). WaitMessage() блокирует поток до следующего сообщения
+        // (например WM_SYSCOMMAND restore), вместо непрерывного вызова
+        // PresentFrame() вхолостую с частотой обновления монитора.
+        if (IsIconic(g_Hwnd)) {
+            WaitMessage();
             continue;
         }
         // PresentFrame() — main-поток WinMain, необработанное исключение
@@ -638,6 +659,15 @@ static void RunMessageLoop() {
         } catch (...) {
             LOG_ERR("[gui] PresentFrame unknown exception");
         }
+
+        // Кадр отрисован с тем, что было известно на момент пробуждения —
+        // ждать следующей причины для рендера НАДО здесь, после Present, а не
+        // до него: иначе последнее сообщение в пачке (например, символ,
+        // введённый в InputText) отрисуется только на следующем пробуждении.
+        // Просыпаемся на: новое оконное сообщение (QS_ALLINPUT), сигнал
+        // requestRedraw() от фонового потока, либо таймаут.
+        MsgWaitForMultipleObjects(1, &redrawEvt, FALSE, kRedrawTimeoutMs, QS_ALLINPUT);
+        ResetEvent(redrawEvt);
     }
 }
 

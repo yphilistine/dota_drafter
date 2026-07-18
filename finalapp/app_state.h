@@ -67,6 +67,16 @@ extern ID3D11Device* g_Device;
 // gui_draw.cpp (DrawHeader: клик по логотипу [D] возвращает фокус на окно).
 extern HWND g_Hwnd;
 
+// ─── Событийный рендер ──────────────────────────────────────────────────────
+// RunMessageLoop (mainGUI.cpp) не крутит busy-цикл — спит на этом Win32-событии
+// (плюс оконные сообщения, плюс safety-net таймаут). Producer-потоки
+// (orchestrator/portrait/picker/GSI) вызывают requestRedraw() сразу после
+// того, как реально поменяли что-то видимое в GUI, а не на каждой своей
+// внутренней итерации — иначе событие сигналилось бы так же часто, как раньше
+// рендерился кадр, и вся экономия CPU терялась бы.
+void requestRedraw();
+HANDLE redrawEventHandle();
+
 // ─── Единый канал уведомлений для GUI ──────────────────────────────────────────
 // Заменяет прежний файл-статик g_schemaBannerNeeded (был только для одного
 // частного случая — SCHEMA_TOO_NEW). GuiPickerState::schemaError остаётся
@@ -83,6 +93,7 @@ struct AppNotice {
         active = true;
         level  = lvl;
         std::snprintf(text, sizeof(text), "%s", msg.c_str());
+        requestRedraw();
     }
     void clear() {
         std::lock_guard<std::mutex> lk(mtx);

@@ -14,6 +14,7 @@
 #include <ws2tcpip.h>
 
 #include "shared_types.h"
+#include "app_state.h"
 #include "common.h"
 
 #include <iostream>
@@ -22,7 +23,7 @@
 #include <thread>
 
 static const int PORT = 62326;
-static GameInfo* g_gameInfo = nullptr;
+static GameInfo* g_gsiInfo = nullptr;
 static std::string g_lastLoggedState;  // для дедупликации записей в лог (только смена состояния)
 
 static GamePhase parsePhaseStr(const std::string& s) {
@@ -105,40 +106,44 @@ static std::string handle_request(const std::string& raw) {
 
         if (!mid.empty()) {
             bool stateChanged = false;
-            if (g_gameInfo) {
-                std::lock_guard<std::mutex> lk(g_gameInfo->mtx);
-                bool newId = (!mid.empty() && mid != g_gameInfo->matchId);
-                if (!mid.empty())    g_gameInfo->matchId = mid;
-                if (!gstate.empty()) g_gameInfo->phase   = parsePhaseStr(gstate);
-                if (!team.empty())   g_gameInfo->ourSide = (team == "radiant") ? 1 : 0;
-                g_gameInfo->ourSlot = team_slot + 1;
-                if (newId) g_gameInfo->newMatch = true;
+            if (g_gsiInfo) {
+                std::lock_guard<std::mutex> lk(g_gsiInfo->mtx);
+                bool newId = (!mid.empty() && mid != g_gsiInfo->matchId);
+                if (!mid.empty())    g_gsiInfo->matchId = mid;
+                if (!gstate.empty()) g_gsiInfo->phase   = parsePhaseStr(gstate);
+                if (!team.empty())   g_gsiInfo->ourSide = (team == "radiant") ? 1 : 0;
+                g_gsiInfo->ourSlot = team_slot + 1;
+                if (newId) g_gsiInfo->newMatch = true;
                 // Логируем только первый контакт и смену состояния — иначе лог
                 // захлёбывается GSI-запросами, которые идут несколько раз в секунду.
                 stateChanged = newId || (gstate != g_lastLoggedState);
                 if (stateChanged) g_lastLoggedState = gstate;
-                g_gameInfo->isHeroSelection =
+                g_gsiInfo->isHeroSelection =
                     (gstate == "DOTA_GAMERULES_STATE_HERO_SELECTION");
-                g_gameInfo->isWaitingForPlayers =
+                g_gsiInfo->isWaitingForPlayers =
                     (gstate == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD");
-                g_gameInfo->lastUpdate = std::chrono::steady_clock::now();
+                g_gsiInfo->lastUpdate = std::chrono::steady_clock::now();
             }
 
             if (stateChanged) {
                 LOG_INFO("[GSI] match=" << mid << " state=" << gstate
                     << " team=" << team << " slot=" << team_slot << " player=" << uid);
+                // Реальная смена фазы/матча — не heartbeat-повтор того же
+                // состояния каждые 5с — стоит перерисовать статус-бар сразу,
+                // не дожидаясь ближайшего тика оркестратора/таймаута лупа.
+                requestRedraw();
             }
         }
         resp_body = "OK";
 
     } else if (is_get && path == "/phase") {
-        if (g_gameInfo) {
-            std::lock_guard<std::mutex> lk(g_gameInfo->mtx);
+        if (g_gsiInfo) {
+            std::lock_guard<std::mutex> lk(g_gsiInfo->mtx);
             resp_body = std::string("{\"phase\":\"")
-                      + phaseName(g_gameInfo->phase)
+                      + phaseName(g_gsiInfo->phase)
                       + "\",\"heroSel\":"
-                      + (g_gameInfo->isHeroSelection ? "true" : "false")
-                      + ",\"match\":\"" + g_gameInfo->matchId + "\"}";
+                      + (g_gsiInfo->isHeroSelection ? "true" : "false")
+                      + ",\"match\":\"" + g_gsiInfo->matchId + "\"}";
         } else {
             resp_body = "{\"phase\":\"unknown\"}";
         }
@@ -209,7 +214,7 @@ static void client_thread(SOCKET client) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void runGsiServer(GameInfo& gameInfo) {
-    g_gameInfo = &gameInfo;
+    g_gsiInfo = &gameInfo;
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {

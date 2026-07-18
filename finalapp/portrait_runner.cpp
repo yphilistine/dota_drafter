@@ -17,6 +17,7 @@
 #include "dota2_capture.h"
 #include "dhash.h"
 #include "pos_ocr.h"
+#include "app_state.h"
 #include "common.h"   // LOG_INFO/WARN/ERR — GUI-приложение без консоли, printf/puts
                        // были бы невидимы (см. mainGUI.cpp)
 
@@ -363,6 +364,11 @@ void runPortraitCapture(GameInfo&           gameInfo,
                     out.detectedPos[slot] = 0;
                 }
             }
+
+            // Раз в успешную итерацию (только пока этот поток жив, т.е. во
+            // время реального HERO_SELECTION) — не диффим по слотам, цикл и
+            // так активен только в ограниченном окне активного драфта.
+            requestRedraw();
 
             auto elapsed   = std::chrono::steady_clock::now() - frameStart;
             auto remaining = std::chrono::milliseconds(250) - elapsed;

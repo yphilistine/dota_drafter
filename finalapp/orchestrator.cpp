@@ -301,6 +301,7 @@ static void handleAccountIdChanged(sqlite3* db, OrchestratorLoopState& st, const
                          g_pickerRunning, &g_pickerState, &g_portraitState);
         });
     }
+    requestRedraw();
 }
 
 // Новый матч: остановить потоки, сбросить состояние, пересоздать livepicks.
@@ -324,12 +325,17 @@ static void handleNewMatch(sqlite3* db, OrchestratorLoopState& st, const GsiSnap
     long long mid = safeStoll(gs.matchId, -1);
     if (mid >= 0) initLivePicksRow(db, mid, st.accountId, gs.ourSide, gs.ourSlot);
     st.lastMatchId = gs.matchId;
+    requestRedraw();
 }
 
 // Фаза 3: портреты + пикер. 3-ветка: IDLE/POSTGAME (тир-даун) / HERO_SELECTION
 // (запуск) / хвост PHASE3_TAIL_SEC после конца HERO_SELECTION.
 static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& gs) {
     if (gs.phase == GamePhase::IDLE || gs.phase == GamePhase::POSTGAME) {
+        // Снимок до остановки — чтобы просигналить requestRedraw() только
+        // если что-то реально было активно (не на каждом тике в чистом IDLE).
+        bool wasActive = g_pickerRunning.load() || g_portraitRunning.load()
+                       || g_pickerState.gameStarted;
         if (g_pickerRunning.load()) {
             g_pickerRunning.store(false);
             if (g_pickerThread.joinable()) g_pickerThread.join();
@@ -343,6 +349,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
         if (g_pickerState.gameStarted) {
             g_pickerState.reset();
         }
+        if (wasActive) requestRedraw();
 
     } else if (gs.isHeroSel) {
         st.phase3EndPending = false;
@@ -359,6 +366,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
                 runPortraitCapture(g_gameInfo, DB_PATH,
                                    g_portraitRunning, g_portraitState);
             });
+            requestRedraw();
         }
 
         // Picker — только при наличии accountId
@@ -368,6 +376,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
                 runPickerGui(MODEL_PATH, DB_PATH,
                              g_pickerRunning, &g_pickerState, &g_portraitState);
             });
+            requestRedraw();
         }
 
     } else {
@@ -391,6 +400,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
                 if (g_portraitThread.joinable()) g_portraitThread.join();
                 g_portraitState.clear();
                 st.phase3EndPending = false;
+                requestRedraw();
             }
         }
     }
@@ -435,6 +445,7 @@ static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
     g_pickerState.recCount      = 0;
     g_pickerState.ourHeroPicked = false;
     g_pickerState.winProb       = 0.f;
+    requestRedraw();
 }
 
 // One-shot: ручная смена позиции вне фазы 3 (клик по бейджу в GUI) → запись
@@ -480,6 +491,7 @@ static void runOneShotRefresh(sqlite3* db, OrchestratorLoopState& st) {
                          g_pickerRunning, &g_pickerState, &g_portraitState);
         });
         st.oneShotActive = true;
+        requestRedraw();
     }
 
     if (st.oneShotActive &&
@@ -488,6 +500,7 @@ static void runOneShotRefresh(sqlite3* db, OrchestratorLoopState& st) {
         g_pickerRunning.store(false);
         if (g_pickerThread.joinable()) g_pickerThread.join();
         st.oneShotActive = false;
+        requestRedraw();
     }
 }
 

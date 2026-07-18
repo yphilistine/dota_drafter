@@ -31,6 +31,7 @@
 #include "shared_types.h"
 #include "version.h"
 #include "version_utils.h"
+#include "app_state.h"
 #include "common.h"
 
 #include <string>
@@ -776,6 +777,7 @@ int runPickerGui(const char* model_path, const char* db_path,
                         "Incompatible data (schema %d, app supports %d). Update the app.",
                         dm.schema, kSupportedSchema);
                 }
+                requestRedraw();
                 return 1;
             }
         } catch (const std::exception& ex) {
@@ -845,6 +847,7 @@ int runPickerGui(const char* model_path, const char* db_path,
                 renderToGui(guiState, lp, hero_map, md,
                             our_stats, our_stats_ranked, our_stats_pos,
                             immortal_map, model.get());
+                requestRedraw();
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
