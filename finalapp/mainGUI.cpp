@@ -1,7 +1,7 @@
 /*
  * mainGUI.cpp — ImGui D3D11 GUI: WinMain, D3D11, WndProc, RenderFrame.
  *
- * Остальное вынесено в отдельные файлы по зонам ответственности:
+ * Остальное живёт в отдельных файлах по зонам ответственности:
  *   app_state.{h,cpp}     — общее состояние (GameInfo/PortraitState/PickerState/
  *                           PlayerState/AppNotice), расшаренное между этим файлом,
  *                           orchestrator.cpp и gui_draw.cpp
@@ -232,10 +232,9 @@ static void RenderFrame() {
             ImGui::Spacing();
         }
 
-        // g_appNotice — единый канал уведомлений (заменяет прежний файл-статик
-        // g_schemaBannerNeeded, который покрывал только один частный случай).
-        // schemaError выше — отдельный, самодостаточный механизм пикера,
-        // оба баннера могут показываться одновременно, не мешая друг другу.
+        // g_appNotice — общий канал уведомлений уровня приложения. schemaError
+        // выше — отдельный, самодостаточный механизм пикера; оба баннера могут
+        // показываться одновременно, не мешая друг другу.
         bool noticeActive = false;
         char noticeMsg[256] = {};
         {
@@ -642,10 +641,9 @@ static void RunMessageLoop() {
             TranslateMessage(&msg); DispatchMessage(&msg);
             continue;
         }
-        // Окно свёрнуто — рендерить нечего (DWM всё равно не показывает
-        // бэкбуфер). WaitMessage() блокирует поток до следующего сообщения
-        // (например WM_SYSCOMMAND restore), вместо непрерывного вызова
-        // PresentFrame() вхолостую с частотой обновления монитора.
+        // Окно свёрнуто — рендерить нечего (DWM не показывает бэкбуфер).
+        // WaitMessage() блокирует поток до следующего сообщения (например
+        // WM_SYSCOMMAND restore).
         if (IsIconic(g_Hwnd)) {
             WaitMessage();
             continue;
@@ -660,10 +658,9 @@ static void RunMessageLoop() {
             LOG_ERR("[gui] PresentFrame unknown exception");
         }
 
-        // Кадр отрисован с тем, что было известно на момент пробуждения —
-        // ждать следующей причины для рендера НАДО здесь, после Present, а не
-        // до него: иначе последнее сообщение в пачке (например, символ,
-        // введённый в InputText) отрисуется только на следующем пробуждении.
+        // Ожидание идёт после Present: кадр должен отражать сообщения,
+        // обработанные в этой итерации (например, символ, введённый в
+        // InputText), а не оставлять их до следующего пробуждения.
         // Просыпаемся на: новое оконное сообщение (QS_ALLINPUT), сигнал
         // requestRedraw() от фонового потока, либо таймаут.
         MsgWaitForMultipleObjects(1, &redrawEvt, FALSE, kRedrawTimeoutMs, QS_ALLINPUT);

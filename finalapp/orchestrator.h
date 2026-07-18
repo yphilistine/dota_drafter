@@ -23,8 +23,9 @@ void stopOrchestrator();
 void startPhase1(long long accountId);
 
 // Сигнал оркестратору: пользователь вручную сменил позицию в GUI — записать
-// manualPos в livepicks и запустить one-shot переинференс. Вызывается из
-// gui_draw.cpp (SetOurPosition) вместо прямой записи в атомик оркестратора.
+// manualPos в livepicks и запустить one-shot переинференс. Единственная точка
+// входа для gui_draw.cpp (SetOurPosition): флаг-атомик оркестратора приватен
+// (static внутри orchestrator.cpp).
 void requestPositionRefresh();
 
 // ─── SQLite: таблица player_info (используется также из WinMain при старте) ───

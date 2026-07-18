@@ -684,8 +684,8 @@ static void renderToGui(
 
             // Component B: probs[i] — сырая radiant-вероятность; ориентируем в
             // "нашу" сторону, применяем персональную поправку, ориентируем обратно
-            // — дальше сортировка/флип для дисплея работают как раньше, без
-            // изменений (при PERSONAL_BETA=0.0 pRawFinal == probs[i] побитово).
+            // для сортировки/флипа на дисплее (при PERSONAL_BETA=0.0 pRawFinal
+            // равен probs[i] побитово — поправка эффективно не действует).
             std::vector<std::pair<double,int>> ranked;
             ranked.reserve(pool.size());
             for (size_t i = 0; i < pool.size(); i++) {

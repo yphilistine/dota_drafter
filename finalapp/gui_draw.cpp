@@ -1,11 +1,10 @@
 /*
- * gui_draw.cpp — панели ImGui, кэш портретов героев/меты/имён.
+ * gui_draw.cpp — панели ImGui (Draft/Picks/Meta Heroes/Header/StatusBar),
+ * кэш портретов героев/меты/имён.
  *
- * Вынесено из mainGUI.cpp вместе с остальной UI-отрисовкой (~1900 из
- * прежних 2720 строк файла). DrawPickRow/DrawMetaRow (были дублирующимися
- * лямбдами в DrawPicksPanel/DrawMetaHeroesPanel) объединены в общий
- * DrawHeroStatRow — тот же расчёт колонок/портрета/бара, отличался только
- * источник вторичной статистики.
+ * DrawPicksPanel и DrawMetaHeroesPanel используют общую DrawHeroStatRow —
+ * тот же расчёт колонок/портрета/бара, отличается только источник вторичной
+ * статистики.
  */
 
 #include "gui_draw.h"
@@ -467,7 +466,7 @@ static void SectionLabel(const char* label) {
 // выбором All/Position 1-5, выбор вызывает onPositionPick(p) (0 = All). Унифицировано
 // для всех трёх мест выбора позиции (Draft-слот/Picks/Meta) — везде один и тот же
 // набор вариантов и один и тот же эффект: меняет НАШУ настоящую позицию в драфте
-// (см. SetOurPosition), никакого отдельного "auto" или независимого фильтра больше нет.
+// (см. SetOurPosition) — нет отдельного "auto"-режима или независимого фильтра.
 // onPositionPick == nullptr — бейдж остаётся некликабельным (напр. до старта игры).
 static void SectionLabelWithPosBadge(const char* label, float panelW, int position,
                                       std::function<void(int)> onPositionPick = nullptr) {
@@ -666,7 +665,7 @@ static void DrawHeroStatRow(float rowW, const HeroStatRowParams& p) {
     ImGui::Spacing();
 }
 
-// Легенда цветов win-rate — была продублирована в DrawPicksPanel и DrawMetaHeroesPanel.
+// Легенда цветов win-rate — общая для DrawPicksPanel и DrawMetaHeroesPanel.
 static void DrawWinRateLegend(float rowW) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 fp  = ImGui::GetCursorScreenPos();
@@ -748,9 +747,8 @@ void unloadPoweredByIcons() {
 // Строка иконок-ссылок с явным origin (не текущий курсор ImGui) — чтобы можно
 // было разместить две такие строки рядом на одном уровне, а не одну под другой.
 // Заголовок + ряд кликабельных favicon'ов (ShellExecute на клик). Общая для
-// "POWERED BY" (источники данных) и "CONTACT INFO" (Discord/GitHub) — раньше
-// это была единственная функция DrawPoweredBy, продублировать её тело для
-// второй строки означало бы два независимых, синхронно поддерживаемых куска кода.
+// "POWERED BY" (источники данных) и "CONTACT INFO" (Discord/GitHub) — один
+// расчёт layout/клика для обеих строк вместо двух копий одного и того же тела.
 static constexpr float kIconRowIconSz  = 56.f;
 static constexpr float kIconRowGap     = 16.f; // расстояние между иконками внутри группы
 static constexpr float kIconRowSectGap = 32.f; // расстояние между группами (POWERED BY / CONTACT INFO)

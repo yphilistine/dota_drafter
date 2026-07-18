@@ -3,7 +3,7 @@
  *
  * Портреты: захват каждые 250мс → распознавание героев и позиций → запись в livepicks.
  * Позиции: своя команда = manualPos override > screen capture > 0. Враг = 0.
- * Работает без accountId. Overlay-кнопка [D] вынесена в overlay_button.cpp.
+ * Работает без accountId. Overlay-кнопка [D] — отдельный файл overlay_button.cpp.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN
