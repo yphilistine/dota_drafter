@@ -104,25 +104,33 @@ static std::string handle_request(const std::string& raw) {
         int team_slot = safeStoi(slot_str, 0);
         if (team_slot < 0 || team_slot > 4) team_slot = 0;
 
-        if (!mid.empty()) {
+        if (g_gsiInfo) {
             bool stateChanged = false;
-            if (g_gsiInfo) {
+            {
                 std::lock_guard<std::mutex> lk(g_gsiInfo->mtx);
-                bool newId = (!mid.empty() && mid != g_gsiInfo->matchId);
-                if (!mid.empty())    g_gsiInfo->matchId = mid;
-                if (!gstate.empty()) g_gsiInfo->phase   = parsePhaseStr(gstate);
-                if (!team.empty())   g_gsiInfo->ourSide = (team == "radiant") ? 1 : 0;
-                g_gsiInfo->ourSlot = team_slot + 1;
-                if (newId) g_gsiInfo->newMatch = true;
-                // Логируем только первый контакт и смену состояния — иначе лог
-                // захлёбывается GSI-запросами, которые идут несколько раз в секунду.
-                stateChanged = newId || (gstate != g_lastLoggedState);
-                if (stateChanged) g_lastLoggedState = gstate;
-                g_gsiInfo->isHeroSelection =
-                    (gstate == "DOTA_GAMERULES_STATE_HERO_SELECTION");
-                g_gsiInfo->isWaitingForPlayers =
-                    (gstate == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD");
+                // lastUpdate — единственный сигнал для watchdog'а в orchestrator.cpp
+                // (readGameStateWithTimeoutWatchdog, сброс фазы на IDLE после 15с
+                // без обновлений этого поля): любой дошедший POST от Dota означает
+                // живое GSI-соединение, независимо от того, удалось ли распарсить
+                // matchid в конкретном payload'е.
                 g_gsiInfo->lastUpdate = std::chrono::steady_clock::now();
+
+                if (!mid.empty()) {
+                    bool newId = (mid != g_gsiInfo->matchId);
+                    g_gsiInfo->matchId = mid;
+                    if (!gstate.empty()) g_gsiInfo->phase   = parsePhaseStr(gstate);
+                    if (!team.empty())   g_gsiInfo->ourSide = (team == "radiant") ? 1 : 0;
+                    g_gsiInfo->ourSlot = team_slot + 1;
+                    if (newId) g_gsiInfo->newMatch = true;
+                    // Логируем только первый контакт и смену состояния — иначе лог
+                    // захлёбывается GSI-запросами, которые идут несколько раз в секунду.
+                    stateChanged = newId || (gstate != g_lastLoggedState);
+                    if (stateChanged) g_lastLoggedState = gstate;
+                    g_gsiInfo->isHeroSelection =
+                        (gstate == "DOTA_GAMERULES_STATE_HERO_SELECTION");
+                    g_gsiInfo->isWaitingForPlayers =
+                        (gstate == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD");
+                }
             }
 
             if (stateChanged) {
@@ -245,7 +253,21 @@ void runGsiServer(GameInfo& gameInfo) {
     while (true) {
         SOCKET client = accept(server, nullptr, nullptr);
         if (client == INVALID_SOCKET) continue;
-        std::thread(client_thread, client).detach();
+        // std::thread(...) может бросить std::system_error на всплеске
+        // одновременных подключений (нехватка потоковых ресурсов). Этот цикл
+        // сам запущен как detach()-поток (orchestrator.cpp) без внешней сетки —
+        // необработанное исключение здесь — это std::terminate() и падение
+        // всего процесса, а не только GSI-сервера, поэтому ловим отдельно от
+        // client_thread (у того своя сетка на тело запроса).
+        try {
+            std::thread(client_thread, client).detach();
+        } catch (const std::exception& e) {
+            LOG_ERR("[GSI] failed to spawn client thread: " << e.what());
+            closesocket(client);
+        } catch (...) {
+            LOG_ERR("[GSI] failed to spawn client thread: unknown exception");
+            closesocket(client);
+        }
     }
     closesocket(server);
     WSACleanup();
