@@ -4,6 +4,8 @@
  * POST / — приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot, lastUpdate).
  * GET /phase — JSON статус текущей фазы.
  * lastUpdate используется оркестратором для GSI-таймаута (сброс на IDLE при закрытии Dota 2).
+ * logs/gsi.log — полная, недедуплицированная история принятых состояний за
+ * сессию (каждый POST, а не только смена состояния, как в logs/console.log).
  */
 
 #pragma comment(lib, "ws2_32.lib")
@@ -25,6 +27,61 @@
 static const int PORT = 62326;
 static GameInfo* g_gsiInfo = nullptr;
 static std::string g_lastLoggedState;  // для дедупликации записей в лог (только смена состояния)
+
+// ─── Полный GSI-лог сессии (logs/gsi.log) ─────────────────────────────────────
+// Отдельный от logs/console.log файл: пишет каждое принятое GSI-состояние без
+// дедупликации по смене state (в отличие от LOG_INFO ниже), плюс интервал с
+// предыдущей записи — по нему видно реальные разрывы в потоке GSI-обновлений
+// от Dota, не совпадающие с ожидаемым 5с heartbeat'ом.
+static std::ofstream                         g_gsiLogFile;
+static std::mutex                            g_gsiLogMutex;
+static std::chrono::steady_clock::time_point g_gsiLogPrevTime;
+static bool                                  g_gsiLogHasPrev = false;
+
+static void openGsiLog() {
+    ensureLogsDir();
+    g_gsiLogFile.open("logs/gsi.log", std::ios::out | std::ios::trunc);
+}
+
+static void logGsiState(const std::string& gstate, const std::string& mid,
+                         const std::string& team, int teamSlot,
+                         const std::string& uid) {
+    auto now = std::chrono::system_clock::now();
+    auto t   = std::chrono::system_clock::to_time_t(now);
+    auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   now.time_since_epoch()) % 1000;
+    struct tm tmBuf{};
+#ifdef _WIN32
+    localtime_s(&tmBuf, &t);
+#else
+    localtime_r(&t, &tmBuf);
+#endif
+    char hms[10];
+    std::strftime(hms, sizeof(hms), "%H:%M:%S", &tmBuf);
+    char timebuf[32];
+    std::snprintf(timebuf, sizeof(timebuf), "%s.%03d", hms, static_cast<int>(ms.count()));
+
+    auto steadyNow = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lk(g_gsiLogMutex);
+    if (!g_gsiLogFile.is_open()) return;
+
+    long long gapMs = -1;
+    if (g_gsiLogHasPrev)
+        gapMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            steadyNow - g_gsiLogPrevTime).count();
+    g_gsiLogPrevTime = steadyNow;
+    g_gsiLogHasPrev  = true;
+
+    g_gsiLogFile << timebuf
+                 << " gap="    << (gapMs < 0 ? std::string("-") : std::to_string(gapMs) + "ms")
+                 << " state="  << (gstate.empty() ? "-" : gstate)
+                 << " match="  << (mid.empty()    ? "-" : mid)
+                 << " team="   << (team.empty()   ? "-" : team)
+                 << " slot="   << teamSlot
+                 << " player=" << (uid.empty()    ? "-" : uid)
+                 << "\n";
+    g_gsiLogFile.flush();
+}
 
 static GamePhase parsePhaseStr(const std::string& s) {
     if (s == "DOTA_GAMERULES_STATE_HERO_SELECTION" ||
@@ -103,6 +160,9 @@ static std::string handle_request(const std::string& raw) {
         // индексацию массива слотов 1-5 ниже по стеку.
         int team_slot = safeStoi(slot_str, 0);
         if (team_slot < 0 || team_slot > 4) team_slot = 0;
+
+        // Полная запись в logs/gsi.log — на каждый POST, до дедупликации ниже.
+        logGsiState(gstate, mid, team, team_slot, uid);
 
         if (g_gsiInfo) {
             bool stateChanged = false;
@@ -223,6 +283,7 @@ static void client_thread(SOCKET client) {
 
 void runGsiServer(GameInfo& gameInfo) {
     g_gsiInfo = &gameInfo;
+    openGsiLog();
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
