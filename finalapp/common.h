@@ -41,7 +41,7 @@ using json = nlohmann::json;
 // ─── Константы ───────────────────────────────────────────────────────────────
 
 const std::string DEFAULT_STRATZ_TOKEN =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTdWJqZWN0IjoiNjhjODAzMjItMzQyYS00NWYwLWFlOWYtNjlhZjA3NzllMTMxIiwiU3RlYW1JZCI6IjEyNjE2NjAxMzUiLCJBUElVc2VyIjoidHJ1ZSIsIm5iZiI6MTc1MzEyNzU2NiwiZXhwIjoxNzg0NjYzNTY2LCJpYXQiOjE3NTMxMjc1NjYsImlzcyI6Imh0dHBzOi8vYXBpLnN0cmF0ei5jb20ifQ.UrC1HTdn6dDNf76buspQd3jSQNvhSqOtgAL-2kURGnE";
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTdWJqZWN0IjoiNjhjODAzMjItMzQyYS00NWYwLWFlOWYtNjlhZjA3NzllMTMxIiwiU3RlYW1JZCI6IjEyNjE2NjAxMzUiLCJBUElVc2VyIjoidHJ1ZSIsIm5iZiI6MTc4NDY2Mzk4MiwiZXhwIjoxODE2MTk5OTgyLCJpYXQiOjE3ODQ2NjM5ODIsImlzcyI6Imh0dHBzOi8vYXBpLnN0cmF0ei5jb20ifQ.fHfw1SxDSVKnR_E4bP01x9bcgpfToGXbI9oqzmoBs0U";
 
 // ─── Типы данных ─────────────────────────────────────────────────────────────
 
