@@ -26,6 +26,36 @@ std::vector<HeroInfo> parseHeroesList(const std::string& jsonStr) {
     return heroes;
 }
 
+// ─── STRATZ-фолбек: справочник героев, если OpenDota недоступен ─────────────
+std::string fetchHeroesListStratz(const std::string& authToken) {
+    std::string url = "https://api.stratz.com/graphql";
+    json requestBody;
+    requestBody["query"] = "{ constants { heroes { id name displayName } } }";
+    LOG_INFO("POST STRATZ constants.heroes (фолбек)");
+    return httpPost(url, requestBody.dump(), authToken);
+}
+
+std::vector<HeroInfo> parseHeroesListStratz(const std::string& jsonStr) {
+    auto j = json::parse(sanitizeUtf8(jsonStr), nullptr, false);
+    if (j.is_discarded()) throw std::runtime_error(
+        "parseHeroesListStratz: не удалось разобрать JSON (" + std::to_string(jsonStr.size()) + " байт)");
+    if (j.contains("errors"))
+        throw std::runtime_error("STRATZ constants вернул errors: " + j["errors"].dump());
+    if (!j.contains("data") || !j["data"].contains("constants") || !j["data"]["constants"].contains("heroes"))
+        throw std::runtime_error("parseHeroesListStratz: неожиданная структура ответа");
+
+    std::vector<HeroInfo> heroes;
+    for (const auto& item : j["data"]["constants"]["heroes"]) {
+        if (!item.is_object()) continue;
+        HeroInfo info;
+        info.id             = item.value("id", 0LL);
+        info.name           = item.value("name", "");
+        info.localized_name = item.value("displayName", "");
+        heroes.push_back(std::move(info));
+    }
+    return heroes;
+}
+
 // ─── OpenDota: статистика героев игрока ───────────────────────────────────────
 std::string fetchPlayerHeroesStats(const std::string& accountId) {
     std::string url = "https://api.opendota.com/api/players/" + accountId + "/heroes";
@@ -77,6 +107,60 @@ std::vector<long long> fetchRecentMatchIds(long long accountId) {
         if (mid) ids.push_back(mid);
     }
     LOG_INFO("Получено match_id: " << ids.size());
+    return ids;
+}
+
+// ─── STRATZ-фолбек: список match_id игрока, если OpenDota недоступен ────────
+static std::vector<long long> fetchRecentMatchIdsStratzPage(
+    const std::string& authToken, long long accountId, long long startDateTime,
+    int take, int skip)
+{
+    std::ostringstream q;
+    q.imbue(std::locale::classic());
+    q << "query {\n";
+    q << "  player(steamAccountId: " << accountId << ") {\n";
+    q << "    matches(request: { lobbyTypeIds: [7], startDateTime: " << startDateTime
+      << ", take: " << take << ", skip: " << skip << " }) {\n";
+    q << "      id\n";
+    q << "    }\n";
+    q << "  }\n";
+    q << "}\n";
+
+    std::string url = "https://api.stratz.com/graphql";
+    json requestBody;
+    requestBody["query"] = q.str();
+    LOG_INFO("POST STRATZ player.matches (фолбек), accountId=" << accountId << ", skip=" << skip);
+    std::string response = httpPost(url, requestBody.dump(), authToken);
+
+    auto j = json::parse(sanitizeUtf8(response), nullptr, false);
+    if (j.is_discarded()) throw std::runtime_error(
+        "fetchRecentMatchIdsStratz: не удалось разобрать JSON (" + std::to_string(response.size()) + " байт)");
+    if (j.contains("errors"))
+        throw std::runtime_error("STRATZ player.matches вернул errors: " + j["errors"].dump());
+    if (!j.contains("data") || !j["data"].contains("player") || j["data"]["player"].is_null() ||
+        !j["data"]["player"].contains("matches"))
+        throw std::runtime_error("fetchRecentMatchIdsStratz: неожиданная структура ответа");
+
+    std::vector<long long> ids;
+    for (const auto& item : j["data"]["player"]["matches"]) {
+        long long mid = item.value("id", 0LL);
+        if (mid) ids.push_back(mid);
+    }
+    return ids;
+}
+
+std::vector<long long> fetchRecentMatchIdsStratz(const std::string& authToken, long long accountId) {
+    const int PAGE_SIZE  = 100;
+    const int MAX_PAGES  = 20; // защита от аномального ответа API, до 2000 матчей
+    long long startDateTime = static_cast<long long>(std::time(nullptr)) - 90 * 86400;
+
+    std::vector<long long> ids;
+    for (int page = 0; page < MAX_PAGES; ++page) {
+        auto batch = fetchRecentMatchIdsStratzPage(authToken, accountId, startDateTime, PAGE_SIZE, page * PAGE_SIZE);
+        ids.insert(ids.end(), batch.begin(), batch.end());
+        if ((int)batch.size() < PAGE_SIZE) break;
+    }
+    LOG_INFO("Получено match_id (STRATZ фолбек): " << ids.size());
     return ids;
 }
 
@@ -521,7 +605,15 @@ void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::stri
 // ─── Главная функция: матчи → батчи STRATZ → парсинг → SQLite ────────────────
 void fetchAndStorePlayerRecentData(sqlite3* db, const std::string& authToken, long long accountId) {
     try {
-        std::vector<long long> matchIds = fetchRecentMatchIds(accountId);
+        std::vector<long long> matchIds;
+        try {
+            matchIds = fetchRecentMatchIds(accountId);
+        } catch (const std::exception& e) {
+            LOG_ERR("Список матчей (OpenDota) недоступен: " << e.what());
+            if (authToken.empty()) throw;
+            LOG_WARN("OpenDota недоступен, использован фолбек STRATZ player.matches");
+            matchIds = fetchRecentMatchIdsStratz(authToken, accountId);
+        }
         if (matchIds.empty()) { LOG_WARN("Нет матчей за 90 дней, игрок " << accountId); return; }
 
         const size_t BATCH_SIZE = 100;

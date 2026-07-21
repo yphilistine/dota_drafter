@@ -22,6 +22,10 @@ struct MatchDraft {
 std::string fetchHeroesList();
 std::vector<HeroInfo> parseHeroesList(const std::string& jsonStr);
 
+// ─── STRATZ-фолбек: справочник героев, если OpenDota недоступен ─────────────
+std::string fetchHeroesListStratz(const std::string& authToken);
+std::vector<HeroInfo> parseHeroesListStratz(const std::string& jsonStr);
+
 // ─── OpenDota: статистика героев игрока ───────────────────────────────────────
 std::string fetchPlayerHeroesStats(const std::string& accountId);
 std::string fetchPlayerHeroesRankedStats(const std::string& accountId);
@@ -29,6 +33,9 @@ std::vector<HeroStats> parseHeroesStats(const std::string& jsonStr);
 
 // ─── OpenDota: список матчей (90 дней, ranked) ───────────────────────────────
 std::vector<long long> fetchRecentMatchIds(long long accountId);
+
+// ─── STRATZ-фолбек: список match_id игрока, если OpenDota недоступен ────────
+std::vector<long long> fetchRecentMatchIdsStratz(const std::string& authToken, long long accountId);
 
 // ─── STRATZ: батч-запрос деталей матчей ───────────────────────────────────────
 std::string buildMatchesBatchQuery(const std::vector<long long>& matchIds);

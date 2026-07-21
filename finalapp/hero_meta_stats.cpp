@@ -116,6 +116,35 @@ void storeHeroStatsTable(sqlite3* db, const std::vector<HeroWeekStat>& rows) {
     txn.commit();
 }
 
+// ─── OpenDota-фолбек (если STRATZ недоступен): без разбивки по позициям ──────
+// OpenDota heroStats не даёт срез по позициям, поэтому один и тот же
+// агрегат Immortal (бакет "8_*") записывается во все 5 позиций.
+std::string fetchHeroStatsOpenDotaFallback() {
+    std::string url = "https://api.opendota.com/api/heroStats";
+    LOG_INFO("GET OpenDota heroStats (фолбек): " << url);
+    return httpGet(url);
+}
+
+std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& response) {
+    auto j = json::parse(sanitizeUtf8(response), nullptr, false);
+    if (j.is_discarded()) throw std::runtime_error(
+        "parseHeroStatsOpenDotaFallback: не удалось разобрать JSON (" + std::to_string(response.size()) + " байт)");
+    if (!j.is_array()) throw std::runtime_error(
+        "parseHeroStatsOpenDotaFallback: ожидался массив, получен: " + std::string(j.type_name()));
+
+    std::vector<HeroWeekStat> rows;
+    for (const auto& item : j) {
+        if (!item.is_object()) continue;
+        long long heroId = item.value("id", 0LL);
+        if (heroId <= 0) continue;
+        long long matches = item.value("8_pick", 0LL);
+        long long wins    = item.value("8_win",  0LL);
+        for (int pos = 1; pos <= 5; ++pos)
+            rows.push_back({heroId, pos, matches, wins});
+    }
+    return rows;
+}
+
 // ─── STRATZ heroStats (последняя завершённая неделя) → SQLite `stats` ────────
 void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken) {
     try {
@@ -125,7 +154,18 @@ void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken) {
         createHeroStatsTableIfNotExists(db);
         storeHeroStatsTable(db, rows);
         LOG_INFO("SQLite: сохранено " << rows.size() << " строк -> stats (week=" << week << ")");
+        return;
     } catch (const std::exception& e) {
         LOG_ERR("HeroStats (meta) fetch failed: " << e.what());
+    }
+
+    try {
+        std::string response = fetchHeroStatsOpenDotaFallback();
+        auto rows = parseHeroStatsOpenDotaFallback(response);
+        createHeroStatsTableIfNotExists(db);
+        storeHeroStatsTable(db, rows);
+        LOG_WARN("STRATZ недоступен, использован фолбек OpenDota: сохранено " << rows.size() << " строк -> stats");
+    } catch (const std::exception& e) {
+        LOG_ERR("HeroStats OpenDota fallback failed: " << e.what());
     }
 }

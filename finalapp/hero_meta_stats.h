@@ -23,5 +23,9 @@ std::vector<HeroWeekStat> parseHeroStatsResponse(const std::string& response);
 void createHeroStatsTableIfNotExists(sqlite3* db);
 void storeHeroStatsTable(sqlite3* db, const std::vector<HeroWeekStat>& rows);
 
+// ─── OpenDota-фолбек (если STRATZ недоступен): без разбивки по позициям ──────
+std::string fetchHeroStatsOpenDotaFallback();
+std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& response);
+
 // Главная функция: STRATZ heroStats (последняя завершённая неделя) → SQLite `stats`
 void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken);

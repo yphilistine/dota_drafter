@@ -5,8 +5,17 @@
 // Фаза 1a: таблицы + справочник героев + живая мета-стата (без accountId)
 int runDataFetcherInit(const std::string& stratzToken) {
     try {
-        std::string heroesJson = fetchHeroesList();
-        auto HeroesList = parseHeroesList(heroesJson);
+        std::vector<HeroInfo> HeroesList;
+        try {
+            std::string heroesJson = fetchHeroesList();
+            HeroesList = parseHeroesList(heroesJson);
+        } catch (const std::exception& ex) {
+            LOG_ERR("Справочник героев (OpenDota) fetch failed: " << ex.what());
+            if (stratzToken.empty()) throw;
+            LOG_WARN("OpenDota недоступен, использован фолбек STRATZ constants.heroes");
+            std::string heroesJson = fetchHeroesListStratz(stratzToken);
+            HeroesList = parseHeroesListStratz(heroesJson);
+        }
         LOG_INFO("Справочник героев: " << HeroesList.size() << " записей");
 
         SqliteDB db("playerandlivestats.db");
