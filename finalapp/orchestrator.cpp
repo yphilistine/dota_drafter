@@ -218,7 +218,7 @@ static void refreshAccountId(OrchestratorLoopState& st) {
 }
 
 // GSI-таймаут: если Dota 2 закрыта, GSI перестаёт слать данные — сброс на
-// IDLE через 15 секунд без обновлений.
+// IDLE через GSI_WATCHDOG_SEC секунд без обновлений (app_state.h).
 static GsiSnapshot readGameStateWithTimeoutWatchdog() {
     GsiSnapshot gs;
     std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
@@ -227,7 +227,7 @@ static GsiSnapshot readGameStateWithTimeoutWatchdog() {
         g_gameInfo.lastUpdate.time_since_epoch().count() > 0)
     {
         auto elapsed = std::chrono::steady_clock::now() - g_gameInfo.lastUpdate;
-        if (elapsed > std::chrono::seconds(15)) {
+        if (elapsed > std::chrono::seconds(GSI_WATCHDOG_SEC)) {
             g_gameInfo.phase           = GamePhase::IDLE;
             g_gameInfo.isHeroSelection = false;
             g_gameInfo.matchId.clear();
