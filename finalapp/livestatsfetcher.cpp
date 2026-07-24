@@ -164,6 +164,21 @@ static std::string handle_request(const std::string& raw) {
         // Полная запись в logs/gsi.log — на каждый POST, до дедупликации ниже.
         logGsiState(gstate, mid, team, team_slot, uid);
 
+        // "player" в GSI-payload'е — либо плоский объект (мы сами в матче: см.
+        // steamid/team_name/team_slot верхнего уровня), либо вложенный
+        // team2/team3 со всеми до 10 игроками (Dota отдаёт такую форму только
+        // когда мы наблюдаем чужой матч — спектейт). Во втором случае значения,
+        // распарсенные json_get выше, принадлежат случайному первому игроку в
+        // JSON, а не нам, и писать их в GameInfo как "наши" нельзя.
+        //
+        // accountid из payload'а сюда намеренно не сверяем с сохранённым Friend
+        // ID: это разные вещи — Friend ID введён вручную и может не совпадать
+        // со Steam-аккаунтом, залогиненным в клиенте Dota (смурф, чужой ПК),
+        // при этом статистика/рекомендации всё равно должны считаться для
+        // введённого Friend ID, а не для того, кто сейчас играет.
+        bool isSpectating = body.find("\"team2\"") != std::string::npos;
+        bool isOurGame     = !isSpectating;
+
         if (g_gsiInfo) {
             bool stateChanged = false;
             {
@@ -175,7 +190,7 @@ static std::string handle_request(const std::string& raw) {
                 // matchid в конкретном payload'е.
                 g_gsiInfo->lastUpdate = std::chrono::steady_clock::now();
 
-                if (!mid.empty()) {
+                if (!mid.empty() && isOurGame) {
                     bool newId = (mid != g_gsiInfo->matchId);
                     g_gsiInfo->matchId = mid;
                     if (!gstate.empty()) g_gsiInfo->phase   = parsePhaseStr(gstate);

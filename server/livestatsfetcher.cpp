@@ -11,7 +11,9 @@
 #include <string>
 #include <thread>
 
-static const int PORT = 3000;
+static const int PORT = 62326;
+
+int kills = 0; 
 
 static std::string g_last_state;
 static std::mutex  g_mutex;
@@ -54,10 +56,7 @@ void handle_gsi(const std::string& body) {
     { std::lock_guard<std::mutex> lk(g_mutex); prev = g_last_state; g_last_state = state; }
     if (state == prev) return;
 
-    if (state == "DOTA_GAMERULES_STATE_HERO_SELECTION")
-        std::cout << "[" << now_hms() << "] >> HERO SELECTION\n";
-    else if (state == "DOTA_GAMERULES_STATE_STRATEGY_TIME")
-        std::cout << "[" << now_hms() << "] >> STRATEGY TIME\n";
+    std::cout << body << "\n";
 }
 
 void client_thread(SOCKET client) {
