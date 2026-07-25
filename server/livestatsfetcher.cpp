@@ -1,10 +1,13 @@
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "winmm.lib")
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
+#include <mmsystem.h>
+#include <ctime>
 
 #include <iostream>
 #include <mutex>
@@ -13,9 +16,8 @@
 
 static const int PORT = 62326;
 
-int kills = 0; 
 
-static std::string g_last_state;
+static std::string g_last_kills;
 static std::mutex  g_mutex;
 
 std::string now_hms() {
@@ -48,15 +50,25 @@ std::string json_get(const std::string& src, const std::string& key) {
     return val;
 }
 
+
+
 void handle_gsi(const std::string& body) {
-    std::string state = json_get(body, "game_state");
-    if (state.empty()) return;
+    bool isSpectating = body.find("\"team2\"") != std::string::npos;
+    bool isOurGame     = !isSpectating;
+    
+    if(isOurGame){
+    std::string kills = json_get(body, "kills");
+    if (kills.empty() || kills == "0") return;
 
-    std::string prev;
-    { std::lock_guard<std::mutex> lk(g_mutex); prev = g_last_state; g_last_state = state; }
-    if (state == prev) return;
+    std::string prev_kills;
+    { std::lock_guard<std::mutex> lk(g_mutex); prev_kills = g_last_kills; g_last_kills = kills; }
+    if (kills == prev_kills) return;
 
-    std::cout << body << "\n";
+    std::cout << kills << "\n";
+    mciSendString("open \"music.mp3\" type mpegvideo alias mp3", NULL, 0, NULL);
+    mciSendString("play mp3 from 10000 to 15000 wait", NULL, 0, NULL);
+    mciSendString("close mp3", NULL, 0, NULL);
+    }
 }
 
 void client_thread(SOCKET client) {
