@@ -147,16 +147,20 @@ std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& resp
 
 // ─── STRATZ heroStats (последняя завершённая неделя) → SQLite `stats` ────────
 void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken) {
-    try {
-        long long week = lastCompletedWeekTimestamp();
-        std::string response = sendStratzHeroStats(authToken, week);
-        auto rows = parseHeroStatsResponse(response);
-        createHeroStatsTableIfNotExists(db);
-        storeHeroStatsTable(db, rows);
-        LOG_INFO("SQLite: сохранено " << rows.size() << " строк -> stats (week=" << week << ")");
-        return;
-    } catch (const std::exception& e) {
-        LOG_ERR("HeroStats (meta) fetch failed: " << e.what());
+    if (authToken.empty()) {
+        LOG_WARN("HeroStats (meta): нет STRATZ токена, сразу фолбек на OpenDota");
+    } else {
+        try {
+            long long week = lastCompletedWeekTimestamp();
+            std::string response = sendStratzHeroStats(authToken, week);
+            auto rows = parseHeroStatsResponse(response);
+            createHeroStatsTableIfNotExists(db);
+            storeHeroStatsTable(db, rows);
+            LOG_INFO("SQLite: сохранено " << rows.size() << " строк -> stats (week=" << week << ")");
+            return;
+        } catch (const std::exception& e) {
+            LOG_ERR("HeroStats (meta) fetch failed: " << e.what());
+        }
     }
 
     try {
