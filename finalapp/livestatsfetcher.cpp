@@ -85,12 +85,14 @@ static void logGsiState(const std::string& gstate, const std::string& mid,
 
 static GamePhase parsePhaseStr(const std::string& s) {
     if (s == "DOTA_GAMERULES_STATE_HERO_SELECTION" ||
-        s == "DOTA_GAMERULES_STATE_STRATEGY_TIME"  ||
-        s == "DOTA_GAMERULES_STATE_TEAM_SHOWCASE")
+        s == "DOTA_GAMERULES_STATE_STRATEGY_TIME")
         return GamePhase::DRAFT;
-    if (s == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD" ||
+    if (s == "DOTA_GAMERULES_STATE_TEAM_SHOWCASE"          ||
+        s == "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD" ||
+        s == "DOTA_GAMERULES_STATE_WAIT_FOR_MAP_TO_LOAD"    ||
         s == "DOTA_GAMERULES_STATE_PRE_GAME" ||
-        s == "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS")
+        s == "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS" ||
+        s == "DOTA_GAMERULES_STATE_DISCONNECT")
         return GamePhase::INGAME;
     if (s == "DOTA_GAMERULES_STATE_POST_GAME")
         return GamePhase::POSTGAME;

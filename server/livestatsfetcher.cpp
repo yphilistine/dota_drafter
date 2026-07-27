@@ -71,7 +71,12 @@ void handle_gsi(const std::string& body) {
     }
 }
 
-void client_thread(SOCKET client) {
+void client_thread(SOCKET client, sockaddr_in peer) {
+    if (peer.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+        closesocket(client);
+        return;
+    }
+
     std::string request;
     char buf[8192];
     int n;
@@ -105,15 +110,17 @@ int main() {
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(PORT);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     bind(server, (sockaddr*)&addr, sizeof(addr));
     listen(server, SOMAXCONN);
 
-    std::cout << "[GSI] Listening on port " << PORT << "\n";
+    std::cout << "[GSI] Listening on port " << PORT << " (localhost only)\n";
 
     while (true) {
-        SOCKET client = accept(server, nullptr, nullptr);
+        sockaddr_in peer{};
+        int peer_len = sizeof(peer);
+        SOCKET client = accept(server, (sockaddr*)&peer, &peer_len);
         if (client != INVALID_SOCKET)
-            std::thread(client_thread, client).detach();
+            std::thread(client_thread, client, peer).detach();
     }
 }
