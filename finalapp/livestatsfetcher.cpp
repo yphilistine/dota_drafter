@@ -128,35 +128,51 @@ static std::string json_get(const std::string& src, const std::string& key) {
     }
 }
 
-// --- Наблюдаемая игра (спектейт): герои из player.teamN.playerN --------------
+// --- Наблюдаемая игра (спектейт): герои из hero.teamN.playerN ----------------
 // "draft" GSI-блок во время наблюдения приходит пустым (не наш пик - Dota не
-// шлёт его для чужого Captain's Mode), поэтому герои достаются из тех же
-// вложенных player.team2/team3.playerN-блоков, что дали isSpectating: у
-// каждого игрока внутри, помимо team_name/team_slot, есть свой hero_id.
-// Границы блока playerN - до следующего "playerN+1" (для player9 - до
-// "previously"), тем же приёмом линейного поиска, что и json_get.
+// шлёт его для чужого Captain's Mode). team_name/team_slot берутся из
+// player.team2/team3.playerN (см. isSpectating), но у самих playerN там нет
+// id героя - есть только экономика/бои. Id героя - в ОТДЕЛЬНОМ top-level
+// блоке "hero" с той же вложенностью team2/team3.playerN (playerN - те же
+// ключи, что и в "player", один игрок под одним и тем же индексом в обоих
+// блоках), поле "id" (не "hero_id" - в player-блоке такого поля вообще нет).
+// Раз ключи "playerN" буквально совпадают в обоих top-level блоках, поиск
+// под hero-id обязан начинаться с позиции "hero" в теле, иначе find() найдёт
+// первое (player-блок) вхождение и ничего не даст.
 static void updateSpectatorState(const std::string& body) {
     std::lock_guard<std::mutex> lk(g_spectatorState.mtx);
     g_spectatorState.active     = true;
     g_spectatorState.lastUpdate = std::chrono::steady_clock::now();
 
+    auto heroSectionPos = body.find("\"hero\"");
+
     for (int i = 0; i < 10; ++i) {
         std::string key = "\"player" + std::to_string(i) + "\"";
-        auto pos = body.find(key);
-        if (pos == std::string::npos) continue;
-
         std::string endKey = (i < 9) ? ("\"player" + std::to_string(i + 1) + "\"")
                                       : std::string("\"previously\"");
-        auto endPos = body.find(endKey, pos);
-        std::string block = body.substr(pos,
-            endPos == std::string::npos ? std::string::npos : endPos - pos);
 
-        std::string tn = json_get(block, "team_name");
-        int ts = safeStoi(json_get(block, "team_slot"), -1);
-        if (tn.empty() || ts < 0 || ts > 4) continue;
+        int absSlot = -1;
+        {
+            auto pos = body.find(key);
+            if (pos == std::string::npos) continue;
+            auto endPos = body.find(endKey, pos);
+            std::string block = body.substr(pos,
+                endPos == std::string::npos ? std::string::npos : endPos - pos);
 
-        int absSlot = (tn == "radiant") ? ts : 5 + ts;
-        g_spectatorState.slots[absSlot].heroId = safeStoi(json_get(block, "hero_id"), 0);
+            std::string tn = json_get(block, "team_name");
+            int ts = safeStoi(json_get(block, "team_slot"), -1);
+            if (tn.empty() || ts < 0 || ts > 4) continue;
+            absSlot = (tn == "radiant") ? ts : 5 + ts;
+        }
+
+        if (heroSectionPos == std::string::npos) continue;
+        auto hpos = body.find(key, heroSectionPos);
+        if (hpos == std::string::npos) continue;
+        auto hEndPos = body.find(endKey, hpos);
+        std::string hBlock = body.substr(hpos,
+            hEndPos == std::string::npos ? std::string::npos : hEndPos - hpos);
+
+        g_spectatorState.slots[absSlot].heroId = safeStoi(json_get(hBlock, "id"), 0);
     }
 }
 

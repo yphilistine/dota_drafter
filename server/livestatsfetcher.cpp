@@ -53,22 +53,22 @@ std::string json_get(const std::string& src, const std::string& key) {
 
 
 void handle_gsi(const std::string& body) {
-    bool isSpectating = body.find("\"team2\"") != std::string::npos;
-    bool isOurGame     = !isSpectating;
+    //bool isSpectating = body.find("\"team2\"") != std::string::npos;
+    ////bool isOurGame     = !isSpectating;
     
-    if(isOurGame){
-    std::string kills = json_get(body, "kills");
-    if (kills.empty() || kills == "0") return;
+    //if(isOurGame){
+    //std::string kills = json_get(body, "kills");
+    //if (kills.empty() || kills == "0") return;
 
-    std::string prev_kills;
-    { std::lock_guard<std::mutex> lk(g_mutex); prev_kills = g_last_kills; g_last_kills = kills; }
-    if (kills == prev_kills) return;
+    //std::string prev_kills;
+    //{ std::lock_guard<std::mutex> lk(g_mutex); prev_kills = g_last_kills; g_last_kills = kills; }
+    //if (kills == prev_kills) return;
 
-    std::cout << kills << "\n";
-    mciSendString("open \"music.mp3\" type mpegvideo alias mp3", NULL, 0, NULL);
-    mciSendString("play mp3 from 10000 to 15000 wait", NULL, 0, NULL);
-    mciSendString("close mp3", NULL, 0, NULL);
-    }
+    //std::cout << kills << "\n";
+    //mciSendString("open \"music.mp3\" type mpegvideo alias mp3", NULL, 0, NULL);
+    //mciSendString("play mp3 from 10000 to 15000 wait", NULL, 0, NULL);
+    //mciSendString("close mp3", NULL, 0, NULL);
+    std::cout << body << "\n";
 }
 
 void client_thread(SOCKET client, sockaddr_in peer) {
