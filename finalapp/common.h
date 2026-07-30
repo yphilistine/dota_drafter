@@ -1,6 +1,6 @@
 #pragma once
 /*
- * common.h — общие утилиты: логирование, HTTP, RAII-обёртки для curl/SQLite.
+ * common.h - общие утилиты: логирование, HTTP, RAII-обёртки для curl/SQLite.
  * Подключается всеми модулями проекта.
  */
 
@@ -89,9 +89,9 @@ public:
     CURL* get() const { return curl; }
 };
 
-// sqlite3_open / close с настройкой PRAGMA. readOnly=true — только чтение
+// sqlite3_open / close с настройкой PRAGMA. readOnly=true - только чтение
 // (SQLITE_OPEN_READONLY, без write-PRAGMA), для коротко- и долгоживущих
-// читателей вроде dota_picker.cpp. busy_timeout выставляется всегда —
+// читателей вроде dota_picker.cpp. busy_timeout выставляется всегда -
 // единая точка защиты от SQLITE_BUSY под конкурентными писателями.
 class SqliteDB {
     sqlite3* db;
@@ -205,7 +205,7 @@ std::string httpPost(const std::string& url, const std::string& postData, const 
 // Замена невалидных UTF-8 последовательностей на U+FFFD
 std::string sanitizeUtf8(const std::string& input);
 
-// Разбор int/long long без исключений — для непроверенных внешних данных
+// Разбор int/long long без исключений - для непроверенных внешних данных
 // (GSI-payload от Dota 2, STRATZ-ответы). fallback возвращается при пустой
 // строке или ошибке разбора вместо проброса std::invalid_argument/out_of_range.
 inline int safeStoi(const std::string& s, int fallback = 0) {
@@ -217,7 +217,7 @@ inline long long safeStoll(const std::string& s, long long fallback = -1) {
 
 // STRATZ "POSITION_n" (n=1..5) → int; 0, если формат не распознан.
 // Используется и в пайплайне живой меты (hero_meta_stats.cpp), и в пайплайне
-// истории матчей игрока (playerdatafetcher.cpp) — общий разбор одного и того
+// истории матчей игрока (playerdatafetcher.cpp) - общий разбор одного и того
 // же перечисления STRATZ.
 inline int positionToInt(const std::string& pos) {
     if (pos == "POSITION_1") return 1;
@@ -228,7 +228,7 @@ inline int positionToInt(const std::string& pos) {
     return 0;
 }
 
-// Устанавливает std::set_terminate + SetUnhandledExceptionFilter — сетка
+// Устанавливает std::set_terminate + SetUnhandledExceptionFilter - сетка
 // безопасности на уровне процесса: логирует необработанное исключение/SEH
 // в logs/console.log перед завершением, вместо тихого краха без следа.
 // Вызывать один раз при старте, сразу после initConsole().

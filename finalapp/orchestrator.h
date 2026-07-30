@@ -1,9 +1,9 @@
 #pragma once
 /*
- * orchestrator.h — фоновый оркестратор: управление GSI/portrait/picker
+ * orchestrator.h - фоновый оркестратор: управление GSI/portrait/picker
  * потоками, livepicks/player_info, запуск фазы 1b. Тред-менеджмент
  * (g_pickerRunning/g_portraitRunning/... ) инкапсулирован внутри
- * orchestrator.cpp — наружу только функции ниже.
+ * orchestrator.cpp - наружу только функции ниже.
  */
 
 #include <sqlite3.h>
@@ -22,7 +22,7 @@ void stopOrchestrator();
 // (ввод/смена Friend ID, кнопка Refresh).
 void startPhase1(long long accountId);
 
-// Сигнал оркестратору: пользователь вручную сменил позицию в GUI — записать
+// Сигнал оркестратору: пользователь вручную сменил позицию в GUI - записать
 // manualPos в livepicks и запустить one-shot переинференс. Единственная точка
 // входа для gui_draw.cpp (SetOurPosition): флаг-атомик оркестратора приватен
 // (static внутри orchestrator.cpp).

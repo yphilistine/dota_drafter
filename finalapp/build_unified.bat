@@ -2,16 +2,16 @@
 setlocal
 
 :: =============================================================================
-:: build.bat  —  Dota Draft Assistant (unified GUI)
+:: build.bat  -  Dota Draft Assistant (unified GUI)
 ::
 :: Объединяет buildGUI.bat + build_unified.bat в один скрипт.
 :: Собирает dota_assistant.exe: ImGui D3D11 GUI + все фазы (1-3) в одном exe.
 ::
 :: Использование:
-::   build.bat                — собрать
-::   build.bat gui            — то же самое
-::   build.bat unified        — то же самое (синоним)
-::   build.bat debug          — с /Od /Zi без оптимизаций
+::   build.bat                - собрать
+::   build.bat gui            - то же самое
+::   build.bat unified        - то же самое (синоним)
+::   build.bat debug          - с /Od /Zi без оптимизаций
 :: =============================================================================
 
 set "OUT_DIR=build"
@@ -79,21 +79,21 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 :: Компиляция
 ::
 :: Исходники:
-::   mainGUI.cpp             — GUI (ImGui/D3D11): WinMain, D3D11, WndProc, RenderFrame
-::   app_state.cpp           — общее состояние (GameInfo/PortraitState/PickerState/PlayerState/AppNotice)
-::   update_window.cpp       — нативное окно апдейтера (Win32, до D3D11/ImGui)
-::   orchestrator.cpp        — фоновый оркестратор (потоки portrait/picker/GSI, livepicks)
-::   gui_draw.cpp            — панели ImGui (Draft/Picks/Meta Heroes), кэш портретов/меты
-::   portrait_runner.cpp     — захват портретов + позиций (250мс цикл)
-::   overlay_button.cpp      — прозрачная кнопка [D] поверх Dota 2
-::   common.cpp              — логирование, HTTP (curl)
-::   playerdatafetcher.cpp   — OpenDota / STRATZ / SQLite (история матчей игрока)
-::   hero_meta_stats.cpp     — живая мета-статистика героев (STRATZ heroStats, фаза 1a)
-::   clouddatafetcher.cpp    — PostgreSQL → SQLite
-::   datafetcher.cpp         — runDataFetcher (фаза 1)
-::   livestatsfetcher.cpp    — runGsiServer   (фаза 2)
-::   dota_picker.cpp         — runPickerGui   (фаза 3, вывод в GUI)
-::   dota2_capture.cpp       — захват окна Dota 2
+::   mainGUI.cpp             - GUI (ImGui/D3D11): WinMain, D3D11, WndProc, RenderFrame
+::   app_state.cpp           - общее состояние (GameInfo/PortraitState/PickerState/PlayerState/AppNotice)
+::   update_window.cpp       - нативное окно апдейтера (Win32, до D3D11/ImGui)
+::   orchestrator.cpp        - фоновый оркестратор (потоки portrait/picker/GSI, livepicks)
+::   gui_draw.cpp            - панели ImGui (Draft/Picks/Meta Heroes), кэш портретов/меты
+::   portrait_runner.cpp     - захват портретов + позиций (250мс цикл)
+::   overlay_button.cpp      - прозрачная кнопка [D] поверх Dota 2
+::   common.cpp              - логирование, HTTP (curl)
+::   playerdatafetcher.cpp   - OpenDota / STRATZ / SQLite (история матчей игрока)
+::   hero_meta_stats.cpp     - живая мета-статистика героев (STRATZ heroStats, фаза 1a)
+::   clouddatafetcher.cpp    - PostgreSQL → SQLite
+::   datafetcher.cpp         - runDataFetcher (фаза 1)
+::   livestatsfetcher.cpp    - runGsiServer   (фаза 2)
+::   dota_picker.cpp         - runPickerGui   (фаза 3, вывод в GUI)
+::   dota2_capture.cpp       - захват окна Dota 2
 :: -----------------------------------------------------------------------------
 
 :: -- Читаем версию приложения из version.h (kAppVersion) ----------------------

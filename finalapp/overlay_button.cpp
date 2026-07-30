@@ -1,9 +1,9 @@
 /*
- * overlay_button.cpp — прозрачная кнопка [D] поверх Dota 2.
+ * overlay_button.cpp - прозрачная кнопка [D] поверх Dota 2.
  *
  * Отдельное окно (WS_EX_LAYERED, per-pixel alpha) со своим WndProc и
  * своим потоком сообщений. Клик переключает фокус между приложением и Dota 2.
- * Не имеет общих функций/состояния с циклом захвата портретов (portrait_runner.cpp) —
+ * Не имеет общих функций/состояния с циклом захвата портретов (portrait_runner.cpp) -
  * оба живут в оркестраторе просто как два независимых Win32/GDI+ юнита.
  */
 
@@ -94,7 +94,7 @@ static void updateOverlayPos(HWND overlay, Dota2Capture* cap) {
                  btnW, btnH, SWP_NOACTIVATE);
 }
 
-// Per-pixel alpha: текст [D] подогнан так что [] касаются боков, D — верха
+// Per-pixel alpha: текст [D] подогнан так что [] касаются боков, D - верха
 static void paintLayeredButton(HWND hwnd, int W, int H) {
     HDC screenDC = GetDC(nullptr);
     HDC memDC    = CreateCompatibleDC(screenDC);
@@ -151,7 +151,7 @@ static void paintLayeredButton(HWND hwnd, int W, int H) {
     DrawTextW(memDC, L"[D]", -1, &r, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOCLIP);
     SelectObject(memDC, of); DeleteObject(f);
 
-    // Цвет кнопки — серый как шестерёнка Dota 2 HUD
+    // Цвет кнопки - серый как шестерёнка Dota 2 HUD
     const uint8_t gearR = 159, gearG = 165, gearB = 190;
     for (int i = 0; i < W * H; i++) {
         uint8_t b = (pixels[i] >>  0) & 0xFF;
@@ -191,11 +191,11 @@ static void bringDotaToFront(Dota2Capture* cap) {
 }
 
 // Оверлеи сторонних приложений (Discord/Steam/NVIDIA/Xbox Game Bar и т.п.),
-// открытые поверх Dota 2, технически становятся foreground-окном ОС — из-за
+// открытые поверх Dota 2, технически становятся foreground-окном ОС - из-за
 // этого строгое сравнение fg==dotaHwnd прячет кнопку [D], хотя пользователь
 // всё ещё в игре. Вместо хрупкого списка конкретных оверлеев (у каждого свой
 // window class, меняется от версии к версии) проверяем общий признак игрового
-// оверлея: WS_EX_TOPMOST-окно, геометрически перекрывающее окно Dota — по
+// оверлея: WS_EX_TOPMOST-окно, геометрически перекрывающее окно Dota - по
 // такому определению оверлей "не считается" переключением на другое приложение.
 static bool isOverlayOverDota(HWND fg, HWND dotaHwnd) {
     if (!fg || !dotaHwnd || fg == dotaHwnd) return false;
@@ -285,7 +285,7 @@ static DWORD WINAPI overlayThread(LPVOID param) {
     wc.hCursor       = LoadCursor(nullptr, IDC_HAND);
     RegisterClassW(&wc);
 
-    // WS_EX_LAYERED для прозрачности. Без WS_EX_TRANSPARENT — вся область кликабельна.
+    // WS_EX_LAYERED для прозрачности. Без WS_EX_TRANSPARENT - вся область кликабельна.
     int initW = 80, initH = 63;
     HWND hw = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
@@ -311,7 +311,7 @@ static DWORD WINAPI overlayThread(LPVOID param) {
     return 0;
 }
 
-// --- startDotaOverlay — запуск кнопки [D] (один раз при старте) ---------------
+// --- startDotaOverlay - запуск кнопки [D] (один раз при старте) ---------------
 
 static Dota2Capture  s_overlayCap("");
 static OverlayCtx    s_overlayCtx{ &s_overlayCap };

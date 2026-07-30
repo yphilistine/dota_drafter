@@ -1,6 +1,6 @@
 #pragma once
 /*
- * overlay_button.h — прозрачная кнопка [D] поверх Dota 2.
+ * overlay_button.h - прозрачная кнопка [D] поверх Dota 2.
  */
 
 // Запуск прозрачной кнопки [D] поверх Dota 2.

@@ -1,6 +1,6 @@
 #pragma once
 /*
- * pos_ocr.h — OCR-based position recognition (Windows OCR API / WinRT).
+ * pos_ocr.h - OCR-based position recognition (Windows OCR API / WinRT).
  *
  * Replaces the old Pearson-correlation PosRecognizer.
  * Reads text from captured position-indicator bitmaps (icon + label like
@@ -62,7 +62,7 @@ static std::vector<uint8_t> upscaleBgra(const uint8_t* src, int sw, int sh, int 
 
 // --- Keyword → position mapping ---------------------------------------------
 
-// CharLowerW (а не towlower) — свёртка регистра не зависит от текущей C-локали
+// CharLowerW (а не towlower) - свёртка регистра не зависит от текущей C-локали
 // (нигде в проекте нет setlocale) и корректно работает для не-ASCII: кириллица
 // (Ш/ш и т.п.), немецкие/польские/французские диакритики.
 static std::wstring toLowerW(const std::wstring& s) {
@@ -78,7 +78,7 @@ static bool containsW(const std::wstring& hay, const wchar_t* needle) {
 struct ExactPhrase { const wchar_t* text; int pos; };
 
 static const ExactPhrase kExactPhrases[] = {
-    // EN — Safe Lane / Mid Lane / Off Lane / Soft Support / Hard Support
+    // EN - Safe Lane / Mid Lane / Off Lane / Soft Support / Hard Support
     { L"Safe Lane", 1 }, { L"Mid Lane", 2 }, { L"Off Lane", 3 }, { L"Soft Support", 4 }, { L"Hard Support", 5 },
     // RU
     { L"Легкая", 1 }, { L"Центр", 2 }, { L"Сложная", 3 }, { L"Поддержка", 4 }, { L"Полная поддержка", 5 },
@@ -146,10 +146,10 @@ static int textToPosition(const std::wstring& raw) {
 
     if (hasSupport) return 4;
 
-    // Ниже — блоки для UK/DE/PL/FR/ES. В каждом только те корни, которые
+    // Ниже - блоки для UK/DE/PL/FR/ES. В каждом только те корни, которые
     // ДЕЙСТВИТЕЛЬНО не перехватываются уже отработавшими блоками выше (напр.
-    // "легк"/"лёгк"/"центр" для UK не дублируются — их уже ловит RU-блок
-    // благодаря общим славянским корням) — иначе получились бы недостижимые ветки.
+    // "легк"/"лёгк"/"центр" для UK не дублируются - их уже ловит RU-блок
+    // благодаря общим славянским корням) - иначе получились бы недостижимые ветки.
 
     // UK (украинский)
     bool ukSupport = containsW(t, L"підтримк");
@@ -225,7 +225,7 @@ static int textToPosition(const std::wstring& raw) {
 // --- PosOcrRecognizer -------------------------------------------------------
 
 // Полный результат одного OCR-прохода: та же (pos, score), что PosMatch, плюс
-// сырой распознанный текст — нужен только для report.txt кнопки [screenshot]
+// сырой распознанный текст - нужен только для report.txt кнопки [screenshot]
 // (recognize() в горячем цикле 500мс текст отбрасывает).
 struct PosOcrRaw {
     int          pos   = 0;
@@ -235,9 +235,9 @@ struct PosOcrRaw {
 
 class PosOcrRecognizer {
 public:
-    // Порядок — от языков с реальной локализацией Dota 2/наибольшей вероятностью
+    // Порядок - от языков с реальной локализацией Dota 2/наибольшей вероятностью
     // установленного OCR-пакета к менее вероятным. TryCreateFromLanguage не бросает
-    // и возвращает nullptr, если языковой OCR-пакет не установлен в Windows — так что
+    // и возвращает nullptr, если языковой OCR-пакет не установлен в Windows - так что
     // отсутствующие языки просто выпадают из списка ниже, без ошибок.
     // BE/KK не входят: у Dota 2 нет официальной локализации на эти языки.
     PosOcrRecognizer() {
@@ -316,7 +316,7 @@ private:
         }
     }
 
-    // Текст возвращается даже при pos==0 (нераспознанное ключевое слово) —
+    // Текст возвращается даже при pos==0 (нераспознанное ключевое слово) -
     // нужно recognizeDebug()/report.txt, чтобы показать, что реально увидел OCR.
     PosOcrRaw tryOcr(const wmo::OcrEngine& engine, const wgi::SoftwareBitmap& bmp) const {
         try {

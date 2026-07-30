@@ -1,5 +1,5 @@
 /*
- * dota2_capture.cpp — захват окна Dota 2 через PrintWindow/GDI.
+ * dota2_capture.cpp - захват окна Dota 2 через PrintWindow/GDI.
  * Портреты героев + индикаторы позиций. refreshResolution() для смены разрешения.
  */
 
@@ -79,11 +79,11 @@ bool Dota2Capture::findGameWindow() {
     if (IsIconic(hwnd_)) { hwnd_ = nullptr; return false; }
 
     // Процесс объявлен Per-Monitor-V2 DPI aware (SetProcessDpiAwarenessContext
-    // в PlatformStartupFixups, mainGUI.cpp) — GetClientRect уже возвращает
+    // в PlatformStartupFixups, mainGUI.cpp) - GetClientRect уже возвращает
     // настоящие физические пиксели, без DPI-виртуализации, домножать не нужно.
     // Раньше здесь пересчитывали через GetDeviceCaps(DESKTOPHORZRES)/
     // GetSystemMetrics(SM_CXSCREEN), но SM_CXSCREEN всегда берёт только ГЛАВНЫЙ
-    // монитор — на мультимониторных конфигурациях (Dota 2 не на главном экране)
+    // монитор - на мультимониторных конфигурациях (Dota 2 не на главном экране)
     // или в момент DPI/display transition эти два API рассинхронизировались и
     // давали случайное несуществующее разрешение (напр. 1834x786 вместо
     // реальных 2560x1600), из-за чего выбиралась не та HudLayout и все 20
@@ -118,7 +118,7 @@ bool Dota2Capture::findGameWindow() {
 
 bool Dota2Capture::refreshResolution() {
     if (!hwnd_ || !IsWindow(hwnd_)) return false;
-    // См. комментарий в findGameWindow() — Per-Monitor-V2 DPI aware процесс,
+    // См. комментарий в findGameWindow() - Per-Monitor-V2 DPI aware процесс,
     // GetClientRect уже отдаёт физические пиксели, лишний MulDiv через
     // GetDeviceCaps/GetSystemMetrics(SM_CXSCREEN) только вносил случайные
     // рассинхронизации на мультимониторных конфигурациях/DPI transition.
@@ -225,10 +225,10 @@ Bitmap Dota2Capture::captureWindow() {
     if (!IsWindow(hwnd_)) { hwnd_ = nullptr; return {}; }
     if (IsIconic(hwnd_)) return {};
     // Зависшее (не отвечающее) окно всё ещё валидно для IsWindow/IsIconic, но
-    // PrintWindow шлёт WM_PRINT синхронно (SendMessage) — если целевой процесс
+    // PrintWindow шлёт WM_PRINT синхронно (SendMessage) - если целевой процесс
     // упал/завис, вызов блокирует этот поток на неопределённое время. Один такой
     // кадр вешает весь цикл захвата, а следом и оркестратор (join() на этом
-    // потоке в orchestrator.cpp) — лечится пропуском кадра без вызова PrintWindow.
+    // потоке в orchestrator.cpp) - лечится пропуском кадра без вызова PrintWindow.
     if (IsHungAppWindow(hwnd_)) return {};
 
     const int W = res_.width;
@@ -272,7 +272,7 @@ int Dota2Capture::capturePortraits() {
     posPortraits_.clear();
     posPortraits_.resize(10);
     if (IsIconic(hwnd_)) return 0;
-    // См. комментарий в captureWindow() — то же самое: не звать PrintWindow в
+    // См. комментарий в captureWindow() - то же самое: не звать PrintWindow в
     // зависшее окно, иначе SendMessage внутри блокирует поток захвата навсегда.
     if (IsHungAppWindow(hwnd_)) return 0;
     const int W = res_.width, H = res_.height;
@@ -394,8 +394,8 @@ bool Dota2Capture::saveFullScreenshotWithRegions(const std::filesystem::path& di
     Gdiplus::Graphics g(&gdiBmp);
     g.SetSmoothingMode(Gdiplus::SmoothingModeNone);
 
-    Gdiplus::Pen heroPen(Gdiplus::Color(255, 255, 50, 50), 2.0f);   // красный — портреты героев
-    Gdiplus::Pen posPen (Gdiplus::Color(255, 50, 220, 255), 2.0f);  // голубой — индикаторы позиций
+    Gdiplus::Pen heroPen(Gdiplus::Color(255, 255, 50, 50), 2.0f);   // красный - портреты героев
+    Gdiplus::Pen posPen (Gdiplus::Color(255, 50, 220, 255), 2.0f);  // голубой - индикаторы позиций
     Gdiplus::FontFamily fontFamily(L"Segoe UI");
     Gdiplus::Font font(&fontFamily, 12.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));

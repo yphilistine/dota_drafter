@@ -13,7 +13,7 @@
 static const char* STAGING_DIR  = "staging";
 static const char* SWAP_LOCK    = "staging\\swap.lock";
 
-// Ключ манифеста, который не является путём относительно {app} — этот файл
+// Ключ манифеста, который не является путём относительно {app} - этот файл
 // живёт в папке Dota 2 и обрабатывается отдельно, см. syncGsiConfig().
 static const char* GSI_CONFIG_KEY = "gamestate_integration_dota2.cfg";
 static bool isExternalManifestKey(const std::string& fname) {
@@ -284,7 +284,7 @@ bool downloadToStaging(const std::string& url,
 
 // --- Data channel ------------------------------------------------------------
 
-// Локальный файл уже совпадает с манифестом — перекачивать не нужно.
+// Локальный файл уже совпадает с манифестом - перекачивать не нужно.
 static bool localFileUpToDate(const std::string& fname, const std::string& expectedSha256) {
     if (expectedSha256.empty()) return false;
     if (GetFileAttributesA(fname.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
@@ -301,13 +301,13 @@ bool downloadAndStageData(const ManifestInfo& manifest,
     stagedFiles.clear();
 
     // Сначала выбираем файлы, которые реально нужно скачать, и считаем их
-    // суммарный размер (manifest.size) — чтобы progress шёл по всей пачке
+    // суммарный размер (manifest.size) - чтобы progress шёл по всей пачке
     // сразу, а не скидывался на 0% на старте каждого отдельного файла.
     std::vector<std::pair<std::string, FileEntry>> toDownload;
     size_t totalBytes = 0;
     for (auto& [fname, fe] : manifest.dataFiles) {
         if (isExternalManifestKey(fname)) continue; // не {app}-путь, см. syncGsiConfig()
-        if (localFileUpToDate(fname, fe.sha256)) continue; // уже актуален — не трогаем
+        if (localFileUpToDate(fname, fe.sha256)) continue; // уже актуален - не трогаем
         toDownload.emplace_back(fname, fe);
         totalBytes += fe.size;
     }
@@ -322,7 +322,7 @@ bool downloadAndStageData(const ManifestInfo& manifest,
                 if (totalBytes > 0)
                     progress(doneBytes + fileDone, totalBytes);
                 else
-                    progress(fileDone, fileTotal); // манифест без "size" — прогресс по текущему файлу
+                    progress(fileDone, fileTotal); // манифест без "size" - прогресс по текущему файлу
             };
         }
 
@@ -337,7 +337,7 @@ bool downloadAndStageData(const ManifestInfo& manifest,
 }
 
 // Удаляет assets\*.png, которые не перечислены в manifest.dataFiles под
-// ключом "assets/<name>" — иначе переименованные/убранные герои оставляют
+// ключом "assets/<name>" - иначе переименованные/убранные герои оставляют
 // мусор в assets/ навсегда (сама маска assets\*.png в манифесте только
 // добавляет/перезаписывает файлы, но никогда не убирает лишние).
 static void cleanupObsoleteAssets(const ManifestInfo& manifest) {
@@ -348,7 +348,7 @@ static void cleanupObsoleteAssets(const ManifestInfo& manifest) {
             expected.insert(fname.substr(slash + 1));
         }
     }
-    if (expected.empty()) return; // манифест не описывает ассеты — не трогаем локальную папку
+    if (expected.empty()) return; // манифест не описывает ассеты - не трогаем локальную папку
 
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA("assets\\*.png", &fd);
@@ -365,7 +365,7 @@ static void cleanupObsoleteAssets(const ManifestInfo& manifest) {
 }
 
 bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>& stagedFiles) {
-    if (stagedFiles.empty()) return true; // всё уже актуально — менять нечего
+    if (stagedFiles.empty()) return true; // всё уже актуально - менять нечего
 
     // swap.lock для отслеживания прерванных операций
     {
@@ -405,7 +405,7 @@ bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>&
 
     // Ассеты (assets/*.png) копируются по маске в манифесте, поэтому файлы
     // героев, пропавших из манифеста (переименован/убран), сами по себе не
-    // перезапишутся — удаляем их явно, иначе они остаются в assets/ навсегда.
+    // перезапишутся - удаляем их явно, иначе они остаются в assets/ навсегда.
     cleanupObsoleteAssets(manifest);
 
     return true;
@@ -413,7 +413,7 @@ bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>&
 
 // Восстанавливает файлы из *.bak после прерванного swap. Работает без
 // ManifestInfo (вызывается из checkPendingSwap до fetchManifest), поэтому
-// ищет *.bak по маске, а не по жёстко заданному списку файлов — это же
+// ищет *.bak по маске, а не по жёстко заданному списку файлов - это же
 // нужно, чтобы работать с произвольным набором файлов манифеста (включая
 // assets/*.png.bak), а не только с cbm/db.
 static void restoreBakGlob(const std::string& pattern) {
@@ -440,7 +440,7 @@ void rollbackDataFiles() {
 
 void checkPendingSwap() {
     if (GetFileAttributesA(SWAP_LOCK) != INVALID_FILE_ATTRIBUTES) {
-        LOG_WARN("Found incomplete data swap — rolling back");
+        LOG_WARN("Found incomplete data swap - rolling back");
         rollbackDataFiles();
         DeleteFileA(SWAP_LOCK);
     }
@@ -488,7 +488,7 @@ static bool dirExistsA(const std::string& path) {
 }
 
 // Ищет "...\dota 2 beta\game\dota\cfg" среди ВСЕХ библиотек Steam, а не только
-// под путём установки самого Steam — Dota 2 (30+ ГБ) часто стоит в отдельной
+// под путём установки самого Steam - Dota 2 (30+ ГБ) часто стоит в отдельной
 // библиотеке на другом диске (steamapps\libraryfolders.vdf). Тот же алгоритм,
 // что и в installer/dota_draft_setup.iss (FindDotaCfgFolder), но на C++, т.к.
 // здесь он должен отрабатывать не один раз при установке, а при каждом запуске.
@@ -540,7 +540,7 @@ void syncGsiConfig(const ManifestInfo& manifest) {
 
         std::string cfgFolder = findDotaCfgFolder();
         if (cfgFolder.empty()) {
-            LOG_INFO("[GSI cfg] Dota 2 не найдена на этой машине — пропускаем синхронизацию");
+            LOG_INFO("[GSI cfg] Dota 2 не найдена на этой машине - пропускаем синхронизацию");
             return;
         }
 

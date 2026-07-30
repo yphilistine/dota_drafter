@@ -215,7 +215,7 @@ void fetchAndStoreImmortalHeroStats(sqlite3* db, const std::string& connStr) {
     std::map<std::pair<int,int>, std::pair<int,int>> agg;
 
     for (int row = 0; row < nRows; ++row) {
-        // radiantwon — boolean: PostgreSQL возвращает 't' или 'f'
+        // radiantwon - boolean: PostgreSQL возвращает 't' или 'f'
         const char* rwon_str = PQgetvalue(res.get(), row, c_rwon);
         bool radiantWon = (rwon_str[0] == 't' || rwon_str[0] == 'T' || rwon_str[0] == '1');
 

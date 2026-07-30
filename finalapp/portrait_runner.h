@@ -1,6 +1,6 @@
 #pragma once
 /*
- * portrait_runner.h — захват портретов + позиций.
+ * portrait_runner.h - захват портретов + позиций.
  */
 
 #include "shared_types.h"
@@ -20,7 +20,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
 // PNG (radiant/dire_hero_0..4, radiant/dire_pos_0..4) + fullscreen_regions.png
 // (полный кадр HUD с наложенными рамками всех 20 регионов) + report.txt с
 // именем и score распознанного героя на каждый слот и с сырым OCR-текстом/
-// позицией/score на каждый позиционный слот. dbPath — playerandlivestats.db
+// позицией/score на каждый позиционный слот. dbPath - playerandlivestats.db
 // (справочник heroes для имени). Возвращает false, если окно Dota 2 не
 // найдено или кадр не захвачен (dir тогда не создаётся).
 bool captureDebugScreenshotWithReport(const std::string& dbPath,

@@ -1,26 +1,26 @@
 /*
- * dota_picker.cpp — ML-пикер: CatBoost инференс + рекомендации героев.
+ * dota_picker.cpp - ML-пикер: CatBoost инференс + рекомендации героев.
  *
  * Модель: draft_helper_abstract.cbm (одна, все фазы драфта).
  * Данные: draft_helper_abstract_data.db (matchup, modal_pos, hero_pos_wr, pick_rates).
  * Мета-стата (immortal, DIVINE_IMMORTAL): playerandlivestats.db, таблица `stats`
- * (живой STRATZ heroStats, обновляется фазой 1a при каждом старте — см. datafetcher.cpp).
+ * (живой STRATZ heroStats, обновляется фазой 1a при каждом старте - см. datafetcher.cpp).
  *
  * Фичи: 10 cat (hero names) + 117 float, порядок побитово соответствует
  * ALL_FEATURES из draft_features.py (datafetcher-репо, Python-сторона модели):
  *   global_wr(10) → vs_adv(10) → with_adv(10) → hero_pos_wr(10) →
  *   best_vs(10) → worst_vs(10) → pick_rate(10) → best_with(10) → worst_with(10) →
  *   team aggregates(17) → composition/role-shape(10)
- * Без mastery в самом векторе — Component A "чисто про драфт", без привязки к
+ * Без mastery в самом векторе - Component A "чисто про драфт", без привязки к
  * аккаунту. Персонализация (Component B, portировано из personal_score.py,
  * датафетчер-репо) применяется ПОСЛЕ модели: sigmoid(logit(p_ours) + beta*adj),
- * см. personalAdjustment/combinePersonal ниже. beta по умолчанию 0.0 — датафетчер
+ * см. personalAdjustment/combinePersonal ниже. beta по умолчанию 0.0 - датафетчер
  * `calibrate_personal.py` не нашёл прироста accuracy при beta>0 ни при одном
  * протестированном приоре сглаживания; Component B посчитан и подключён к
  * ранжированию, но эффективно выключен, пока PERSONAL_BETA не поменяют осознанно.
  *
  * Composition/role-shape нужен hero_pos_wr.games (raw), которого в старых
- * draft_helper_abstract_data.db (schema_version=1) нет — loadMatchupData тянет
+ * draft_helper_abstract_data.db (schema_version=1) нет - loadMatchupData тянет
  * его отдельным запросом и деградирует до нулевого presence (макс. дефицит по
  * всем измерениям), если колонки нет, вместо падения.
  */
@@ -60,7 +60,7 @@ static constexpr int POLL_INTERVAL_MS = 500;
 struct PlayerStats {
     int games=0, wins=0;
 };
-// Не ImmortalHeroStats — так называется другая, несовместимая по форме
+// Не ImmortalHeroStats - так называется другая, несовместимая по форме
 // структура в clouddatafetcher.h (hero_id/pos/games/wins/bans); разные имена
 // снимают коллизию, хотя ODR-конфликта сегодня нет (файлы не инклюдят друг друга).
 struct PickerHeroStat {
@@ -90,7 +90,7 @@ struct MatchupData {
     std::map<std::pair<int,int>, float> with_wr;
     std::map<int, int> modal_pos;
     std::map<std::pair<int,int>, float> hero_pos_wr;
-    std::map<std::pair<int,int>, int>   hero_pos_games; // raw games — для composition
+    std::map<std::pair<int,int>, int>   hero_pos_games; // raw games - для composition
     std::map<int, float> pick_rates;
 };
 
@@ -103,7 +103,7 @@ struct TeamAgg {
 };
 
 // base=0 → слоты 0..4 (radiant), base=5 → слоты 5..9 (dire). Портирует
-// _team_aggregates из draft_features.py: при n==0 — те же дефолты
+// _team_aggregates из draft_features.py: при n==0 - те же дефолты
 // (meanGwr=0.5, остальное 0), иначе среднее/std по раскрытым слотам стороны.
 static TeamAgg computeTeamAgg(int base, const int ids[10], const float gwr[10],
     const float vsAdvAvg[10], const float withAdvAvg[10], const float vsAdvBest[10],
@@ -143,7 +143,7 @@ static TeamAgg computeTeamAgg(int base, const int ids[10], const float gwr[10],
 
 static constexpr int N_ROLE_DIMS = 5;
 static constexpr float DIM_TARGET[N_ROLE_DIMS] = {3.f, 2.f, 2.f, 1.f, 2.f};
-// POS_DIMS_MASK[pos], pos=1..5 (0 не используется) — бит i = вклад в dim i.
+// POS_DIMS_MASK[pos], pos=1..5 (0 не используется) - бит i = вклад в dim i.
 static constexpr int POS_DIMS_MASK[6] = {
     0,
     (1<<0)|(1<<2), // pos1 carry:        core, safe
@@ -154,7 +154,7 @@ static constexpr int POS_DIMS_MASK[6] = {
 };
 
 // presence(hero, dim) = доля игр героя (по всем позициям) в данной ролевой
-// размерности. Без данных по герою (games=0 везде) — все 0, деградация
+// размерности. Без данных по герою (games=0 везде) - все 0, деградация
 // graceful (не UB, не exception) для старых БД без колонки hero_pos_wr.games.
 static void heroDimPresence(int hid, const MatchupData& md, float presence[N_ROLE_DIMS]) {
     int games[6] = {}; int total = 0;
@@ -174,7 +174,7 @@ static void heroDimPresence(int hid, const MatchupData& md, float presence[N_ROL
     presence[4] = freq[3] + freq[4];           // off
 }
 
-// out[d] = -max(0, target(d) - filled(d)) / target(d) — 0 = размерность
+// out[d] = -max(0, target(d) - filled(d)) / target(d) - 0 = размерность
 // закрыта (или переукомплектована), -1 = совсем не закрыта.
 static void teamComposition(int base, const int ids[10], const int positions[10],
     const MatchupData& md, float out[N_ROLE_DIMS])
@@ -355,7 +355,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     v.finalize();
 }
 
-// SQLite-обёртки (readonly) — SqliteDB/SqliteStmt из common.h.
+// SQLite-обёртки (readonly) - SqliteDB/SqliteStmt из common.h.
 
 // --- Загрузка данных из SQLite ------------------------------------------------
 
@@ -394,14 +394,14 @@ static MatchupData loadMatchupData(sqlite3* db) {
         while (st.row()) md.hero_pos_wr[{st.col_int(0),st.col_int(1)}] = (float)st.col_double(2);
     } catch (...) { LOG_WARN("[picker] hero_pos_wr not found"); }
 
-    // Отдельный запрос от wr — на старой БД (schema_version=1, без колонки games)
+    // Отдельный запрос от wr - на старой БД (schema_version=1, без колонки games)
     // должен упасть только этот try, не потеряв уже загруженный hero_pos_wr.
     // Без games composition-фича деградирует до нулевого presence (см. heroDimPresence),
     // не падает.
     try {
         SqliteStmt st(db,"SELECT hero_id,pos,games FROM hero_pos_wr");
         while (st.row()) md.hero_pos_games[{st.col_int(0),st.col_int(1)}] = st.col_int(2);
-    } catch (...) { LOG_WARN("[picker] hero_pos_wr.games not found (old schema — composition feature degraded)"); }
+    } catch (...) { LOG_WARN("[picker] hero_pos_wr.games not found (old schema - composition feature degraded)"); }
 
     try {
         SqliteStmt st(db,"SELECT hero_id,rate FROM pick_rates");
@@ -415,8 +415,8 @@ static MatchupData loadMatchupData(sqlite3* db) {
     return md;
 }
 
-// Порог отсечения кандидатов — динамический: 1% от суммарных игр на позиции за неделю.
-// Данные — недельный STRATZ-снимок, а не all-time агрегат, поэтому фиксированное
+// Порог отсечения кандидатов - динамический: 1% от суммарных игр на позиции за неделю.
+// Данные - недельный STRATZ-снимок, а не all-time агрегат, поэтому фиксированное
 // число игр не подошло бы как порог.
 static std::map<int,PickerHeroStat> loadImmortalHeroStats(sqlite3* db, int position) {
     std::map<int,PickerHeroStat> m;
@@ -448,7 +448,7 @@ static std::map<int,PlayerStats> loadPlayerStats(sqlite3* db, int account_id) {
     return m;
 }
 
-// Component B: "форма" — recent ranked, короче история/слабее приор, чем all-time.
+// Component B: "форма" - recent ranked, короче история/слабее приор, чем all-time.
 static std::map<int,PlayerStats> loadPlayerHeroesRanked(sqlite3* db, int account_id) {
     std::map<int,PlayerStats> m;
     try {
@@ -459,7 +459,7 @@ static std::map<int,PlayerStats> loadPlayerHeroesRanked(sqlite3* db, int account
     return m;
 }
 
-// Component B: перс. WR героя на конкретной позиции. Без фильтра по позиции —
+// Component B: перс. WR героя на конкретной позиции. Без фильтра по позиции -
 // как в personal_score.py, все позиции аккаунта загружаются одним запросом.
 static std::map<std::pair<int,int>,PlayerStats> loadPlayerHeroPos(sqlite3* db, int account_id) {
     std::map<std::pair<int,int>,PlayerStats> m;
@@ -511,8 +511,8 @@ static std::vector<double> runBatch(ModelCalcerHandle* model, std::vector<Featur
 
 // --- Component B: персональная поправка (personal_score.py, датафетчер-репо) --
 // Портирует personal_adjustment/combine дословно, кроме источника base_wr: там
-// это immortalherostats (таблица удалена из finalapp — см. header-комментарий),
-// здесь — уже загруженный immortal_map (живая STRATZ-стата,
+// это immortalherostats (таблица удалена из finalapp - см. header-комментарий),
+// здесь - уже загруженный immortal_map (живая STRATZ-стата,
 // playerandlivestats.db::stats), с тем же порогом PERSONAL_BASE_WR_MIN_GAMES.
 
 static constexpr float PERSONAL_PRIOR_ALLTIME     = 40.0f;
@@ -567,8 +567,8 @@ static float personalAdjustment(int hero_id, int pos,
            comfort;
 }
 
-// final = sigmoid(logit(p_ours) + beta*adj). p_ours — вероятность победы НАШЕЙ
-// стороны (уже ориентированная), не сырой radiant-вероятности — см. вызов ниже.
+// final = sigmoid(logit(p_ours) + beta*adj). p_ours - вероятность победы НАШЕЙ
+// стороны (уже ориентированная), не сырой radiant-вероятности - см. вызов ниже.
 static inline double combinePersonal(double pOurs, float adj, float beta) {
     double p = std::min(std::max(pOurs, 1e-6), 1.0 - 1e-6);
     double logit = std::log(p / (1.0 - p));
@@ -682,10 +682,10 @@ static void renderToGui(
             bool rad = (lp.our_side == 1);
             int our_pos = state->ourPosition;
 
-            // Component B: probs[i] — сырая radiant-вероятность; ориентируем в
+            // Component B: probs[i] - сырая radiant-вероятность; ориентируем в
             // "нашу" сторону, применяем персональную поправку, ориентируем обратно
             // для сортировки/флипа на дисплее (при PERSONAL_BETA=0.0 pRawFinal
-            // равен probs[i] побитово — поправка эффективно не действует).
+            // равен probs[i] побитово - поправка эффективно не действует).
             std::vector<std::pair<double,int>> ranked;
             ranked.reserve(pool.size());
             for (size_t i = 0; i < pool.size(); i++) {
@@ -732,7 +732,7 @@ static void renderToGui(
 
 // --- CatBoost model RAII -----------------------------------------------------
 // Без этого ModelCalcerDelete вызывался только после нормального завершения
-// цикла (см. ниже) — исключение из runBatch/renderToGui посреди цикла
+// цикла (см. ниже) - исключение из runBatch/renderToGui посреди цикла
 // пропускало освобождение и утекало модель.
 class ModelHandle {
     ModelCalcerHandle* h_;
@@ -757,7 +757,7 @@ int runPickerGui(const char* model_path, const char* db_path,
             if (!LoadFullModelFromFile(m, path.c_str())) {
                 ModelCalcerDelete(m);
                 throw std::runtime_error("Cannot load model: " + path
-                                         + " — " + GetErrorString());
+                                         + " - " + GetErrorString());
             }
             return m;
         };
@@ -782,7 +782,7 @@ int runPickerGui(const char* model_path, const char* db_path,
             }
         } catch (const std::exception& ex) {
             LOG_WARN("[picker] Cannot read data meta: " << ex.what()
-                     << " — proceeding (legacy data)");
+                     << " - proceeding (legacy data)");
         }
 
         ModelHandle model(loadModel(base + ".cbm"));

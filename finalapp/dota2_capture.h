@@ -1,11 +1,11 @@
 #pragma once
 
 /*
- * dota2_capture.h — захват портретов героев и индикаторов позиций из HUD Dota 2.
+ * dota2_capture.h - захват портретов героев и индикаторов позиций из HUD Dota 2.
  *
  * Использует Windows GDI (PrintWindow) для захвата окна.
  * Поддержка разрешений: 4:3, 16:10, 16:9, 21:9 + DPI-масштабирование.
- * refreshResolution() — пересчёт регионов при смене разрешения на лету.
+ * refreshResolution() - пересчёт регионов при смене разрешения на лету.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -13,7 +13,7 @@
 #endif
 
 #include <windows.h>
-#include <objidl.h>   // IStream, ISequentialStream — нужен GDI+ до включения gdiplus.h
+#include <objidl.h>   // IStream, ISequentialStream - нужен GDI+ до включения gdiplus.h
 #include <gdiplus.h>
 #include <string>
 #include <vector>
@@ -52,7 +52,7 @@ struct PortraitRegion {
 };
 
 // --- Раскладки HUD ---------------------------------------------------------
-// Все значения — доли от размера окна (0.0 .. 1.0), масштабируются автоматически.
+// Все значения - доли от размера окна (0.0 .. 1.0), масштабируются автоматически.
 
 struct HudLayout {
     float radiant_x_start;   // левый край первого портрета Radiant
@@ -62,7 +62,7 @@ struct HudLayout {
     float portrait_gap;      // горизонтальный зазор между портретами
     float dire_x_start;      // левый край первого портрета Dire
 
-    // Области индикаторов позиций (1-5) — аналогично портретам
+    // Области индикаторов позиций (1-5) - аналогично портретам
     float pos_x_start;       // x первого индикатора позиции Radiant
     float pos_y;             // y индикаторов позиций
     float pos_w;             // ширина индикатора
@@ -149,7 +149,7 @@ inline HudLayout selectStrategyLayout(int w, int h) {
     else                     return STRATEGY_LAYOUT_21_9;
 }
 
-// Раскладка по умолчанию — перезаписывается в findGameWindow()
+// Раскладка по умолчанию - перезаписывается в findGameWindow()
 static constexpr HudLayout DEFAULT_LAYOUT = STRATEGY_LAYOUT_16_9;
 
 // --- RAII-обёртки GDI+ ------------------------------------------------------
@@ -172,7 +172,7 @@ private:
 
 class Dota2Capture {
 public:
-    // output_dir — папка для сохранения PNG (создаётся при необходимости)
+    // output_dir - папка для сохранения PNG (создаётся при необходимости)
     explicit Dota2Capture(std::filesystem::path output_dir = "portraits");
 
     // Поиск окна Dota 2 (SDL_app/Valve001). Определяет разрешение и раскладку.
@@ -194,7 +194,7 @@ public:
     void saveDebugRegions(const std::filesystem::path& dir = "") const;
 
     // Захват полного кадра HUD с наложенными рамками всех 20 регионов (10
-    // портретов героев + 10 индикаторов позиций) — по одному PNG на весь
+    // портретов героев + 10 индикаторов позиций) - по одному PNG на весь
     // экран для быстрой визуальной сверки разметки, вместо 20 обрезанных
     // файлов из saveDebugRegions(). Сохраняет fullscreen_regions.png в dir.
     bool saveFullScreenshotWithRegions(const std::filesystem::path& dir = "");

@@ -1,9 +1,9 @@
 #pragma once
 /*
- * app_state.h — состояние, реально расшаренное между mainGUI.cpp,
+ * app_state.h - состояние, реально расшаренное между mainGUI.cpp,
  * orchestrator.cpp и gui_draw.cpp. Глобал живёт здесь только если он
  * читается/пишется из ≥2 из этих файлов (проверено по каждому use-site
- * при разбивке mainGUI.cpp) — иначе он инкапсулирован за функциями
+ * при разбивке mainGUI.cpp) - иначе он инкапсулирован за функциями
  * своего файла (см. orchestrator.h/gui_draw.h).
  */
 
@@ -44,6 +44,7 @@ extern PlayerState g_player;
 extern GameInfo            g_gameInfo;
 extern SharedPortraitState g_portraitState;
 extern GuiPickerState      g_pickerState;
+extern SpectatorDraftState g_spectatorState;
 
 // --- Конфигурация (из переменных окружения / умолчаний, затем read-only) ------
 extern std::string g_stratzToken;
@@ -58,16 +59,16 @@ inline constexpr int PHASE3_TAIL_SEC = 5;
 // секунд без GSI-обновлений от Dota означает "игра закрыта" → сброс на IDLE.
 inline constexpr int GSI_WATCHDOG_SEC = 60;
 
-// Текстура аватара — владелец D3D11-устройства (mainGUI.cpp), рендерится в
+// Текстура аватара - владелец D3D11-устройства (mainGUI.cpp), рендерится в
 // gui_draw.cpp (DrawHeader), пересоздаётся в mainGUI.cpp (RenderFrame),
 // освобождается перед рефетчем в orchestrator.cpp (startPhase1).
 extern ID3D11ShaderResourceView* g_avatarSRV;
 
-// D3D11-устройство — владелец mainGUI.cpp (InitD3D/CleanupD3D), но нужно и
+// D3D11-устройство - владелец mainGUI.cpp (InitD3D/CleanupD3D), но нужно и
 // gui_draw.cpp (createTextureFromImageData создаёт текстуры портретов/аватара).
 extern ID3D11Device* g_Device;
 
-// Хендл главного окна — владелец mainGUI.cpp (CreateMainWindow), но нужен и
+// Хендл главного окна - владелец mainGUI.cpp (CreateMainWindow), но нужен и
 // gui_draw.cpp (DrawHeader: клик по логотипу [D] возвращает фокус на окно).
 extern HWND g_Hwnd;
 
@@ -75,14 +76,14 @@ extern HWND g_Hwnd;
 // RunMessageLoop (mainGUI.cpp) спит на этом Win32-событии (плюс оконные
 // сообщения, плюс safety-net таймаут). Producer-потоки (orchestrator/portrait/
 // picker/GSI) вызывают requestRedraw() только когда реально поменяли что-то
-// видимое в GUI — сигнал на каждой внутренней итерации потока сводит на нет
+// видимое в GUI - сигнал на каждой внутренней итерации потока сводит на нет
 // экономию от событийного рендера.
 void requestRedraw();
 HANDLE redrawEventHandle();
 
 // --- Единый канал уведомлений для GUI ------------------------------------------
 // Общий канал для любых баннеров уровня приложения (fatal DB open, network,
-// и т.п.). GuiPickerState::schemaError — отдельный, самодостаточный механизм
+// и т.п.). GuiPickerState::schemaError - отдельный, самодостаточный механизм
 // для одного частного случая (несовместимость схемы данных пикера).
 enum class NoticeLevel { Info, Warn, Error };
 struct AppNotice {

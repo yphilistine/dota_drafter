@@ -1,6 +1,6 @@
 #pragma once
 /*
- * shared_types.h — общие типы для межпоточного взаимодействия.
+ * shared_types.h - общие типы для межпоточного взаимодействия.
  * Используется всеми модулями: GSI, Portrait, Picker, GUI.
  */
 
@@ -58,6 +58,31 @@ struct SharedPortraitState {
         for (auto& s : slots) s = {};
         for (auto& p : manualPos) p = 0;
         for (auto& p : detectedPos) p = 0;
+        active = false;
+    }
+};
+
+// --- Наблюдаемая игра (спектейт чужого матча) ---------------------------------
+// Заполняется GSI-сервером (livestatsfetcher.cpp) напрямую из вложенных
+// player.team2/team3-блоков - такую форму Dota отдаёт только когда мы не
+// участник матча, а наблюдаем чужой. heroId - из GSI (team_slot/team_name/
+// hero_id внутри playerN), без portrait capture: HUD наблюдателя - другая
+// раскладка, свой слот не выделен, поэтому portrait capture на этой фазе не
+// запускается (см. orchestrator.cpp). manualPos - только ручная метка в GUI
+// (нет автодетекта позиций для чужого матча), ни на что не влияет (Picks/Meta-
+// панели во время наблюдения остаются в обычном idle-состоянии).
+struct SpectatorHeroSlot {
+    int heroId    = 0;
+    int manualPos = 0;   // 0 = не задано, 1-5 = вручную выставлено в GUI
+};
+struct SpectatorDraftState {
+    std::mutex         mtx;
+    bool               active = false;  // true, пока приходят team2/team3-payload'ы
+    SpectatorHeroSlot  slots[10];        // 0-4 Radiant, 5-9 Dire
+    std::chrono::steady_clock::time_point lastUpdate;
+    void clear() {
+        std::lock_guard<std::mutex> lk(mtx);
+        for (auto& s : slots) s = {};
         active = false;
     }
 };

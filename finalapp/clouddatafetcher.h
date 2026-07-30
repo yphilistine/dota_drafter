@@ -1,6 +1,6 @@
 #pragma once
 /*
- * clouddatafetcher.h — синхронизация данных из PostgreSQL в SQLite.
+ * clouddatafetcher.h - синхронизация данных из PostgreSQL в SQLite.
  * Таблицы: proherostats, immortalherostats (агрегат recentimmortalmatches).
  */
 
@@ -21,7 +21,7 @@ struct ImmortalHeroStats {
     int pos;
     int games;
     int wins;
-    int bans;   // всегда 0 — в recentimmortalmatches нет данных о банах
+    int bans;   // всегда 0 - в recentimmortalmatches нет данных о банах
 };
 
 // PG proherostats → SQLite proherostats. Полная перезапись.

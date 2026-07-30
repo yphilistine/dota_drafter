@@ -1,8 +1,8 @@
 #pragma once
 /*
- * hero_meta_stats.h — живая мета-статистика героев (STRATZ heroStats, фаза 1a).
+ * hero_meta_stats.h - живая мета-статистика героев (STRATZ heroStats, фаза 1a).
  * Не требует accountId. Отдельный пайплайн от истории матчей игрока
- * (playerdatafetcher.h) — другой источник, другое время запуска.
+ * (playerdatafetcher.h) - другой источник, другое время запуска.
  */
 
 #include "common.h"

@@ -51,7 +51,7 @@ bool downloadAndStageData(const ManifestInfo& manifest,
                           std::vector<std::string>& stagedFiles,
                           ProgressCb progress = nullptr);
 
-// Меняет местами (staging -> live) только файлы из stagedFiles — остальные
+// Меняет местами (staging -> live) только файлы из stagedFiles - остальные
 // (уже актуальные) не трогаются вовсе.
 bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>& stagedFiles);
 void rollbackDataFiles();
@@ -61,10 +61,10 @@ void cleanupStaging();
 int  compareVersions(const std::string& a, const std::string& b);
 
 // Синхронизирует gamestate_integration_dota2.cfg с манифестом. Этот файл живёт
-// вне {app} — в папке Dota 2 (путь определяется динамически: реестр Steam +
+// вне {app} - в папке Dota 2 (путь определяется динамически: реестр Steam +
 // steamapps\libraryfolders.vdf, т.к. Dota 2 часто стоит в отдельной библиотеке
 // на другом диске), поэтому не проходит через общий dataFiles-конвейер
 // (checkForUpdates/downloadAndStageData/swapDataFiles рассчитаны на пути
 // относительно {app}). Best-effort: если Dota 2 не найдена или скачивание не
-// удалось — тихо пропускает, ничего не бросает наружу и не блокирует запуск.
+// удалось - тихо пропускает, ничего не бросает наружу и не блокирует запуск.
 void syncGsiConfig(const ManifestInfo& manifest);

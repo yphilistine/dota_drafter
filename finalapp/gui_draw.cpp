@@ -1,8 +1,8 @@
 /*
- * gui_draw.cpp — панели ImGui (Draft/Picks/Meta Heroes/Header/StatusBar),
+ * gui_draw.cpp - панели ImGui (Draft/Picks/Meta Heroes/Header/StatusBar),
  * кэш портретов героев/меты/имён.
  *
- * DrawPicksPanel и DrawMetaHeroesPanel используют общую DrawHeroStatRow —
+ * DrawPicksPanel и DrawMetaHeroesPanel используют общую DrawHeroStatRow -
  * тот же расчёт колонок/портрета/бара, отличается только источник вторичной
  * статистики.
  */
@@ -42,7 +42,7 @@ std::string heroDisplayName(int heroId, const char* fallback) {
             SqliteDB db(DB_PATH, /*readOnly=*/true);
             SqliteStmt st(db.get(), "SELECT id, localized_name FROM heroes");
             while (st.row()) g_heroDisplayNames[st.col_int(0)] = st.col_text(1);
-        } catch (...) { /* таблица ещё не создана фазой 1a — попробуем в следующий раз */ }
+        } catch (...) { /* таблица ещё не создана фазой 1a - попробуем в следующий раз */ }
     }
     auto it = g_heroDisplayNames.find(heroId);
     return it != g_heroDisplayNames.end() ? it->second : (fallback ? fallback : "");
@@ -60,7 +60,7 @@ static std::map<int, std::map<int, MetaHeroRow>> g_metaHeroLookup;
 static bool g_metaHeroStatsLoaded = false;
 // Позиция, выбранная вручную в Meta Heroes, пока нет активной игры (0 = All).
 // Как только начинается реальный драфт/матч, панель переключается на настоящую
-// позицию из g_pickerState.ourPosition — это превью только для просмотра меты.
+// позицию из g_pickerState.ourPosition - это превью только для просмотра меты.
 static int s_metaPreviewPos = 0;
 
 static void loadMetaHeroStatsIfNeeded() {
@@ -90,7 +90,7 @@ static void loadMetaHeroStatsIfNeeded() {
             agg.second += w;
             nameByHero[hid] = nm;
         }
-        if (!any) return; // таблица ещё пуста — попробуем в следующий кадр
+        if (!any) return; // таблица ещё пуста - попробуем в следующий кадр
 
         auto toRow = [](int hid, int g, int w, const std::string& nm) {
             MetaHeroRow r;
@@ -128,7 +128,7 @@ static void loadMetaHeroStatsIfNeeded() {
         g_metaHeroStats[0] = std::move(aggRows); // 0 = агрегат по всем позициям (ордер по сумме матчей)
 
         g_metaHeroStatsLoaded = true;
-    } catch (...) { /* таблица ещё не создана фазой 1a — попробуем в следующий раз */ }
+    } catch (...) { /* таблица ещё не создана фазой 1a - попробуем в следующий раз */ }
 }
 
 // --- Создание D3D11 текстуры из байтов изображения (JPEG/PNG) -----------------
@@ -190,7 +190,7 @@ ID3D11ShaderResourceView* createTextureFromImageData(const uint8_t* data, size_t
 
 // --- Загрузка портретов героев из папки assets/ ------------------------------
 // Файлы assets/*.png именованы по heroes.name (без префикса npc_dota_hero_,
-// напр. "antimage.png"), а не по localized_name — тот Valve иногда временно
+// напр. "antimage.png"), а не по localized_name - тот Valve иногда временно
 // меняет. Портреты кэшируются по heroId, поэтому переименование Valve не влияет
 // на отображение.
 static std::map<int, ID3D11ShaderResourceView*> g_heroPortraits;
@@ -332,9 +332,15 @@ static ImVec4 WinColor(float w) {
 
 // --- Отрисовка слота героя ----------------------------------------------------
 // absSlot: 0-9 (0-4 Radiant, 5-9 Dire). usedPos: позиции 1-5 занятые другими слотами в команде.
+// setPos(slot, pos) - вызывается попапом выбора позиции (на absSlot и, при свапе,
+// на слоте партнёра); хранилище позиций не хардкожено здесь - своя игра пишет в
+// g_portraitState (см. DrawDraftPanel), наблюдаемая - в g_spectatorState
+// (см. DrawSpectatorDraftPanel), чтобы ручная метка на чужом матче не задевала
+// нашу реальную позицию в собственном драфте.
 static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
                          bool radiantSide, bool showPos, int slotNum,
-                         int absSlot, const int usedPos[5]) {
+                         int absSlot, const int usedPos[5],
+                         const std::function<void(int,int)>& setPos) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      rp  = ImGui::GetCursorScreenPos();
     const float lh  = ImGui::GetTextLineHeight();
@@ -384,7 +390,7 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
         dl->AddText({tx, rp.y+(H-lh)*0.5f}, C(kText), h.name);
     }
 
-    // Тег позиции — кликабельный popup для своей команды.
+    // Тег позиции - кликабельный popup для своей команды.
     if (showPos) {
         int dispPos = (h.pos > 0) ? h.pos : 0;
         char posStr[8];
@@ -414,28 +420,24 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
             int myIdx = absSlot % 5;
             int teamBase = absSlot - myIdx; // 0 for radiant, 5 for dire
 
-            // "?" = All/сброс — унифицировано с бейджами Picks/Meta (SectionLabelWithPosBadge):
+            // "?" = All/сброс - унифицировано с бейджами Picks/Meta (SectionLabelWithPosBadge):
             // там это "All", здесь, т.к. слот всегда занят конкретным героем, а не
-            // агрегатом — снимает ручной override и возвращает авто-детект с экрана.
+            // агрегатом - снимает ручной override и возвращает авто-детект с экрана.
             if (ImGui::Selectable("?", dispPos <= 0)) {
-                std::lock_guard<std::mutex> lk(g_portraitState.mtx);
-                g_portraitState.manualPos[absSlot] = 0;
-                requestPositionRefresh();
+                setPos(absSlot, 0);
             }
             for (int p = 1; p <= 5; ++p) {
                 char label[16];
                 std::snprintf(label, sizeof(label), "Pos %d", p);
                 if (ImGui::Selectable(label, p == dispPos)) {
-                    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
                     // Свап: если позиция занята другим слотом, обменять
                     for (int j = 0; j < 5; ++j) {
                         if (j != myIdx && usedPos[j] == p) {
-                            g_portraitState.manualPos[teamBase + j] = dispPos;
+                            setPos(teamBase + j, dispPos);
                             break;
                         }
                     }
-                    g_portraitState.manualPos[absSlot] = p;
-                    requestPositionRefresh();
+                    setPos(absSlot, p);
                 }
             }
             ImGui::EndPopup();
@@ -458,16 +460,16 @@ static void SectionLabel(const char* label) {
 
 // --- Метка секции + бейдж текущей позиции (RECOMMENDED PICKS / META HEROES) ---
 // Бейдж по умолчанию делит строку с заголовком (справа). Если панель узкая и
-// полный текст бейджа перекрыл бы заголовок — сначала пробуем сократить текст
-// бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает — переносим
+// полный текст бейджа перекрыл бы заголовок - сначала пробуем сократить текст
+// бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает - переносим
 // бейдж на отдельную строку под заголовком. Так бейдж никогда не наезжает на
 // текст секции, при любой ширине панели.
 // onPositionPick != nullptr делает бейдж кликабельным: клик открывает popup с
 // выбором All/Position 1-5, выбор вызывает onPositionPick(p) (0 = All). Унифицировано
-// для всех трёх мест выбора позиции (Draft-слот/Picks/Meta) — везде один и тот же
+// для всех трёх мест выбора позиции (Draft-слот/Picks/Meta) - везде один и тот же
 // набор вариантов и один и тот же эффект: меняет НАШУ настоящую позицию в драфте
-// (см. SetOurPosition) — нет отдельного "auto"-режима или независимого фильтра.
-// onPositionPick == nullptr — бейдж остаётся некликабельным (напр. до старта игры).
+// (см. SetOurPosition) - нет отдельного "auto"-режима или независимого фильтра.
+// onPositionPick == nullptr - бейдж остаётся некликабельным (напр. до старта игры).
 static void SectionLabelWithPosBadge(const char* label, float panelW, int position,
                                       std::function<void(int)> onPositionPick = nullptr) {
     const float lh     = ImGui::GetTextLineHeight();
@@ -480,7 +482,7 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
     ImGui::TextUnformatted(label);
 
     // Порог "влезает/не влезает" считаем по самому длинному из возможных
-    // заголовков секции ("RECOMMENDED PICKS"), а не по текущему тексту —
+    // заголовков секции ("RECOMMENDED PICKS"), а не по текущему тексту -
     // иначе соседние панели (RECOMMENDED PICKS/META HEROES, YOUR PICK/YOUR HERO)
     // схлопывались бы каждая на своей ширине, вразнобой.
     float reservedLabelW = ImGui::CalcTextSize("RECOMMENDED PICKS").x;
@@ -509,7 +511,7 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
     if (sameLine)
         ImGui::SameLine(panelW - bW);
     else
-        // Ни полный, ни сокращённый текст не помещаются рядом с заголовком —
+        // Ни полный, ни сокращённый текст не помещаются рядом с заголовком -
         // бейдж уходит на новую строку (курсор уже на ней после TextUnformatted).
         ImGui::SetCursorPosX((std::max)(startX, panelW - bW));
 
@@ -547,12 +549,12 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
     }
 }
 
-// Меняет НАШУ настоящую позицию в текущем драфте — тот же эффект, что и клик
+// Меняет НАШУ настоящую позицию в текущем драфте - тот же эффект, что и клик
 // по позиции нашего слота в Draft-панели (DrawHeroSlot: свап с тиммейтом, если
 // позиция уже занята, запись в g_portraitState.manualPos + requestPositionRefresh).
 // newPos: 0 = All/сброс (снять ручной override, вернуться к авто-детекту с экрана),
 // 1-5 = конкретная позиция. Вынесено отдельно, т.к. это единая точка изменения нашей
-// позиции — вызывается и из бейджа Picks-панели, и из бейджа Meta-панели, держит
+// позиции - вызывается и из бейджа Picks-панели, и из бейджа Meta-панели, держит
 // Draft/Picks/Meta синхронизированными без отдельного "auto"-режима.
 static void SetOurPosition(int newPos) {
     if (newPos < 0 || newPos > 5) return;
@@ -575,7 +577,7 @@ static void SetOurPosition(int newPos) {
     int dispPos  = usedPos[myIdx];
 
     std::lock_guard<std::mutex> lk(g_portraitState.mtx);
-    // Свап нужен только при назначении конкретной позиции — сброс на "All" (0)
+    // Свап нужен только при назначении конкретной позиции - сброс на "All" (0)
     // ни у кого ничего не отнимает, свапать с тиммейтом нечего.
     if (newPos >= 1) {
         for (int j = 0; j < 5; ++j) {
@@ -589,16 +591,33 @@ static void SetOurPosition(int newPos) {
     requestPositionRefresh();
 }
 
-// Смена позиции для превью в Meta Heroes вне игры — просто локальный выбор
+// Смена позиции для превью в Meta Heroes вне игры - просто локальный выбор
 // в GUI, без livepicks/оркестратора (нет активного драфта, не с чем сверяться).
 static void SetMetaPreviewPosition(int newPos) {
     if (newPos < 0 || newPos > 5) return;
     s_metaPreviewPos = newPos;
 }
 
+// Колбэк позиции для слотов СВОЕЙ игры (DrawDraftPanel) - прежнее поведение
+// DrawHeroSlot до вынесения записи в g_portraitState за колбэк setPos.
+static void SetOwnGameManualPos(int absSlot, int pos) {
+    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+    g_portraitState.manualPos[absSlot] = pos;
+    requestPositionRefresh();
+}
+
+// Колбэк позиции для слотов НАБЛЮДАЕМОЙ игры (DrawSpectatorDraftPanel) - чисто
+// локальная метка в g_spectatorState, не задевает g_portraitState/livepicks:
+// это не наш драфт, оркестратору и пикеру сверяться не с чем.
+static void SetSpectatorManualPos(int absSlot, int pos) {
+    std::lock_guard<std::mutex> lk(g_spectatorState.mtx);
+    if (absSlot >= 0 && absSlot < 10) g_spectatorState.slots[absSlot].manualPos = pos;
+    requestRedraw();
+}
+
 // --- Общая строка героя со статистикой ---------------------------------------
 // Общий рендер строки (портрет/имя/вторичная стата/win% + бар) для
-// DrawPicksPanel и DrawMetaHeroesPanel — отличается только вторичная строка статы.
+// DrawPicksPanel и DrawMetaHeroesPanel - отличается только вторичная строка статы.
 struct HeroStatRowParams {
     int         rank;
     const char* name;
@@ -665,7 +684,7 @@ static void DrawHeroStatRow(float rowW, const HeroStatRowParams& p) {
     ImGui::Spacing();
 }
 
-// Легенда цветов win-rate — общая для DrawPicksPanel и DrawMetaHeroesPanel.
+// Легенда цветов win-rate - общая для DrawPicksPanel и DrawMetaHeroesPanel.
 static void DrawWinRateLegend(float rowW) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 fp  = ImGui::GetCursorScreenPos();
@@ -692,10 +711,10 @@ static void DrawWinRateLegend(float rowW) {
     ImGui::Dummy({rowW, lhL + 4.f});
 }
 
-// --- "Powered by" — иконки источников данных (STRATZ/OpenDota/D2PT) ----------
-// Иконки — favicon'ы сайтов, тянутся по HTTP (тот же приём, что и аватар игрока
+// --- "Powered by" - иконки источников данных (STRATZ/OpenDota/D2PT) ----------
+// Иконки - favicon'ы сайтов, тянутся по HTTP (тот же приём, что и аватар игрока
 // в fetchOpenDotaProfile: байты через httpGet в фоновом потоке под мьютексом,
-// декодирование в D3D11-текстуру — только на GUI-потоке, при отрисовке).
+// декодирование в D3D11-текстуру - только на GUI-потоке, при отрисовке).
 struct PoweredByIcon {
     const char*                label;
     const char*                url;
@@ -712,7 +731,7 @@ static PoweredByIcon   g_poweredByIcons[3] = {
     { "D2PT",     "https://d2pt.gg",          "https://www.google.com/s2/favicons?domain=d2pt.gg&sz=64"      },
 };
 
-// Иконки контактов/репозитория — тот же приём (favicon по HTTP), отдельная
+// Иконки контактов/репозитория - тот же приём (favicon по HTTP), отдельная
 // строка под "POWERED BY": концептуально не источник данных, а ссылки на
 // автора/проект.
 static std::mutex     g_contactMtx;
@@ -744,16 +763,16 @@ void unloadPoweredByIcons() {
         if (ic.srv) { ic.srv->Release(); ic.srv = nullptr; }
 }
 
-// Строка иконок-ссылок с явным origin (не текущий курсор ImGui) — чтобы можно
+// Строка иконок-ссылок с явным origin (не текущий курсор ImGui) - чтобы можно
 // было разместить две такие строки рядом на одном уровне, а не одну под другой.
 // Заголовок + ряд кликабельных favicon'ов (ShellExecute на клик). Общая для
-// "POWERED BY" (источники данных) и "CONTACT INFO" (Discord/GitHub) — один
+// "POWERED BY" (источники данных) и "CONTACT INFO" (Discord/GitHub) - один
 // расчёт layout/клика для обеих строк вместо двух копий одного и того же тела.
 static constexpr float kIconRowIconSz  = 56.f;
 static constexpr float kIconRowGap     = 16.f; // расстояние между иконками внутри группы
 static constexpr float kIconRowSectGap = 32.f; // расстояние между группами (POWERED BY / CONTACT INFO)
 
-// Ширина группы из n иконок — нужна DrawPoweredBy, чтобы поставить вторую
+// Ширина группы из n иконок - нужна DrawPoweredBy, чтобы поставить вторую
 // группу сразу после первой, а не на фиксированной доле panelW.
 static float IconRowWidth(int n) {
     return n * kIconRowIconSz + (n - 1) * kIconRowGap;
@@ -766,7 +785,7 @@ static void DrawIconRowAt(ImVec2 origin, const char* title, PoweredByIcon* icons
         fetchIconsAsync(icons, n, &mtx);
     }
 
-    // Декодируем в текстуру то, что успело докачаться — по одной попытке на иконку.
+    // Декодируем в текстуру то, что успело докачаться - по одной попытке на иконку.
     for (int i = 0; i < n; ++i) {
         PoweredByIcon& ic = icons[i];
         if (ic.srv) continue;
@@ -835,6 +854,100 @@ static void DrawPoweredBy(float panelW) {
     ImGui::SetCursorScreenPos({origin.x, origin.y + ImGui::GetTextLineHeightWithSpacing() + kIconRowIconSz});
 }
 
+// Заголовок колонки команды (цветная метка + RADIANT/DIRE + n/5) - общий для
+// DrawDraftPanel и DrawSpectatorDraftPanel.
+static void DrawTeamColumnHeader(float colW, bool radiantSide, int count) {
+    const float lh = ImGui::GetTextLineHeight();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 hp = ImGui::GetCursorScreenPos();
+    dl->AddRectFilled({hp.x+1,hp.y+4},{hp.x+9,hp.y+12}, radiantSide ? C(kGreen) : C(kRed));
+    ImGui::Dummy({10.f, lh});
+    ImGui::SameLine(0, 4.f);
+    ImGui::PushStyleColor(ImGuiCol_Text, radiantSide ? kGreen : kRed);
+    ImGui::TextUnformatted(radiantSide ? "RADIANT" : "DIRE");
+    ImGui::PopStyleColor();
+    ImGui::SameLine(colW-24.f);
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::Text("%d/5", count);
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+}
+
+// --- Наблюдаемая игра (спектейт чужого матча) ---------------------------------
+// Герои - из g_spectatorState (GSI player.team2/team3.playerN.hero_id, см.
+// livestatsfetcher.cpp), без portrait capture и без ML: это не наш драфт, нет
+// "нашей" стороны/позиции. Позиции - только ручная метка, кликабельна для
+// обеих команд (в отличие от DrawDraftPanel, где popup виден только на своей
+// стороне) и ни на что за пределами этой панели не влияет - Picks/Meta-панели
+// в это время остаются в обычном idle-состоянии (gameStarted у пикера не
+// трогается, см. orchestrator.cpp).
+static void DrawSpectatorDraftPanel(float panelW, const SpectatorHeroSlot spec[10]) {
+    const float PAD  = 8.f;
+    const float colW = (panelW - PAD) * 0.5f;
+    const float lh   = ImGui::GetTextLineHeight();
+
+    SectionLabel("SPECTATING");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    HeroSlotGui rad[5], dir[5];
+    int radUsedPos[5] = {}, dirUsedPos[5] = {};
+    int rCount = 0, dCount = 0;
+    for (int i = 0; i < 5; ++i) {
+        rad[i].heroId = spec[i].heroId;
+        rad[i].filled = spec[i].heroId > 0;
+        rad[i].pos    = spec[i].manualPos;
+        if (rad[i].filled) {
+            std::snprintf(rad[i].name, sizeof(rad[i].name), "%s",
+                          heroDisplayName(spec[i].heroId, "").c_str());
+            ++rCount;
+        }
+        radUsedPos[i] = rad[i].pos;
+    }
+    for (int i = 0; i < 5; ++i) {
+        dir[i].heroId = spec[5+i].heroId;
+        dir[i].filled = spec[5+i].heroId > 0;
+        dir[i].pos    = spec[5+i].manualPos;
+        if (dir[i].filled) {
+            std::snprintf(dir[i].name, sizeof(dir[i].name), "%s",
+                          heroDisplayName(spec[5+i].heroId, "").c_str());
+            ++dCount;
+        }
+        dirUsedPos[i] = dir[i].pos;
+    }
+
+    ImGui::BeginGroup();
+    DrawTeamColumnHeader(colW, true, rCount);
+    for (int i = 0; i < 5; ++i)
+        DrawHeroSlot(colW, rad[i], true, true, i+1, i, radUsedPos, SetSpectatorManualPos);
+    ImGui::EndGroup();
+
+    ImGui::SameLine(0, PAD);
+
+    ImGui::BeginGroup();
+    DrawTeamColumnHeader(colW, false, dCount);
+    for (int i = 0; i < 5; ++i)
+        DrawHeroSlot(colW, dir[i], false, true, i+1, 5+i, dirUsedPos, SetSpectatorManualPos);
+    ImGui::EndGroup();
+
+    // Вместо win probability bar - нет ML-предсказания для чужого драфта.
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 bp = ImGui::GetCursorScreenPos();
+    float  bW = panelW, bH = 52.f;
+    dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},Ca(kCard2,0.4f));
+    dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
+    const char* msg = "Spectating - no personal predictions";
+    ImVec2 mts = ImGui::CalcTextSize(msg);
+    dl->AddText({bp.x+(bW-mts.x)*0.5f, bp.y+(bH-lh)*0.5f}, C(kMuted), msg);
+    ImGui::Dummy({bW, bH});
+
+    DrawPoweredBy(panelW);
+}
+
 // --- Панель драфта (Radiant/Dire слоты + win probability bar) ----------------
 void DrawDraftPanel(float panelW) {
     const float PAD  = 8.f;
@@ -864,6 +977,24 @@ void DrawDraftPanel(float panelW) {
         isWaitingForPlayers = g_gameInfo.isWaitingForPlayers;
     }
 
+    // Наблюдаемая игра (спектейт) имеет приоритет только когда своего активного
+    // драфта нет - своя игра физически не может идти параллельно со спектейтом
+    // одного и того же GSI-клиента, но на всякий случай не перекрываем реальный
+    // драфт наблюдением.
+    if (!gameStarted) {
+        bool specActive;
+        SpectatorHeroSlot specSlots[10];
+        {
+            std::lock_guard<std::mutex> lk(g_spectatorState.mtx);
+            specActive = g_spectatorState.active;
+            for (int i=0;i<10;i++) specSlots[i] = g_spectatorState.slots[i];
+        }
+        if (specActive) {
+            DrawSpectatorDraftPanel(panelW, specSlots);
+            return;
+        }
+    }
+
     int rCount=0, dCount=0;
     for (int i=0;i<5;i++) { if (rad[i].filled) ++rCount; if (dir[i].filled) ++dCount; }
 
@@ -873,11 +1004,11 @@ void DrawDraftPanel(float panelW) {
     SectionLabel(isWaitingForPlayers ? "LOADING INTO MATCH"
                  : (rCount==5 && dCount==5) ? "STRATEGY PHASE" : "DRAFT PHASE");
 
-    // [screenshot] — сохраняет 10 регионов героев + 10 регионов позиций текущего
+    // [screenshot] - сохраняет 10 регионов героев + 10 регионов позиций текущего
     // кадра HUD + fullscreen_regions.png (полный кадр с рамками всех 20 регионов)
     // в screenshots/ (папка создаётся инсталлятором). Диагностика для случаев,
     // когда распознавание портретов/позиций ошибается. Оформлен как
-    // position-бейдж (SectionLabelWithPosBadge) — тот же rect/border/text через
+    // position-бейдж (SectionLabelWithPosBadge) - тот же rect/border/text через
     // ImDrawList + InvisibleButton поверх, а не нативная ImGui::Button.
     {
         const float lhBtn = ImGui::GetTextLineHeight();
@@ -899,7 +1030,7 @@ void DrawDraftPanel(float panelW) {
             std::thread([]{
                 bool ok = captureDebugScreenshotWithReport(DB_PATH, "screenshots");
                 if (ok) LOG_INFO("[screenshot] Saved draft regions + fullscreen_regions.png + report.txt to screenshots/");
-                else    LOG_WARN("[screenshot] Dota 2 window not found — nothing captured");
+                else    LOG_WARN("[screenshot] Dota 2 window not found - nothing captured");
             }).detach();
         }
         if (ImGui::IsItemHovered())
@@ -952,44 +1083,16 @@ void DrawDraftPanel(float panelW) {
 
     // -- Radiant column -----------------------------------------------------
     ImGui::BeginGroup();
-    {
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 hp = ImGui::GetCursorScreenPos();
-        dl->AddRectFilled({hp.x+1,hp.y+4},{hp.x+9,hp.y+12}, C(kGreen));
-        ImGui::Dummy({10.f, lh});
-        ImGui::SameLine(0, 4.f);
-        ImGui::PushStyleColor(ImGuiCol_Text, kGreen);
-        ImGui::TextUnformatted("RADIANT");
-        ImGui::PopStyleColor();
-        ImGui::SameLine(colW-24.f);
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::Text("%d/5", rCount);
-        ImGui::PopStyleColor();
-        ImGui::Spacing();
-        for (int i=0;i<5;i++) DrawHeroSlot(colW, rad[i], true,  isRadiant,  i+1, i, radUsedPos);
-    }
+    DrawTeamColumnHeader(colW, true, rCount);
+    for (int i=0;i<5;i++) DrawHeroSlot(colW, rad[i], true,  isRadiant,  i+1, i, radUsedPos, SetOwnGameManualPos);
     ImGui::EndGroup();
 
     ImGui::SameLine(0, PAD);
 
     // -- Dire column --------------------------------------------------------
     ImGui::BeginGroup();
-    {
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 hp = ImGui::GetCursorScreenPos();
-        dl->AddRectFilled({hp.x+1,hp.y+4},{hp.x+9,hp.y+12}, C(kRed));
-        ImGui::Dummy({10.f, lh});
-        ImGui::SameLine(0, 4.f);
-        ImGui::PushStyleColor(ImGuiCol_Text, kRed);
-        ImGui::TextUnformatted("DIRE");
-        ImGui::PopStyleColor();
-        ImGui::SameLine(colW-24.f);
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::Text("%d/5", dCount);
-        ImGui::PopStyleColor();
-        ImGui::Spacing();
-        for (int i=0;i<5;i++) DrawHeroSlot(colW, dir[i], false, !isRadiant, i+1, 5+i, dirUsedPos);
-    }
+    DrawTeamColumnHeader(colW, false, dCount);
+    for (int i=0;i<5;i++) DrawHeroSlot(colW, dir[i], false, !isRadiant, i+1, 5+i, dirUsedPos, SetOwnGameManualPos);
     ImGui::EndGroup();
 
     // -- Win probability bar ------------------------------------------------
@@ -1050,10 +1153,10 @@ void DrawPicksPanel(float panelW) {
     }
 
     // Заголовок секции + бейдж позиции (всегда виден, даже без определённой
-    // позиции); бейдж сокращается/переносится на узкой панели — см. SectionLabelWithPosBadge.
+    // позиции); бейдж сокращается/переносится на узкой панели - см. SectionLabelWithPosBadge.
     // Кликабелен только когда игра идёт (до этого DrawHeroSlot в Draft-панели тоже
-    // не рендерит попапы позиций — тот же гейт, что и там). Клик меняет НАШУ
-    // настоящую позицию (SetOurPosition) — то же самое действие, что и клик по
+    // не рендерит попапы позиций - тот же гейт, что и там). Клик меняет НАШУ
+    // настоящую позицию (SetOurPosition) - то же самое действие, что и клик по
     // позиции нашего слота в Draft-панели, поэтому держит панели синхронизированными.
     SectionLabelWithPosBadge(ourHeroPicked ? "YOUR HERO" : "RECOMMENDED PICKS", panelW, ourPosition,
                               gameStarted ? SetOurPosition : nullptr);
@@ -1102,7 +1205,7 @@ void DrawPicksPanel(float panelW) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Отрисовка строки рекомендации — тонкая обёртка над общим DrawHeroStatRow.
+    // Отрисовка строки рекомендации - тонкая обёртка над общим DrawHeroStatRow.
     auto drawPickRow = [&](int rank, const char* name, int heroId, float win, bool highlight,
                            int gamesPlayer, float wrPlayer)
     {
@@ -1145,7 +1248,7 @@ void DrawPicksPanel(float panelW) {
 // превью меты по позиции (SetMetaPreviewPosition, локальный выбор в GUI, без
 // livepicks/оркестратора). Как только начинается реальный драфт/матч, панель
 // переключается на настоящую позицию из g_pickerState.ourPosition (SetOurPosition,
-// как в Draft/Picks) — превью полностью вытесняется настоящей позицией.
+// как в Draft/Picks) - превью полностью вытесняется настоящей позицией.
 void DrawMetaHeroesPanel(float panelW) {
     loadMetaHeroStatsIfNeeded();
 
@@ -1225,7 +1328,7 @@ void DrawMetaHeroesPanel(float panelW) {
         }
     }
 
-    // Легенда цветов — то же оформление, что и в DrawPicksPanel
+    // Легенда цветов - то же оформление, что и в DrawPicksPanel
     ImGui::Separator();
     ImGui::Spacing();
     DrawWinRateLegend(rW_ref);
@@ -1369,7 +1472,7 @@ void DrawStatusBar(float fullW) {
 }
 
 // --- Шапка: логотип [D] + заголовок + карточка игрока / ввод Friend ID --------
-// Возвращает высоту шапки (фиксированная 60 — высота шапки не растёт; в
+// Возвращает высоту шапки (фиксированная 60 - высота шапки не растёт; в
 // режиме ввода Friend ID содержимое карточки сжимается по вертикали, чтобы
 // уместиться в те же 60px, см. ниже).
 float DrawHeader(float fullW) {
@@ -1379,7 +1482,7 @@ float DrawHeader(float fullW) {
     const float H   = 60.f;
 
     // Снимок состояния player info (нужен уже здесь, чтобы посчитать ширину
-    // карточки под режим ввода — см. ниже)
+    // карточки под режим ввода - см. ниже)
     long long  accountId;
     char       pname[128];
     bool       hasPlayer;
@@ -1426,7 +1529,7 @@ float DrawHeader(float fullW) {
     const float INPUT_W = 120.f;
     float CW = 240.f;
     if (inputMode) {
-        // В режиме ввода карточка должна вместить label + input + Set (+x) —
+        // В режиме ввода карточка должна вместить label + input + Set (+x) -
         // иначе кнопки вылезают за нарисованную рамку карточки (240px под
         // это не рассчитан, он только под аватар+имя в режиме показа).
         const ImGuiStyle& style   = ImGui::GetStyle();
@@ -1441,7 +1544,7 @@ float DrawHeader(float fullW) {
     float titleEndX = tx + ImGui::CalcTextSize("Dota_Drafter").x + 20.f;
     float cx = (std::max)(titleEndX, hs.x + fullW - CW);
 
-    // Карточка — настоящее дочернее окно ImGui (как ##draft/##picks/##meta
+    // Карточка - настоящее дочернее окно ImGui (как ##draft/##picks/##meta
     // ниже), а не просто нарисованный прямоугольник: любой виджет внутри
     // (InputText/Button) автоматически обрезается по его границе и не может
     // визуально вылезти наружу, даже если наш расчёт CW окажется неточным.
@@ -1451,7 +1554,7 @@ float DrawHeader(float fullW) {
     ImGui::BeginChild("##playercard", {CW, H}, true, ImGuiWindowFlags_NoScrollbar);
     dl = ImGui::GetWindowDrawList();
 
-    // Avatar box (36×36, вертикально по центру карточки — H всегда 60)
+    // Avatar box (36×36, вертикально по центру карточки - H всегда 60)
     const float AVS  = 36.f;
     const float avY  = hs.y + (H - AVS) * 0.5f;
     dl->AddRectFilled({cx+8, avY}, {cx+8+AVS, avY+AVS}, C(kCard2));
@@ -1459,7 +1562,7 @@ float DrawHeader(float fullW) {
 
     if (inputMode) {
         // -- Input mode ----------------------------------------------------
-        // Не увеличиваем шапку — вместо этого сжимаем отступы и высоту строки
+        // Не увеличиваем шапку - вместо этого сжимаем отступы и высоту строки
         // input/Set/x (уменьшенный FramePadding), чтобы label + обе строки
         // гарантированно уместились в фиксированные 60px карточки.
         ImVec2 avts = ImGui::CalcTextSize("ID");

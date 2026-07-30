@@ -1,10 +1,10 @@
 /*
- * livestatsfetcher.cpp — GSI HTTP-сервер (порт 62326, localhost).
+ * livestatsfetcher.cpp - GSI HTTP-сервер (порт 62326, localhost).
  *
- * POST / — приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot, lastUpdate).
- * GET /phase — JSON статус текущей фазы.
+ * POST / - приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot, lastUpdate).
+ * GET /phase - JSON статус текущей фазы.
  * lastUpdate используется оркестратором для GSI-таймаута (сброс на IDLE при закрытии Dota 2).
- * logs/gsi.log — полная, недедуплицированная история принятых состояний за
+ * logs/gsi.log - полная, недедуплицированная история принятых состояний за
  * сессию (каждый POST, а не только смена состояния, как в logs/console.log).
  */
 
@@ -31,7 +31,7 @@ static std::string g_lastLoggedState;  // для дедупликации зап
 // --- Полный GSI-лог сессии (logs/gsi.log) -------------------------------------
 // Отдельный от logs/console.log файл: пишет каждое принятое GSI-состояние без
 // дедупликации по смене state (в отличие от LOG_INFO ниже), плюс интервал с
-// предыдущей записи — по нему видно реальные разрывы в потоке GSI-обновлений
+// предыдущей записи - по нему видно реальные разрывы в потоке GSI-обновлений
 // от Dota, не совпадающие с ожидаемым 5с heartbeat'ом.
 static std::ofstream                         g_gsiLogFile;
 static std::mutex                            g_gsiLogMutex;
@@ -128,6 +128,38 @@ static std::string json_get(const std::string& src, const std::string& key) {
     }
 }
 
+// --- Наблюдаемая игра (спектейт): герои из player.teamN.playerN --------------
+// "draft" GSI-блок во время наблюдения приходит пустым (не наш пик - Dota не
+// шлёт его для чужого Captain's Mode), поэтому герои достаются из тех же
+// вложенных player.team2/team3.playerN-блоков, что дали isSpectating: у
+// каждого игрока внутри, помимо team_name/team_slot, есть свой hero_id.
+// Границы блока playerN - до следующего "playerN+1" (для player9 - до
+// "previously"), тем же приёмом линейного поиска, что и json_get.
+static void updateSpectatorState(const std::string& body) {
+    std::lock_guard<std::mutex> lk(g_spectatorState.mtx);
+    g_spectatorState.active     = true;
+    g_spectatorState.lastUpdate = std::chrono::steady_clock::now();
+
+    for (int i = 0; i < 10; ++i) {
+        std::string key = "\"player" + std::to_string(i) + "\"";
+        auto pos = body.find(key);
+        if (pos == std::string::npos) continue;
+
+        std::string endKey = (i < 9) ? ("\"player" + std::to_string(i + 1) + "\"")
+                                      : std::string("\"previously\"");
+        auto endPos = body.find(endKey, pos);
+        std::string block = body.substr(pos,
+            endPos == std::string::npos ? std::string::npos : endPos - pos);
+
+        std::string tn = json_get(block, "team_name");
+        int ts = safeStoi(json_get(block, "team_slot"), -1);
+        if (tn.empty() || ts < 0 || ts > 4) continue;
+
+        int absSlot = (tn == "radiant") ? ts : 5 + ts;
+        g_spectatorState.slots[absSlot].heroId = safeStoi(json_get(block, "hero_id"), 0);
+    }
+}
+
 // --- HTTP handler ------------------------------------------------------------
 
 static std::string handle_request(const std::string& raw) {
@@ -163,29 +195,45 @@ static std::string handle_request(const std::string& raw) {
         int team_slot = safeStoi(slot_str, 0);
         if (team_slot < 0 || team_slot > 4) team_slot = 0;
 
-        // Полная запись в logs/gsi.log — на каждый POST, до дедупликации ниже.
+        // Полная запись в logs/gsi.log - на каждый POST, до дедупликации ниже.
         logGsiState(gstate, mid, team, team_slot, uid);
 
-        // "player" в GSI-payload'е — либо плоский объект (мы сами в матче: см.
+        // "player" в GSI-payload'е - либо плоский объект (мы сами в матче: см.
         // steamid/team_name/team_slot верхнего уровня), либо вложенный
         // team2/team3 со всеми до 10 игроками (Dota отдаёт такую форму только
-        // когда мы наблюдаем чужой матч — спектейт). Во втором случае значения,
+        // когда мы наблюдаем чужой матч - спектейт). Во втором случае значения,
         // распарсенные json_get выше, принадлежат случайному первому игроку в
         // JSON, а не нам, и писать их в GameInfo как "наши" нельзя.
         //
         // accountid из payload'а сюда намеренно не сверяем с сохранённым Friend
-        // ID: это разные вещи — Friend ID введён вручную и может не совпадать
+        // ID: это разные вещи - Friend ID введён вручную и может не совпадать
         // со Steam-аккаунтом, залогиненным в клиенте Dota (смурф, чужой ПК),
         // при этом статистика/рекомендации всё равно должны считаться для
         // введённого Friend ID, а не для того, кто сейчас играет.
         bool isSpectating = body.find("\"team2\"") != std::string::npos;
         bool isOurGame     = !isSpectating;
 
+        // g_spectatorState - отдельное от GameInfo состояние: герои чужого
+        // матча не должны попадать в "наш" пикер/portrait capture (см. выше).
+        // Переход обратно (наблюдение закончилось/сменилось на свою игру)
+        // сбрасывается сразу, а не через watchdog - тут это дешевле и точнее.
+        if (isSpectating) {
+            updateSpectatorState(body);
+            requestRedraw();
+        } else {
+            bool wasActive;
+            { std::lock_guard<std::mutex> lk(g_spectatorState.mtx); wasActive = g_spectatorState.active; }
+            if (wasActive) {
+                g_spectatorState.clear();
+                requestRedraw();
+            }
+        }
+
         if (g_gsiInfo) {
             bool stateChanged = false;
             {
                 std::lock_guard<std::mutex> lk(g_gsiInfo->mtx);
-                // lastUpdate — единственный сигнал для watchdog'а в orchestrator.cpp
+                // lastUpdate - единственный сигнал для watchdog'а в orchestrator.cpp
                 // (readGameStateWithTimeoutWatchdog, сброс фазы на IDLE после 15с
                 // без обновлений этого поля): любой дошедший POST от Dota означает
                 // живое GSI-соединение, независимо от того, удалось ли распарсить
@@ -199,7 +247,7 @@ static std::string handle_request(const std::string& raw) {
                     if (!team.empty())   g_gsiInfo->ourSide = (team == "radiant") ? 1 : 0;
                     g_gsiInfo->ourSlot = team_slot + 1;
                     if (newId) g_gsiInfo->newMatch = true;
-                    // Логируем только первый контакт и смену состояния — иначе лог
+                    // Логируем только первый контакт и смену состояния - иначе лог
                     // захлёбывается GSI-запросами, которые идут несколько раз в секунду.
                     stateChanged = newId || (gstate != g_lastLoggedState);
                     if (stateChanged) g_lastLoggedState = gstate;
@@ -213,8 +261,8 @@ static std::string handle_request(const std::string& raw) {
             if (stateChanged) {
                 LOG_INFO("[GSI] match=" << mid << " state=" << gstate
                     << " team=" << team << " slot=" << team_slot << " player=" << uid);
-                // Реальная смена фазы/матча — не heartbeat-повтор того же
-                // состояния каждые 5с — стоит перерисовать статус-бар сразу,
+                // Реальная смена фазы/матча - не heartbeat-повтор того же
+                // состояния каждые 5с - стоит перерисовать статус-бар сразу,
                 // не дожидаясь ближайшего тика оркестратора/таймаута лупа.
                 requestRedraw();
             }
@@ -243,7 +291,7 @@ static std::string handle_request(const std::string& raw) {
            "Connection: close\r\n\r\n" + resp_body;
 }
 
-// Запускается как std::thread(client_thread, client).detach() — без внешней
+// Запускается как std::thread(client_thread, client).detach() - без внешней
 // сетки. Необработанное исключение в отсоединённом потоке = std::terminate() =
 // падение всего процесса, поэтому всё тело обёрнуто здесь, а не полагается на
 // installCrashHandlers() как на единственную защиту.
@@ -318,7 +366,7 @@ void runGsiServer(GameInfo& gameInfo) {
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
     if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         LOG_ERR("[GSI] bind() на порту " << PORT << " не удался, WSA error "
-            << WSAGetLastError() << " — порт уже занят другим процессом?");
+            << WSAGetLastError() << " - порт уже занят другим процессом?");
         closesocket(server); return;
     }
     if (listen(server, SOMAXCONN) == SOCKET_ERROR) {
@@ -326,15 +374,15 @@ void runGsiServer(GameInfo& gameInfo) {
         closesocket(server); return;
     }
     LOG_INFO("[GSI] Сервер запущен на порту " << PORT);
-    LOG_INFO("[GSI] GET http://localhost:" << PORT << "/phase — статус");
+    LOG_INFO("[GSI] GET http://localhost:" << PORT << "/phase - статус");
 
     while (true) {
         SOCKET client = accept(server, nullptr, nullptr);
         if (client == INVALID_SOCKET) continue;
         // std::thread(...) может бросить std::system_error на всплеске
         // одновременных подключений (нехватка потоковых ресурсов). Этот цикл
-        // сам запущен как detach()-поток (orchestrator.cpp) без внешней сетки —
-        // необработанное исключение здесь — это std::terminate() и падение
+        // сам запущен как detach()-поток (orchestrator.cpp) без внешней сетки -
+        // необработанное исключение здесь - это std::terminate() и падение
         // всего процесса, а не только GSI-сервера, поэтому ловим отдельно от
         // client_thread (у того своя сетка на тело запроса).
         try {

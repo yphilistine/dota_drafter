@@ -1,22 +1,22 @@
 /*
- * mainGUI.cpp — ImGui D3D11 GUI: WinMain, D3D11, WndProc, RenderFrame.
+ * mainGUI.cpp - ImGui D3D11 GUI: WinMain, D3D11, WndProc, RenderFrame.
  *
  * Остальное живёт в отдельных файлах по зонам ответственности:
- *   app_state.{h,cpp}     — общее состояние (GameInfo/PortraitState/PickerState/
+ *   app_state.{h,cpp}     - общее состояние (GameInfo/PortraitState/PickerState/
  *                           PlayerState/AppNotice), расшаренное между этим файлом,
  *                           orchestrator.cpp и gui_draw.cpp
- *   update_window.{h,cpp} — нативное Win32-окно апдейтера (до D3D11/ImGui)
- *   orchestrator.{h,cpp}  — фоновый оркестратор (GSI/portrait/picker потоки, livepicks)
- *   gui_draw.{h,cpp}      — панели ImGui (Draft/Picks/Meta Heroes/Header/StatusBar)
+ *   update_window.{h,cpp} - нативное Win32-окно апдейтера (до D3D11/ImGui)
+ *   orchestrator.{h,cpp}  - фоновый оркестратор (GSI/portrait/picker потоки, livepicks)
+ *   gui_draw.{h,cpp}      - панели ImGui (Draft/Picks/Meta Heroes/Header/StatusBar)
  *
  * Потоковая модель:
- *   GUI-поток      — WinMain / message loop / ImGui render
- *   Оркестратор    — управление потоками, portrait→GUI sync, one-shot inference
- *   GSI-поток      — runGsiServer (постоянно)
- *   Фаза 1a        — runDataFetcherInit (при старте, без accountId)
- *   Фаза 1b        — runDataFetcher (при вводе Friend ID)
- *   Portrait       — runPortraitCapture (HERO_SELECTION + 5с хвост, без accountId)
- *   Picker         — runPickerGui (HERO_SELECTION/DRAFT + 5с хвост, требует accountId)
+ *   GUI-поток      - WinMain / message loop / ImGui render
+ *   Оркестратор    - управление потоками, portrait→GUI sync, one-shot inference
+ *   GSI-поток      - runGsiServer (постоянно)
+ *   Фаза 1a        - runDataFetcherInit (при старте, без accountId)
+ *   Фаза 1b        - runDataFetcher (при вводе Friend ID)
+ *   Portrait       - runPortraitCapture (HERO_SELECTION + 5с хвост, без accountId)
+ *   Picker         - runPickerGui (HERO_SELECTION/DRAFT + 5с хвост, требует accountId)
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -56,7 +56,7 @@
 #pragma comment(lib, "ole32.lib")
 
 // --- D3D11 инициализация ------------------------------------------------------
-// g_Device и g_Hwnd — в app_state.h (нужны и gui_draw.cpp).
+// g_Device и g_Hwnd - в app_state.h (нужны и gui_draw.cpp).
 static ID3D11DeviceContext*    g_Context   = nullptr;
 static IDXGISwapChain*         g_SwapChain = nullptr;
 static ID3D11RenderTargetView* g_RTV       = nullptr;
@@ -66,7 +66,7 @@ static void PresentFrame();  // определена ниже; форс-ренд
 
 // Минимальный размер клиентской области: раскладка (шапка с карточкой игрока
 // фиксированной ширины + 3 колонки драфта/рекомендаций/меты) считается в
-// абсолютных пикселях и не масштабируется — при более узком/низком окне
+// абсолютных пикселях и не масштабируется - при более узком/низком окне
 // элементы наезжают друг на друга и на заголовок окна.
 static const LONG kMinClientW = 1300;
 static const LONG kMinClientH = 480;
@@ -121,7 +121,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             // resize (тянем рамку окна) Windows крутит собственный модальный цикл
             // сообщений внутри DefWindowProc и не возвращается в наш while(PeekMessage)
             // до отпускания мыши. Без этого кадр не обновляется, и DWM растягивает
-            // старый бэкбуфер под новый размер — визуально это выглядит как смазанные
+            // старый бэкбуфер под новый размер - визуально это выглядит как смазанные
             // полосы (особенно заметно при растягивании окна за левый край, когда DWM
             // ещё и сдвигает/масштабирует всю поверхность).
             if (ImGui::GetCurrentContext() && LOWORD(lp) > 0 && HIWORD(lp) > 0)
@@ -232,8 +232,8 @@ static void RenderFrame() {
             ImGui::Spacing();
         }
 
-        // g_appNotice — общий канал уведомлений уровня приложения. schemaError
-        // выше — отдельный, самодостаточный механизм пикера; оба баннера могут
+        // g_appNotice - общий канал уведомлений уровня приложения. schemaError
+        // выше - отдельный, самодостаточный механизм пикера; оба баннера могут
         // показываться одновременно, не мешая друг другу.
         bool noticeActive = false;
         char noticeMsg[256] = {};
@@ -373,7 +373,7 @@ static void PlatformStartupFixups() {
     installCrashHandlers();
 }
 
-// Блокирующая проверка обновлений (до создания D3D11-окна) — окно апдейтера,
+// Блокирующая проверка обновлений (до создания D3D11-окна) - окно апдейтера,
 // ретрай-цикл при отсутствии сети, скачивание/установка app- или data-обновлений.
 // Возвращает false, если приложение должно завершиться сейчас (пользователь
 // отказался от ретрая, либо запущен релонч инсталлятора).
@@ -403,7 +403,7 @@ static bool RunStartupUpdateCheck(HINSTANCE hInst) {
 
     // GSI-конфиг живёт вне {app} (в папке Dota 2) и не завязан на схему
     // данных/версию приложения, поэтому синхронизируется отдельно от
-    // action — и на APP_UPDATE/DATA_UPDATE, и на NONE (обычный запуск).
+    // action - и на APP_UPDATE/DATA_UPDATE, и на NONE (обычный запуск).
     syncGsiConfig(manifest);
 
     if (action == UpdateAction::APP_UPDATE) {
@@ -423,7 +423,7 @@ static bool RunStartupUpdateCheck(HINSTANCE hInst) {
             SetUpdateStatus(L"Installing update...");
 
             // Написать .bat который ждёт выхода процесса, потом запускает инсталлятор.
-            // kPingCount пингов ping -n дают ~(kPingCount-1) секунд задержки — время,
+            // kPingCount пингов ping -n дают ~(kPingCount-1) секунд задержки - время,
             // за которое наш процесс должен полностью завершиться и отпустить файл exe,
             // прежде чем инсталлятор начнёт его перезаписывать.
             const int kPingCount = 4;
@@ -455,10 +455,10 @@ static bool RunStartupUpdateCheck(HINSTANCE hInst) {
                 LOG_ERR("Failed to launch installer relaunch script: " << batPath);
             }
 
-            // Не закрывать окно сразу — держать его открытым (с накачкой сообщений,
+            // Не закрывать окно сразу - держать его открытым (с накачкой сообщений,
             // чтобы не словить "Not Responding") примерно на то же время, что и .bat
             // выше ждёт перед запуском инсталлятора, плюс небольшой запас на его
-            // собственный старт — иначе между закрытием апдейтера и появлением окна
+            // собственный старт - иначе между закрытием апдейтера и появлением окна
             // инсталлятора пользователь видел бы несколько секунд пустого экрана.
             SetUpdateStatus(L"Starting installer...");
             DWORD waitMs    = (DWORD)(kPingCount - 1) * 1000 + 500;
@@ -471,7 +471,7 @@ static bool RunStartupUpdateCheck(HINSTANCE hInst) {
             DestroyUpdateWindow();
             return false;
         }
-        LOG_WARN("App update download/verify failed — sha256 mismatch or network error");
+        LOG_WARN("App update download/verify failed - sha256 mismatch or network error");
         SetUpdateStatus(L"Update failed, starting current version...");
         Sleep(2000);
     }
@@ -601,13 +601,13 @@ static bool InitGuiAndAssets(HWND hwnd) {
     {
         ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr;
-        // Шрифт: Segoe UI 24px — латиница + кириллица + спецсимволы Steam-ников
+        // Шрифт: Segoe UI 24px - латиница + кириллица + спецсимволы Steam-ников
         float fontSize = 24.f;
         static const ImWchar glyphRanges[] = {
             0x0020, 0x00FF, // Basic Latin + Latin Supplement
             0x0100, 0x024F, // Latin Extended-A/B
             0x0400, 0x052F, // Кириллица + Cyrillic Supplement
-            0x2000, 0x206F, // General Punctuation (—, –, …, ′, ″)
+            0x2000, 0x206F, // General Punctuation (-, –, …, ′, ″)
             0x2100, 0x214F, // Letterlike Symbols (℃, №, ™, ℠)
             0x2190, 0x21FF, // Arrows (→, ←, ↑, ↓)
             0x2200, 0x22FF, // Math Operators (∞, ≈, ≠, ≤, ≥)
@@ -641,14 +641,14 @@ static void RunMessageLoop() {
             TranslateMessage(&msg); DispatchMessage(&msg);
             continue;
         }
-        // Окно свёрнуто — рендерить нечего (DWM не показывает бэкбуфер).
+        // Окно свёрнуто - рендерить нечего (DWM не показывает бэкбуфер).
         // WaitMessage() блокирует поток до следующего сообщения (например
         // WM_SYSCOMMAND restore).
         if (IsIconic(g_Hwnd)) {
             WaitMessage();
             continue;
         }
-        // PresentFrame() — main-поток WinMain, необработанное исключение
+        // PresentFrame() - main-поток WinMain, необработанное исключение
         // из отрисовки убило бы весь процесс, поэтому ловим здесь.
         try {
             PresentFrame();

@@ -1,6 +1,6 @@
 #pragma once
 /*
- * gui_draw.h — панели ImGui (Header/StatusBar/Draft/Picks/Meta Heroes),
+ * gui_draw.h - панели ImGui (Header/StatusBar/Draft/Picks/Meta Heroes),
  * кэш портретов героев, кэш меты, кэш отображаемых имён.
  *
  * Палитра и цветовые хелперы (C()/Ca()) объявлены здесь же, а не в
@@ -32,14 +32,14 @@ inline ImU32 Ca(ImVec4 v, float a) { v.w = a; return ImGui::ColorConvertFloat4To
 void loadHeroPortraits();
 void unloadHeroPortraits();
 
-// --- "Powered by" — иконки STRATZ/OpenDota/D2PT (тянутся по HTTP, см. gui_draw.cpp) -
+// --- "Powered by" - иконки STRATZ/OpenDota/D2PT (тянутся по HTTP, см. gui_draw.cpp) -
 void unloadPoweredByIcons();
 
-// Используется и здесь (портреты героев), и в mainGUI.cpp (RenderFrame —
+// Используется и здесь (портреты героев), и в mainGUI.cpp (RenderFrame -
 // текстура аватара из буферизованных байт).
 ID3D11ShaderResourceView* createTextureFromImageData(const uint8_t* data, size_t size);
 
-// heroId → localized_name для отображения (не для сопоставления портретов —
+// heroId → localized_name для отображения (не для сопоставления портретов -
 // см. portrait_runner.cpp).
 std::string heroDisplayName(int heroId, const char* fallback);
 

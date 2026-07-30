@@ -146,7 +146,7 @@ void logConsole(LogLevel level, const std::string& msg) {
 // --- Крэш-хендлеры -----------------------------------------------------------
 // Сетка безопасности на уровне процесса: без неё необработанное исключение
 // вне точечных try/catch (или SEH-исключение из GDI+/D3D11/WinRT) тихо валит
-// процесс без единой строки в логах — см. installCrashHandlers().
+// процесс без единой строки в логах - см. installCrashHandlers().
 static void onTerminate() {
     std::string what = "unknown";
     if (auto ex = std::current_exception()) {
@@ -248,7 +248,7 @@ static void applyCurlNetworkOpts(CURL* curl) {
     curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, 60L);
 
     // Gzip-сжатие: OpenDota отдаёт ~6KB JSON в plain text,
-    // с gzip это 800-1200 байт — скорость всегда выше порога LOW_SPEED_LIMIT
+    // с gzip это 800-1200 байт - скорость всегда выше порога LOW_SPEED_LIMIT
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING,   "gzip, deflate");
 
     // TCP keepalive: держит соединение живым при медленных ответах
@@ -256,7 +256,7 @@ static void applyCurlNetworkOpts(CURL* curl) {
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE,      30L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL,     10L);
 
-    // Прерывать только если скорость < 100 байт/с в течение 90 сек —
+    // Прерывать только если скорость < 100 байт/с в течение 90 сек -
     // с запасом на медленные ответы OpenDota.
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT,   100L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME,    90L);

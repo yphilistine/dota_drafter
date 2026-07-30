@@ -1,6 +1,6 @@
 #pragma once
 /*
- * playerdatafetcher.h — загрузка данных игрока из OpenDota и STRATZ.
+ * playerdatafetcher.h - загрузка данных игрока из OpenDota и STRATZ.
  * Запись в SQLite: герои, статистика, матчи, vs/with агрегаты.
  */
 

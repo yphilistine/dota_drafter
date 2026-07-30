@@ -1,9 +1,9 @@
 /*
- * orchestrator.cpp — фоновый оркестратор: управление portrait + picker
+ * orchestrator.cpp - фоновый оркестратор: управление portrait + picker
  * потоками, GSI-сервер, livepicks/player_info, запуск фазы 1b.
  *
- * Открытие БД обёрнуто во внешний try/catch (фатальная ошибка — без локальной
- * БД оркестратор работать не может). Каждая итерация цикла — во внутреннем
+ * Открытие БД обёрнуто во внешний try/catch (фатальная ошибка - без локальной
+ * БД оркестратор работать не может). Каждая итерация цикла - во внутреннем
  * try/catch, чтобы исключение на одном шаге не останавливало весь поток.
  */
 
@@ -21,7 +21,7 @@
 #include <cstring>
 #include <cstdio>
 
-// --- Управление потоками: наружу — только функции startOrchestrator/
+// --- Управление потоками: наружу - только функции startOrchestrator/
 // stopOrchestrator/startPhase1/requestPositionRefresh ------------------------
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
@@ -166,7 +166,7 @@ void startPhase1(long long accountId) {
                       "Fetching data...");
     }
 
-    // Сброс аватара (GUI-поток, безопасно — startPhase1 вызывается из GUI)
+    // Сброс аватара (GUI-поток, безопасно - startPhase1 вызывается из GUI)
     if (g_avatarSRV) { g_avatarSRV->Release(); g_avatarSRV = nullptr; }
 
     std::thread([accountId]() {
@@ -217,7 +217,7 @@ static void refreshAccountId(OrchestratorLoopState& st) {
     st.accountId = g_player.accountId;
 }
 
-// GSI-таймаут: если Dota 2 закрыта, GSI перестаёт слать данные — сброс на
+// GSI-таймаут: если Dota 2 закрыта, GSI перестаёт слать данные - сброс на
 // IDLE через GSI_WATCHDOG_SEC секунд без обновлений (app_state.h).
 static GsiSnapshot readGameStateWithTimeoutWatchdog() {
     GsiSnapshot gs;
@@ -231,7 +231,7 @@ static GsiSnapshot readGameStateWithTimeoutWatchdog() {
             g_gameInfo.phase           = GamePhase::IDLE;
             g_gameInfo.isHeroSelection = false;
             g_gameInfo.matchId.clear();
-            LOG_INFO("[orchestrator] GSI timeout — reset to IDLE");
+            LOG_INFO("[orchestrator] GSI timeout - reset to IDLE");
         }
     }
 
@@ -243,6 +243,23 @@ static GsiSnapshot readGameStateWithTimeoutWatchdog() {
     gs.isHeroSel = g_gameInfo.isHeroSelection;
     g_gameInfo.newMatch = false;
     return gs;
+}
+
+// Watchdog для наблюдаемой игры (спектейт): livestatsfetcher.cpp сбрасывает
+// g_spectatorState сразу, как только приходит payload без team2/team3 - но
+// если Dota 2 закрывается прямо во время наблюдения, POST'ы перестают идти
+// вообще, и сбрасывать некому. Та же логика, что и readGameStateWithTimeoutWatchdog,
+// отдельно от неё, т.к. g_spectatorState не связан с g_gameInfo.
+static void resetSpectatorStateIfStale() {
+    std::lock_guard<std::mutex> lk(g_spectatorState.mtx);
+    if (!g_spectatorState.active) return;
+    auto elapsed = std::chrono::steady_clock::now() - g_spectatorState.lastUpdate;
+    if (elapsed > std::chrono::seconds(GSI_WATCHDOG_SEC)) {
+        for (auto& s : g_spectatorState.slots) s = {};
+        g_spectatorState.active = false;
+        LOG_INFO("[orchestrator] Spectator GSI timeout - cleared");
+        requestRedraw();
+    }
 }
 
 // Слот/сторона изменились (GSI может прислать позже чем newMatch).
@@ -265,7 +282,7 @@ static void syncSlotSideToDb(sqlite3* db, OrchestratorLoopState& st, const GsiSn
     st.prevOurSide = gs.ourSide;
 }
 
-// ID сменился — сбросить фазу 3 (кроме pickerState, драфт остаётся видимым)
+// ID сменился - сбросить фазу 3 (кроме pickerState, драфт остаётся видимым)
 // и обновить только our_account_id в livepicks.
 static void handleAccountIdChanged(sqlite3* db, OrchestratorLoopState& st, const GsiSnapshot& gs) {
     bool idChanged = false;
@@ -279,7 +296,7 @@ static void handleAccountIdChanged(sqlite3* db, OrchestratorLoopState& st, const
     }
     if (!idChanged) return;
 
-    // Пикер зависит от accountId — перезапускаем
+    // Пикер зависит от accountId - перезапускаем
     if (g_pickerRunning.load()) {
         g_pickerRunning.store(false);
         if (g_pickerThread.joinable()) g_pickerThread.join();
@@ -320,7 +337,7 @@ static void handleNewMatch(sqlite3* db, OrchestratorLoopState& st, const GsiSnap
     g_pickerState.reset();
     st.phase3EndPending = false;
 
-    // matchId приходит из GSI (непроверенная внешняя строка) — safeStoll
+    // matchId приходит из GSI (непроверенная внешняя строка) - safeStoll
     // возвращает -1 вместо исключения на некорректном значении.
     long long mid = safeStoll(gs.matchId, -1);
     if (mid >= 0) initLivePicksRow(db, mid, st.accountId, gs.ourSide, gs.ourSlot);
@@ -332,7 +349,7 @@ static void handleNewMatch(sqlite3* db, OrchestratorLoopState& st, const GsiSnap
 // (запуск) / хвост PHASE3_TAIL_SEC после конца HERO_SELECTION.
 static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& gs) {
     if (gs.phase == GamePhase::IDLE || gs.phase == GamePhase::POSTGAME) {
-        // Снимок до остановки — чтобы просигналить requestRedraw() только
+        // Снимок до остановки - чтобы просигналить requestRedraw() только
         // если что-то реально было активно (не на каждом тике в чистом IDLE).
         bool wasActive = g_pickerRunning.load() || g_portraitRunning.load()
                        || g_pickerState.gameStarted;
@@ -354,7 +371,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
     } else if (gs.isHeroSel) {
         st.phase3EndPending = false;
 
-        // Portrait capture — всегда при HERO_SELECTION (заполняет livepicks)
+        // Portrait capture - всегда при HERO_SELECTION (заполняет livepicks)
         if (!g_portraitRunning.load()) {
             g_portraitRunning.store(true);
             g_portraitState.clear();
@@ -369,7 +386,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
             requestRedraw();
         }
 
-        // Picker — только при наличии accountId
+        // Picker - только при наличии accountId
         if (!g_pickerRunning.load() && st.accountId != 0) {
             g_pickerRunning.store(true);
             g_pickerThread = std::thread([]{
@@ -381,11 +398,11 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
 
     } else {
         // runOneShotRefresh() тоже временно выставляет g_pickerRunning=true
-        // (ручная смена позиции вне фазы 3) — это не хвост HERO_SELECTION,
+        // (ручная смена позиции вне фазы 3) - это не хвост HERO_SELECTION,
         // поэтому таймер хвоста ниже его не считает.
         if (st.oneShotActive) return;
 
-        // HERO_SELECTION кончился, но игра продолжается — отсчитываем хвост
+        // HERO_SELECTION кончился, но игра продолжается - отсчитываем хвост
         if (g_pickerRunning.load() || g_portraitRunning.load()) {
             if (!st.phase3EndPending) {
                 st.phase3EndPending = true;
@@ -514,7 +531,7 @@ static void orchestratorMain() {
         createLivePicksIfNotExists(db);
         sqlite3_exec(db, "DELETE FROM livepicks;", nullptr, nullptr, nullptr);
 
-        // [D] overlay кнопка — запускается один раз, видна всегда, пока открыто окно Dota 2
+        // [D] overlay кнопка - запускается один раз, видна всегда, пока открыто окно Dota 2
         startDotaOverlay();
 
         // GSI-сервер (всегда)
@@ -525,6 +542,7 @@ static void orchestratorMain() {
             try {
                 refreshAccountId(st);
                 GsiSnapshot gs = readGameStateWithTimeoutWatchdog();
+                resetSpectatorStateIfStale();
                 syncSlotSideToDb(db, st, gs);
                 handleAccountIdChanged(db, st, gs);
                 handleNewMatch(db, st, gs);
@@ -532,7 +550,7 @@ static void orchestratorMain() {
                 syncPortraitOnlyToGui(gs);
                 runOneShotRefresh(db, st);
             } catch (const std::exception& e) {
-                // Ловим на уровне одной итерации — исключение на одном шаге
+                // Ловим на уровне одной итерации - исключение на одном шаге
                 // не должно останавливать весь фоновый поток оркестратора.
                 LOG_ERR("[orchestrator] iteration exception: " << e.what());
             } catch (...) {
@@ -547,7 +565,7 @@ static void orchestratorMain() {
 
     } catch (const std::exception& e) {
         LOG_ERR("Orchestrator: cannot open DB: " << e.what());
-        g_appNotice.set(NoticeLevel::Error, "Could not open local database — restart the app.");
+        g_appNotice.set(NoticeLevel::Error, "Could not open local database - restart the app.");
     }
 }
 

@@ -6,7 +6,7 @@
 long long lastCompletedWeekTimestamp() {
     long long now = static_cast<long long>(std::time(nullptr));
     constexpr long long DAY = 86400, WEEK = 7 * DAY;
-    // 1 Jan 1970 — четверг, поэтому понедельник текущей недели:
+    // 1 Jan 1970 - четверг, поэтому понедельник текущей недели:
     long long daysSinceEpoch  = now / DAY;
     long long weekdayFromMon  = (daysSinceEpoch + 3) % 7; // 0=понедельник
     long long mondayThisWeek  = (daysSinceEpoch - weekdayFromMon) * DAY;

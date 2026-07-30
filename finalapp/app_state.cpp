@@ -5,6 +5,7 @@ PlayerState g_player;
 GameInfo            g_gameInfo;
 SharedPortraitState g_portraitState;
 GuiPickerState      g_pickerState;
+SpectatorDraftState g_spectatorState;
 
 std::string g_stratzToken;
 
@@ -14,7 +15,7 @@ HWND                      g_Hwnd      = nullptr;
 
 AppNotice g_appNotice;
 
-// Manual-reset, изначально сигнальный — первый кадр рисуется сразу при
+// Manual-reset, изначально сигнальный - первый кадр рисуется сразу при
 // старте, не дожидаясь первого фонового обновления состояния.
 static HANDLE g_redrawEvent = CreateEventW(nullptr, TRUE, TRUE, nullptr);
 

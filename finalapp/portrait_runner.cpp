@@ -1,9 +1,9 @@
 /*
- * portrait_runner.cpp — захват портретов + позиций.
+ * portrait_runner.cpp - захват портретов + позиций.
  *
  * Портреты: захват каждые 250мс → распознавание героев и позиций → запись в livepicks.
  * Позиции: своя команда = manualPos override > screen capture > 0. Враг = 0.
- * Работает без accountId. Overlay-кнопка [D] — отдельный файл overlay_button.cpp.
+ * Работает без accountId. Overlay-кнопка [D] - отдельный файл overlay_button.cpp.
  */
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -18,7 +18,7 @@
 #include "dhash.h"
 #include "pos_ocr.h"
 #include "app_state.h"
-#include "common.h"   // LOG_INFO/WARN/ERR — GUI-приложение без консоли, printf/puts
+#include "common.h"   // LOG_INFO/WARN/ERR - GUI-приложение без консоли, printf/puts
                        // были бы невидимы (см. mainGUI.cpp)
 
 #include <map>
@@ -85,7 +85,7 @@ static long long nowMs() {
 // Каноническая форма имени героя: нижний регистр, без '_'/'-', без префикса
 // npc_dota_hero_. Используется как ключ сопоставления вместо localized_name,
 // т.к. Valve иногда временно/некорректно меняет localized_name (напр. видели
-// в БД "Axe?" вместо "Axe") — это ломает распознавание. heroes.name стабилен.
+// в БД "Axe?" вместо "Axe") - это ломает распознавание. heroes.name стабилен.
 static std::string canonicalHeroKey(const std::string& raw) {
     static const std::string kPrefix = "npc_dota_hero_";
     std::string s = raw;
@@ -197,7 +197,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
     if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
         LOG_ERR("[portrait] Не удалось открыть БД");
         Gdiplus::GdiplusShutdown(gdipToken);
-        // winrt::init_apartment() выше требует парного uninit_apartment() —
+        // winrt::init_apartment() выше требует парного uninit_apartment() -
         // нужен и на этой ветке ошибки, не только на обычном пути через cleanup: ниже.
         winrt::uninit_apartment();
         return;
@@ -253,7 +253,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
             if (gameChanged) {
                 clearHeroSlots(db);
                 std::memset(lastHeroId, 0, sizeof(lastHeroId));
-                LOG_INFO("[portrait] Новая игра — слоты сброшены");
+                LOG_INFO("[portrait] Новая игра - слоты сброшены");
             }
 
             if (!cap.isWindowFound() || !IsWindow(cap.gameWindowHandle())) {
@@ -277,11 +277,11 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 if (bmp.empty()) continue;
 
                 // Никакой "фиксации"/гистерезиса: всегда доверяем ближайшему по Пирсону
-                // кандидату текущего кадра (среди героев и "null" — он такая же запись в
+                // кандидату текущего кадра (среди героев и "null" - он такая же запись в
                 // базе хешей). Один плохой кадр (перекрытие чатом/scoreboard/шопом) даёт
-                // максимум один неверный кадр слота — самоисправляется на следующем
+                // максимум один неверный кадр слота - самоисправляется на следующем
                 // цикле (250мс), т.к. ничего не "запоминается" против нового результата.
-                // Порог 0.4 — не решающий фильтр (это делает argmax по всей базе, включая
+                // Порог 0.4 - не решающий фильтр (это делает argmax по всей базе, включая
                 // null), а просто отсев совсем нечитаемых кадров (пустой/чёрный кадр и т.п.).
                 HeroMatch m = recognizer.recognize(bmp);
                 if (!m.name || m.score < 0.4f) continue;
@@ -356,7 +356,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
                     }
                 }
 
-                // Вражеская команда — позиции всегда 0
+                // Вражеская команда - позиции всегда 0
                 int enemyStart = (ourSide == 1) ? 5 : 0;
                 for (int slot = enemyStart; slot < enemyStart + 5; ++slot) {
                     updateSlotPos(db, slot, 0);
@@ -366,7 +366,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
             }
 
             // Раз в успешную итерацию (только пока этот поток жив, т.е. во
-            // время реального HERO_SELECTION) — не диффим по слотам, цикл и
+            // время реального HERO_SELECTION) - не диффим по слотам, цикл и
             // так активен только в ограниченном окне активного драфта.
             requestRedraw();
 
@@ -375,7 +375,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
             if (remaining > std::chrono::milliseconds(0))
                 std::this_thread::sleep_for(remaining);
           } catch (const std::exception& e) {
-            // Ловим на итерацию, а не вокруг всей функции — исключение из
+            // Ловим на итерацию, а не вокруг всей функции - исключение из
             // распознавания/захвата одного кадра не должно останавливать весь
             // цикл (поток запущен detached из orchestratorMain, без внешней сетки).
             LOG_ERR("[portrait] capture iteration exception: " << e.what());
@@ -388,7 +388,7 @@ void runPortraitCapture(GameInfo&           gameInfo,
     }
 
 cleanup:
-    // overlay живёт всё время приложения — не останавливаем
+    // overlay живёт всё время приложения - не останавливаем
     sqlite3_close(db);
     Gdiplus::GdiplusShutdown(gdipToken);
     winrt::uninit_apartment();
@@ -417,7 +417,7 @@ bool captureDebugScreenshotWithReport(const std::string& dbPath, const std::stri
     cap.saveDebugRegions(outDir);
     cap.saveFullScreenshotWithRegions(outDir);
 
-    // Своя, независимая от фонового runPortraitCapture пара recognizer/OCR —
+    // Своя, независимая от фонового runPortraitCapture пара recognizer/OCR -
     // не трогаем состояние живого 250мс-цикла распознавания.
     std::map<std::string, int> nameToId;
     try {
