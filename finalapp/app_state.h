@@ -56,7 +56,7 @@ inline constexpr const char* MODEL_PATH = "draft_helper_abstract";
 inline constexpr int PHASE3_TAIL_SEC = 5;
 
 // GSI watchdog (readGameStateWithTimeoutWatchdog, orchestrator.cpp): сколько
-// секунд без GSI-обновлений от Dota означает "игра закрыта" → сброс на IDLE.
+// секунд без GSI-обновлений от Dota означает "игра закрыта" -> сброс на IDLE.
 inline constexpr int GSI_WATCHDOG_SEC = 60;
 
 // Текстура аватара - владелец D3D11-устройства (mainGUI.cpp), рендерится в

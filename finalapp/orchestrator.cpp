@@ -25,10 +25,12 @@
 // stopOrchestrator/startPhase1/requestPositionRefresh ------------------------
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
+static std::atomic<bool> g_spectatorPickerRunning{false};
 static std::atomic<bool> g_orchestratorRunning{false};
 static std::atomic<bool> g_posRefreshNeeded{false};
 static std::thread       g_pickerThread;
 static std::thread       g_portraitThread;
+static std::thread       g_spectatorPickerThread;
 static std::thread       g_orchestratorThread;
 
 void requestPositionRefresh() {
@@ -262,6 +264,25 @@ static void resetSpectatorStateIfStale() {
     }
 }
 
+// Спектейт-пикер (Component A, без accountId) - привязан только к
+// g_spectatorState.active, в отличие от своего пикера не зависит от фазы
+// HERO_SELECTION/accountId (см. runPhaseStateMachine ниже, который его не
+// трогает вообще).
+static void manageSpectatorPicker() {
+    bool active;
+    { std::lock_guard<std::mutex> lk(g_spectatorState.mtx); active = g_spectatorState.active; }
+
+    if (active && !g_spectatorPickerRunning.load()) {
+        g_spectatorPickerRunning.store(true);
+        g_spectatorPickerThread = std::thread([]{
+            runSpectatorPickerGui(MODEL_PATH, DB_PATH, g_spectatorPickerRunning, &g_spectatorState);
+        });
+    } else if (!active && g_spectatorPickerRunning.load()) {
+        g_spectatorPickerRunning.store(false);
+        if (g_spectatorPickerThread.joinable()) g_spectatorPickerThread.join();
+    }
+}
+
 // Слот/сторона изменились (GSI может прислать позже чем newMatch).
 static void syncSlotSideToDb(sqlite3* db, OrchestratorLoopState& st, const GsiSnapshot& gs) {
     if ((gs.ourSlot == st.prevOurSlot && gs.ourSide == st.prevOurSide) || gs.matchId.empty())
@@ -423,7 +444,7 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
     }
 }
 
-// Portrait → GUI: показываем драфт без пикера (пикер ещё не запущен/остановлен,
+// Portrait -> GUI: показываем драфт без пикера (пикер ещё не запущен/остановлен,
 // но portrait уже заполняет слоты).
 static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
     if (!g_portraitRunning.load() || g_pickerRunning.load()) return;
@@ -465,7 +486,7 @@ static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
     requestRedraw();
 }
 
-// One-shot: ручная смена позиции вне фазы 3 (клик по бейджу в GUI) → запись
+// One-shot: ручная смена позиции вне фазы 3 (клик по бейджу в GUI) -> запись
 // manualPos в livepicks + одноразовый запуск пикера до первого inferenceGen.
 static void runOneShotRefresh(sqlite3* db, OrchestratorLoopState& st) {
     if (g_posRefreshNeeded.exchange(false)
@@ -543,6 +564,7 @@ static void orchestratorMain() {
                 refreshAccountId(st);
                 GsiSnapshot gs = readGameStateWithTimeoutWatchdog();
                 resetSpectatorStateIfStale();
+                manageSpectatorPicker();
                 syncSlotSideToDb(db, st, gs);
                 handleAccountIdChanged(db, st, gs);
                 handleNewMatch(db, st, gs);
@@ -560,8 +582,10 @@ static void orchestratorMain() {
 
         g_pickerRunning.store(false);
         g_portraitRunning.store(false);
-        if (g_pickerThread.joinable())   g_pickerThread.join();
-        if (g_portraitThread.joinable()) g_portraitThread.join();
+        g_spectatorPickerRunning.store(false);
+        if (g_pickerThread.joinable())          g_pickerThread.join();
+        if (g_portraitThread.joinable())        g_portraitThread.join();
+        if (g_spectatorPickerThread.joinable()) g_spectatorPickerThread.join();
 
     } catch (const std::exception& e) {
         LOG_ERR("Orchestrator: cannot open DB: " << e.what());

@@ -3,7 +3,7 @@
  * dhash.h - распознавание героев и позиций по Pearson-корреляции серых 8x8 матриц.
  *
  * Референсные (build_hero_db) и query (live capture) изображения
- * из одного пайплайна (PrintWindow → BitBlt), поэтому серая 8x8 +
+ * из одного пайплайна (PrintWindow -> BitBlt), поэтому серая 8x8 +
  * Pearson даёт лучший зазор same/different:
  *
  *   тот же герой:    Pearson ~ 0.99
@@ -54,7 +54,7 @@ inline float pearson(const Matrix8& a, const Matrix8& b) {
     return dot / 64.0f;
 }
 
-// BGRA-пиксели → Matrix8 (greyscale BT.601 → bilinear resize 8x8 → нормализация)
+// BGRA-пиксели -> Matrix8 (greyscale BT.601 -> bilinear resize 8x8 -> нормализация)
 inline Matrix8 computeMatrix(const uint8_t* bgra, int w, int h) {
     Matrix8 out{};
     if (!bgra || w <= 0 || h <= 0) return out;

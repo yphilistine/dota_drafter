@@ -256,10 +256,10 @@ static LRESULT CALLBACK overlayProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         HWND fg     = GetForegroundWindow();
         HWND ourApp = findAppWindow();
         if (ourApp && fg == ourApp) {
-            // Наше приложение активно → выводим Dota
+            // Наше приложение активно -> выводим Dota
             bringDotaToFront(oc2 ? oc2->cap : nullptr);
         } else {
-            // Dota активна → выводим наше приложение
+            // Dota активна -> выводим наше приложение
             bringAppToFront();
         }
         return 0;

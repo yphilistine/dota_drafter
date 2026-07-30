@@ -8,9 +8,9 @@
  *
  * Фичи: 10 cat (hero names) + 117 float, порядок побитово соответствует
  * ALL_FEATURES из draft_features.py (datafetcher-репо, Python-сторона модели):
- *   global_wr(10) → vs_adv(10) → with_adv(10) → hero_pos_wr(10) →
- *   best_vs(10) → worst_vs(10) → pick_rate(10) → best_with(10) → worst_with(10) →
- *   team aggregates(17) → composition/role-shape(10)
+ *   global_wr(10) -> vs_adv(10) -> with_adv(10) -> hero_pos_wr(10) ->
+ *   best_vs(10) -> worst_vs(10) -> pick_rate(10) -> best_with(10) -> worst_with(10) ->
+ *   team aggregates(17) -> composition/role-shape(10)
  * Без mastery в самом векторе - Component A "чисто про драфт", без привязки к
  * аккаунту. Персонализация (Component B, portировано из personal_score.py,
  * датафетчер-репо) применяется ПОСЛЕ модели: sigmoid(logit(p_ours) + beta*adj),
@@ -102,7 +102,7 @@ struct TeamAgg {
           bestVsMax=0.f, worstVsMin=0.f;
 };
 
-// base=0 → слоты 0..4 (radiant), base=5 → слоты 5..9 (dire). Портирует
+// base=0 -> слоты 0..4 (radiant), base=5 -> слоты 5..9 (dire). Портирует
 // _team_aggregates из draft_features.py: при n==0 - те же дефолты
 // (meanGwr=0.5, остальное 0), иначе среднее/std по раскрытым слотам стороны.
 static TeamAgg computeTeamAgg(int base, const int ids[10], const float gwr[10],
@@ -575,7 +575,7 @@ static inline double combinePersonal(double pOurs, float adj, float beta) {
     return 1.0 / (1.0 + std::exp(-(logit + (double)beta * (double)adj)));
 }
 
-// --- GUI режим: результаты → GuiPickerState ---------------------------------
+// --- GUI режим: результаты -> GuiPickerState ---------------------------------
 
 static void renderToGui(
     GuiPickerState*                        state,
@@ -743,6 +743,129 @@ public:
     ModelHandle(const ModelHandle&) = delete;
     ModelHandle& operator=(const ModelHandle&) = delete;
 };
+
+// --- Наблюдаемая игра (спектейт): Component A без личных данных -------------
+// Та же модель/buildVector/runBatch, что и для своей игры, но без Component B
+// (personalAdjustment/combinePersonal) - для чужого матча нет accountId,
+// сверяться не с чем, нужно только "чисто про драфт" предсказание.
+// candidate_hero_id всегда 0 (все 10 героев уже известны из GSI, ранжировать
+// нечего) - LivePick.our_side/our_slot здесь ни на что не влияют.
+static void computeSpectatorPrediction(ModelCalcerHandle* model,
+    const std::map<int,std::string>& hero_map, const MatchupData& md,
+    const SpectatorHeroSlot spec[10], SpectatorDraftState* specState)
+{
+    LivePick lp; // match_id/our_account_id/our_side/our_slot/updated_at не используются
+    for (int i = 0; i < 5; ++i) {
+        lp.r[i].hero_id  = spec[i].heroId;
+        lp.d[i].hero_id  = spec[5+i].heroId;
+        lp.r[i].position = spec[i].manualPos;
+        lp.d[i].position = spec[5+i].manualPos;
+    }
+
+    // modal_pos fallback - симметрично для обеих сторон. buildVector делает это
+    // только для "вражеской" стороны (в своей игре позиции своей команды идут
+    // из OCR/portrait capture) - здесь такого источника нет ни у той, ни у
+    // другой стороны, обе заполняются одинаково, до вызова buildVector.
+    for (int i = 0; i < 5; ++i) {
+        if (lp.r[i].position <= 0 && lp.r[i].hero_id) {
+            auto it = md.modal_pos.find(lp.r[i].hero_id);
+            if (it != md.modal_pos.end()) lp.r[i].position = it->second;
+        }
+        if (lp.d[i].position <= 0 && lp.d[i].hero_id) {
+            auto it = md.modal_pos.find(lp.d[i].hero_id);
+            if (it != md.modal_pos.end()) lp.d[i].position = it->second;
+        }
+    }
+
+    FeatureVector v;
+    buildVector(v, lp, hero_map, md, 0);
+    std::vector<FeatureVector> batch = {v};
+    auto probs = runBatch(model, batch); // может бросить - ловит вызывающий цикл
+
+    std::lock_guard<std::mutex> lk(specState->mtx);
+    specState->radiantWinProb = (float)probs[0];
+    specState->hasPrediction  = true;
+}
+
+int runSpectatorPickerGui(const char* model_path, const char* db_path,
+                          std::atomic<bool>& running,
+                          SpectatorDraftState* specState)
+{
+    try {
+        auto loadModel = [](const std::string& path) -> ModelCalcerHandle* {
+            ModelCalcerHandle* m = ModelCalcerCreate();
+            if (!LoadFullModelFromFile(m, path.c_str())) {
+                ModelCalcerDelete(m);
+                throw std::runtime_error("Cannot load model: " + path
+                                         + " - " + GetErrorString());
+            }
+            return m;
+        };
+        std::string base(model_path);
+        std::string dataDbPath = base + "_data.db";
+
+        try {
+            auto dm = readDataDbMeta(dataDbPath);
+            if (dm.schema != kSupportedSchema) {
+                LOG_WARN("[spectator_picker] Data schema " << dm.schema
+                         << " != app schema " << kSupportedSchema << " - skipping predictions");
+                return 1;
+            }
+        } catch (const std::exception& ex) {
+            LOG_WARN("[spectator_picker] Cannot read data meta: " << ex.what()
+                     << " - proceeding (legacy data)");
+        }
+
+        ModelHandle model(loadModel(base + ".cbm"));
+
+        SqliteDB db(db_path, /*readOnly=*/true);
+        auto hero_map = loadHeroes(db.get());
+
+        SqliteDB dataDb(dataDbPath, /*readOnly=*/true);
+        auto md = loadMatchupData(dataDb.get());
+
+        SpectatorHeroSlot last[10] = {};
+        bool haveLast = false;
+
+        while (running.load()) {
+            SpectatorHeroSlot cur[10];
+            bool active;
+            {
+                std::lock_guard<std::mutex> lk(specState->mtx);
+                active = specState->active;
+                for (int i = 0; i < 10; ++i) cur[i] = specState->slots[i];
+            }
+            if (!active) {
+                haveLast = false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
+                continue;
+            }
+
+            bool changed = !haveLast;
+            for (int i = 0; i < 10 && !changed; ++i)
+                if (cur[i].heroId != last[i].heroId || cur[i].manualPos != last[i].manualPos)
+                    changed = true;
+
+            if (changed) {
+                try {
+                    computeSpectatorPrediction(model.get(), hero_map, md, cur, specState);
+                    requestRedraw();
+                } catch (const std::exception& e) {
+                    LOG_WARN("[spectator_picker] inference failed: " << e.what());
+                }
+                for (int i = 0; i < 10; ++i) last[i] = cur[i];
+                haveLast = true;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
+        }
+
+    } catch (const std::exception& e) {
+        LOG_ERR("[spectator_picker] Error: " << e.what());
+        return 1;
+    }
+    return 0;
+}
 
 // --- Главный цикл пикера -----------------------------------------------------
 

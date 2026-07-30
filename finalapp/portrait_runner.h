@@ -8,7 +8,7 @@
 #include <string>
 #include <atomic>
 
-// Цикл захвата портретов + позиций каждые 250мс → распознавание → запись в livepicks.
+// Цикл захвата портретов + позиций каждые 250мс -> распознавание -> запись в livepicks.
 // Работает без accountId. Блокирует поток до running == false.
 void runPortraitCapture(GameInfo&           gameInfo,
                         const std::string&  dbPath,

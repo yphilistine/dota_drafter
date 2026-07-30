@@ -379,7 +379,7 @@ bool swapDataFiles(const ManifestInfo& manifest, const std::vector<std::string>&
         CopyFileA(fname.c_str(), bak.c_str(), FALSE);
     }
 
-    // Замена: staging → live
+    // Замена: staging -> live
     bool ok = true;
     for (auto& fname : stagedFiles) {
         std::string staged = std::string(STAGING_DIR) + "\\" + fname;

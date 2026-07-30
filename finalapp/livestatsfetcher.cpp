@@ -1,7 +1,7 @@
 /*
  * livestatsfetcher.cpp - GSI HTTP-сервер (порт 62326, localhost).
  *
- * POST / - приём GSI-данных от Dota 2 → обновление GameInfo (phase, matchId, slot, lastUpdate).
+ * POST / - приём GSI-данных от Dota 2 -> обновление GameInfo (phase, matchId, slot, lastUpdate).
  * GET /phase - JSON статус текущей фазы.
  * lastUpdate используется оркестратором для GSI-таймаута (сброс на IDLE при закрытии Dota 2).
  * logs/gsi.log - полная, недедуплицированная история принятых состояний за

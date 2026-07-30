@@ -460,7 +460,7 @@ void storePlayerHeroWithHeroByPos(sqlite3* db, long long accountId,
     sqlite3_finalize(stmt);
 }
 
-// --- Парсинг STRATZ ответа → агрегация → SQLite ------------------------------
+// --- Парсинг STRATZ ответа -> агрегация -> SQLite ------------------------------
 void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::string& response) {
     if (response.size() >= 2 &&
         static_cast<unsigned char>(response[0]) == 0x1F &&
@@ -602,7 +602,7 @@ void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::stri
     } catch (...) { throw; }
 }
 
-// --- Главная функция: матчи → батчи STRATZ → парсинг → SQLite ----------------
+// --- Главная функция: матчи -> батчи STRATZ -> парсинг -> SQLite ----------------
 void fetchAndStorePlayerRecentData(sqlite3* db, const std::string& authToken, long long accountId) {
     try {
         std::vector<long long> matchIds;

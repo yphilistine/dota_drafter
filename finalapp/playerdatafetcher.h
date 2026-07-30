@@ -67,5 +67,5 @@ void storePlayerHeroWithHeroByPos(sqlite3* db, long long accountId,
 // --- Парсинг STRATZ ответа и запись в SQLite ----------------------------------
 void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::string& response);
 
-// --- Главная функция: матчи → батчи STRATZ → парсинг → SQLite ----------------
+// --- Главная функция: матчи -> батчи STRATZ -> парсинг -> SQLite ----------------
 void fetchAndStorePlayerRecentData(sqlite3* db, const std::string& authToken, long long accountId);

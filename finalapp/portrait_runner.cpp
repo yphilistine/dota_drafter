@@ -1,7 +1,7 @@
 /*
  * portrait_runner.cpp - захват портретов + позиций.
  *
- * Портреты: захват каждые 250мс → распознавание героев и позиций → запись в livepicks.
+ * Портреты: захват каждые 250мс -> распознавание героев и позиций -> запись в livepicks.
  * Позиции: своя команда = manualPos override > screen capture > 0. Враг = 0.
  * Работает без accountId. Overlay-кнопка [D] - отдельный файл overlay_button.cpp.
  */
@@ -306,12 +306,12 @@ void runPortraitCapture(GameInfo&           gameInfo,
                         const char* team = (slot < 5) ? "Radiant" : "Dire";
                         int idx = (slot < 5) ? slot+1 : slot-4;
                         LOG_INFO("[portrait] " << team << " #" << idx
-                                 << " → NULL  score=" << std::fixed << std::setprecision(3) << m.score);
+                                 << " -> NULL  score=" << std::fixed << std::setprecision(3) << m.score);
                     } else {
                         updateSlot(db, slot, detectedId);
                         const char* team = (slot < 5) ? "Radiant" : "Dire";
                         int idx = (slot < 5) ? slot+1 : slot-4;
-                        LOG_INFO("[portrait] " << team << " #" << idx << " → "
+                        LOG_INFO("[portrait] " << team << " #" << idx << " -> "
                                  << std::left << std::setw(22) << m.name
                                  << "  score=" << std::fixed << std::setprecision(3) << m.score);
                     }

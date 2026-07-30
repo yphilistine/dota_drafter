@@ -145,7 +145,7 @@ std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& resp
     return rows;
 }
 
-// --- STRATZ heroStats (последняя завершённая неделя) → SQLite `stats` --------
+// --- STRATZ heroStats (последняя завершённая неделя) -> SQLite `stats` --------
 void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken) {
     if (authToken.empty()) {
         LOG_WARN("HeroStats (meta): нет STRATZ токена, сразу фолбек на OpenDota");

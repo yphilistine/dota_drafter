@@ -89,7 +89,7 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 ::   common.cpp              - логирование, HTTP (curl)
 ::   playerdatafetcher.cpp   - OpenDota / STRATZ / SQLite (история матчей игрока)
 ::   hero_meta_stats.cpp     - живая мета-статистика героев (STRATZ heroStats, фаза 1a)
-::   clouddatafetcher.cpp    - PostgreSQL → SQLite
+::   clouddatafetcher.cpp    - PostgreSQL -> SQLite
 ::   datafetcher.cpp         - runDataFetcher (фаза 1)
 ::   livestatsfetcher.cpp    - runGsiServer   (фаза 2)
 ::   dota_picker.cpp         - runPickerGui   (фаза 3, вывод в GUI)
@@ -119,7 +119,7 @@ for /f "tokens=1,2,3 delims=." %%a in ("%APP_VER%") do (
 set "VER_BUILD=0"
 echo [INFO] App version: %APP_VER% -^> resource %VER_MAJOR%.%VER_MINOR%.%VER_PATCH%.%VER_BUILD%
 
-:: -- Компилируем version.rc → version.res -------------------------------------
+:: -- Компилируем version.rc -> version.res -------------------------------------
 rc.exe /nologo /dVER_MAJOR=%VER_MAJOR% /dVER_MINOR=%VER_MINOR% /dVER_PATCH=%VER_PATCH% /dVER_BUILD=%VER_BUILD% /fo "%OUT_DIR%\version.res" version.rc
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] rc.exe: version.rc

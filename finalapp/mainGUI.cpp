@@ -11,7 +11,7 @@
  *
  * Потоковая модель:
  *   GUI-поток      - WinMain / message loop / ImGui render
- *   Оркестратор    - управление потоками, portrait→GUI sync, one-shot inference
+ *   Оркестратор    - управление потоками, portrait->GUI sync, one-shot inference
  *   GSI-поток      - runGsiServer (постоянно)
  *   Фаза 1a        - runDataFetcherInit (при старте, без accountId)
  *   Фаза 1b        - runDataFetcher (при вводе Friend ID)
@@ -174,7 +174,7 @@ static void ApplyStyle() {
 }
 
 static void RenderFrame() {
-    // Загрузка аватара из буфера (GUI-поток → D3D11 текстура)
+    // Загрузка аватара из буфера (GUI-поток -> D3D11 текстура)
     {
         bool ready = false;
         { std::lock_guard<std::mutex> lk(g_player.mtx); ready = g_player.avatarDataReady; }
@@ -609,7 +609,7 @@ static bool InitGuiAndAssets(HWND hwnd) {
             0x0400, 0x052F, // Кириллица + Cyrillic Supplement
             0x2000, 0x206F, // General Punctuation (-, –, …, ′, ″)
             0x2100, 0x214F, // Letterlike Symbols (℃, №, ™, ℠)
-            0x2190, 0x21FF, // Arrows (→, ←, ↑, ↓)
+            0x2190, 0x21FF, // Arrows (->, ←, ↑, ↓)
             0x2200, 0x22FF, // Math Operators (∞, ≈, ≠, ≤, ≥)
             0x25A0, 0x25FF, // Geometric Shapes (■, □, ▲, ▼, ◆, ●)
             0x2600, 0x26FF, // Misc Symbols (★, ☆, ♥, ♠, ♦, ♣, ☺, ♪, ♫)

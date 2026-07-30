@@ -27,5 +27,5 @@ void storeHeroStatsTable(sqlite3* db, const std::vector<HeroWeekStat>& rows);
 std::string fetchHeroStatsOpenDotaFallback();
 std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& response);
 
-// Главная функция: STRATZ heroStats (последняя завершённая неделя) → SQLite `stats`
+// Главная функция: STRATZ heroStats (последняя завершённая неделя) -> SQLite `stats`
 void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken);

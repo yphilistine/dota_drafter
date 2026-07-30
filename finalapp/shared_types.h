@@ -80,10 +80,18 @@ struct SpectatorDraftState {
     bool               active = false;  // true, пока приходят team2/team3-payload'ы
     SpectatorHeroSlot  slots[10];        // 0-4 Radiant, 5-9 Dire
     std::chrono::steady_clock::time_point lastUpdate;
+
+    // Component A CatBoost-предсказание (без Component B/personalAdjustment -
+    // нет "нашего" аккаунта в чужом матче), пишет runSpectatorPickerGui.
+    bool  hasPrediction   = false;
+    float radiantWinProb  = 0.5f;
+
     void clear() {
         std::lock_guard<std::mutex> lk(mtx);
         for (auto& s : slots) s = {};
-        active = false;
+        active        = false;
+        hasPrediction  = false;
+        radiantWinProb = 0.5f;
     }
 };
 
@@ -177,3 +185,9 @@ int  runPickerGui(const char* modelPath, const char* dbPath,
                   std::atomic<bool>& running,
                   GuiPickerState* guiState,
                   SharedPortraitState* portraitState);
+
+// Component A (без личных данных) для наблюдаемой игры: читает g_spectatorState,
+// пишет radiantWinProb/hasPrediction туда же. Не требует accountId.
+int  runSpectatorPickerGui(const char* modelPath, const char* dbPath,
+                           std::atomic<bool>& running,
+                           SpectatorDraftState* specState);

@@ -7,7 +7,7 @@
 
 Фазы запуска:
 1. **DataFetcherInit** (фаза 1a) - создание таблиц + справочник героев (без accountId)
-2. **DataFetcher** (фаза 1b) - загрузка данных игрока (OpenDota, STRATZ → SQLite), требует accountId
+2. **DataFetcher** (фаза 1b) - загрузка данных игрока (OpenDota, STRATZ -> SQLite), требует accountId
 3. **GSI-сервер** - приём состояния игры от Dota 2 через Game State Integration
 4. **Portrait capture** - захват портретов HUD + распознавание героев и позиций (без accountId)
 5. **Picker** - ML-рекомендации CatBoost (требует accountId - оркестратор гейтит запуск по accountId; сама модель, Component A, от аккаунта не зависит, см. `dota_picker.cpp` в списке файлов и раздел "ML-модель (CatBoost)")
@@ -40,7 +40,7 @@ GSI-таймаут: если нет обновлений > GSI_WATCHDOG_SEC (60�
 | `PickRowGui` | Строка рекомендации: герой, winProb, статистика |
 | `GuiPickerState` | Полное состояние пикера для GUI + inferenceGen (атомарный счётчик) |
 | `SpectatorHeroSlot` | Один слот наблюдаемого (чужого) драфта: heroId из GSI + manualPos (только ручная метка в GUI) |
-| `SpectatorDraftState` | 10 слотов наблюдаемой игры + active + lastUpdate (для watchdog'а в orchestrator.cpp), mutex-protected |
+| `SpectatorDraftState` | 10 слотов наблюдаемой игры + active + lastUpdate (для watchdog'а в orchestrator.cpp) + hasPrediction/radiantWinProb (пишет `runSpectatorPickerGui`, dota_picker.cpp), mutex-protected |
 
 Декларации: `runDataFetcherInit`, `runDataFetcher`, `runGsiServer`, `runPortraitCapture`, `runPickerGui`.
 
@@ -64,7 +64,7 @@ GSI-таймаут: если нет обновлений > GSI_WATCHDOG_SEC (60�
 | `httpPost(url, body, token)` | HTTP POST с ретраями и авторизацией |
 | `sanitizeUtf8(input)` | Очистка невалидных UTF-8 последовательностей |
 | `safeStoi(s, fallback=0)` / `safeStoll(s, fallback=-1)` | Разбор int/long long без исключений (try/catch + fallback) - для непроверенных внешних данных (GSI-payload от Dota 2, STRATZ-ответы). Используется в `livestatsfetcher.cpp` (team_slot), `playerdatafetcher.cpp` (match id), `orchestrator.cpp` (matchId) вместо голого `std::stoi`/`std::stoll`, чьё исключение в отсоединённом потоке раньше валило весь процесс |
-| `positionToInt(pos)` | STRATZ `"POSITION_n"` (n=1..5) → int, 0 если не распознан. Общий для двух пайплайнов STRATZ, которые раньше жили в одном файле (`playerdatafetcher.cpp`): истории матчей игрока и живой меты (`hero_meta_stats.cpp`) - вынесен сюда при их разделении на отдельные файлы |
+| `positionToInt(pos)` | STRATZ `"POSITION_n"` (n=1..5) -> int, 0 если не распознан. Общий для двух пайплайнов STRATZ, которые раньше жили в одном файле (`playerdatafetcher.cpp`): истории матчей игрока и живой меты (`hero_meta_stats.cpp`) - вынесен сюда при их разделении на отдельные файлы |
 | `installCrashHandlers()` | Устанавливает `std::set_terminate` + `SetUnhandledExceptionFilter` - сетка безопасности на уровне процесса: логирует необработанное исключение/SEH в `logs/console.log` перед завершением вместо тихого краха без следа. Вызывается один раз в `WinMain` (`PlatformStartupFixups()`), сразу после `initConsole()` |
 | `LOG_INFO/WARN/ERR(msg)` | Макросы логирования через ostringstream |
 
@@ -77,16 +77,16 @@ GSI-таймаут: если нет обновлений > GSI_WATCHDOG_SEC (60�
 
 | Функция | Описание |
 |---------|----------|
-| `fetchHeroesList()` | GET /api/heroes → JSON строка |
-| `parseHeroesList(json)` | JSON → vector\<HeroInfo\> |
-| `fetchPlayerHeroesStats(accountId)` | GET /players/{id}/heroes → JSON |
-| `fetchPlayerHeroesRankedStats(accountId)` | GET /players/{id}/heroes?lobby_type=7 → JSON |
-| `parseHeroesStats(json)` | JSON → vector\<HeroStats\> |
-| `fetchRecentMatchIds(accountId)` | GET /players/{id}/matches → vector\<match_id\> (90 дней, ranked) |
+| `fetchHeroesList()` | GET /api/heroes -> JSON строка |
+| `parseHeroesList(json)` | JSON -> vector\<HeroInfo\> |
+| `fetchPlayerHeroesStats(accountId)` | GET /players/{id}/heroes -> JSON |
+| `fetchPlayerHeroesRankedStats(accountId)` | GET /players/{id}/heroes?lobby_type=7 -> JSON |
+| `parseHeroesStats(json)` | JSON -> vector\<HeroStats\> |
+| `fetchRecentMatchIds(accountId)` | GET /players/{id}/matches -> vector\<match_id\> (90 дней, ranked) |
 | `buildMatchesBatchQuery(matchIds)` | Формирование GraphQL запроса для STRATZ |
 | `sendStratzMatchesBatch(token, matchIds, batchNum)` | POST STRATZ GraphQL |
-| `parseAndStoreBatchMatches(db, accountId, response)` | Парсинг STRATZ ответа → SQLite таблицы. Match id разбирается через `safeStoll` (не голый `std::stoll`) - некорректная запись пропускается через `continue`, а не обрывает разбор всех ещё не обработанных батчей во внешнем catch |
-| `fetchAndStorePlayerRecentData(db, token, accountId)` | Главная функция: матчи → батчи → парсинг → SQLite |
+| `parseAndStoreBatchMatches(db, accountId, response)` | Парсинг STRATZ ответа -> SQLite таблицы. Match id разбирается через `safeStoll` (не голый `std::stoll`) - некорректная запись пропускается через `continue`, а не обрывает разбор всех ещё не обработанных батчей во внешнем catch |
+| `fetchAndStorePlayerRecentData(db, token, accountId)` | Главная функция: матчи -> батчи -> парсинг -> SQLite |
 | `createHeroTableIfNotExists(db)` | Создание таблицы `heroes` |
 | `createPlayerHeroTableIfNotExists(db, name)` | Создание `playerheroes` / `playerheroesranked` |
 | `createPlayerRecentMatchesTableIfNotExists(db)` | Создание `playerrecentmatches` |
@@ -114,10 +114,10 @@ GSI-таймаут: если нет обновлений > GSI_WATCHDOG_SEC (60�
 | `lastCompletedWeekTimestamp()` | Понедельник 00:00 UTC последней полностью завершённой недели |
 | `buildHeroStatsQuery(week)` | Формирование GraphQL запроса STRATZ `heroStats.stats` (bracket DIVINE_IMMORTAL, groupByPosition/Bracket) |
 | `sendStratzHeroStats(token, week)` | POST STRATZ GraphQL для heroStats |
-| `parseHeroStatsResponse(response)` | Парсинг ответа → vector\<HeroWeekStat\> (heroId, pos, matchCount, winCount). Позиция - через `positionToInt` (common.h) |
+| `parseHeroStatsResponse(response)` | Парсинг ответа -> vector\<HeroWeekStat\> (heroId, pos, matchCount, winCount). Позиция - через `positionToInt` (common.h) |
 | `createHeroStatsTableIfNotExists(db)` | Создание таблицы `stats` |
 | `storeHeroStatsTable(db, rows)` | Полная перезапись `stats` (DELETE + INSERT OR REPLACE) |
-| `fetchAndStoreHeroStats(db, token)` | Главная функция: последняя неделя → STRATZ heroStats → SQLite `stats`. Не бросает исключений наружу (мягкий сбой при недоступности STRATZ). Вызывается из `datafetcher.cpp` (`runDataFetcherInit`, фаза 1a) |
+| `fetchAndStoreHeroStats(db, token)` | Главная функция: последняя неделя -> STRATZ heroStats -> SQLite `stats`. Не бросает исключений наружу (мягкий сбой при недоступности STRATZ). Вызывается из `datafetcher.cpp` (`runDataFetcherInit`, фаза 1a) |
 
 Структура: `HeroWeekStat` (heroId, pos, matchCount, winCount).
 
@@ -134,12 +134,12 @@ GSI-таймаут: если нет обновлений > GSI_WATCHDOG_SEC (60�
 ---
 
 ### clouddatafetcher.h / clouddatafetcher.cpp
-Синхронизация PostgreSQL → SQLite: `proherostats` и `immortalherostats` (агрегат `recentimmortalmatches`).
+Синхронизация PostgreSQL -> SQLite: `proherostats` и `immortalherostats` (агрегат `recentimmortalmatches`).
 
 | Функция | Описание |
 |---------|----------|
-| `fetchAndStoreProHeroStats(db, connStr)` | PG `proherostats` → SQLite `proherostats`, полная перезапись |
-| `fetchAndStoreImmortalHeroStats(db, connStr)` | PG `recentimmortalmatches` → агрегация (hero_id, pos) → SQLite `immortalherostats` |
+| `fetchAndStoreProHeroStats(db, connStr)` | PG `proherostats` -> SQLite `proherostats`, полная перезапись |
+| `fetchAndStoreImmortalHeroStats(db, connStr)` | PG `recentimmortalmatches` -> агрегация (hero_id, pos) -> SQLite `immortalherostats` |
 
 Компилируется в основной exe (см. `build_unified.bat`), линкуется с libpq, но **не вызывается ни из одного рантайм-пути** (нет вызовов в `datafetcher.cpp`/`mainGUI.cpp`). Похоже на офлайн/dev-инструмент разработчика для регенерации `proherostats`/`immortalherostats` перед `scripts/pack_data.bat`, а не часть логики приложения у пользователя.
 
@@ -160,15 +160,15 @@ GSI-таймаут: если нет обновлений > GSI_WATCHDOG_SEC (60�
 | `GdiplusSession` | RAII: GDI+ Startup / Shutdown |
 | `Dota2Capture` | Основной класс захвата |
 | `.findGameWindow()` | Поиск окна "Dota 2" (SDL_app / Valve001), определение разрешения и раскладки |
-| `.refreshResolution()` | Проверка смены разрешения → пересчёт регионов (вызывается перед каждым capturePortraits) |
-| `.capturePortraits()` | Захват портретов + позиций из одного кадра (PrintWindow → BitBlt по регионам) |
+| `.refreshResolution()` | Проверка смены разрешения -> пересчёт регионов (вызывается перед каждым capturePortraits) |
+| `.capturePortraits()` | Захват портретов + позиций из одного кадра (PrintWindow -> BitBlt по регионам) |
 | `.portraits()` | Последние захваченные портреты героев (10 Bitmap) |
 | `.posPortraits()` | Последние захваченные индикаторы позиций (10 Bitmap) |
 | `.captureFullWindow()` | Захват всего окна (для отладки) |
 | `.saveBitmapAsPng(bmp, path)` | Сохранение Bitmap как PNG через GDI+ |
 | `.savePortraits(dir)` | Сохранение всех портретов как PNG |
 | `.saveDebugRegions(dir)` | Сохранение портретов героев + индикаторов позиций как PNG: `radiant_hero_0..4.png`, `dire_hero_0..4.png`, `radiant_pos_0..4.png`, `dire_pos_0..4.png` (10+10 файлов, индекс - слот 0-4 внутри своей команды) |
-| `.saveFullScreenshotWithRegions(dir)` | Захват полного кадра HUD (`captureWindow()`) → копия в `Gdiplus::Bitmap` → поверх неё через `Gdiplus::Graphics` рамки всех 20 регионов (`regions_` + `posRegions_`): красная - портреты героев, голубая - индикаторы позиций, подпись `R1..R5`/`D1..D5` на тёмной плашке под каждой рамкой. Один файл `fullscreen_regions.png` в `dir` - быстрая визуальная сверка разметки HUD целиком, вместо 20 обрезанных файлов `saveDebugRegions`. Не `const` (как и `captureFullWindow`, использует тот же приватный `captureWindow()`) |
+| `.saveFullScreenshotWithRegions(dir)` | Захват полного кадра HUD (`captureWindow()`) -> копия в `Gdiplus::Bitmap` -> поверх неё через `Gdiplus::Graphics` рамки всех 20 регионов (`regions_` + `posRegions_`): красная - портреты героев, голубая - индикаторы позиций, подпись `R1..R5`/`D1..D5` на тёмной плашке под каждой рамкой. Один файл `fullscreen_regions.png` в `dir` - быстрая визуальная сверка разметки HUD целиком, вместо 20 обрезанных файлов `saveDebugRegions`. Не `const` (как и `captureFullWindow`, использует тот же приватный `captureWindow()`) |
 | `.runLoop(interval_ms)` | Цикл захвата с заданным интервалом |
 | `ListAllWindows()` | Диагностика: вывод всех видимых окон |
 
@@ -189,7 +189,7 @@ HudLayout содержит координаты портретов (radiant_x_st
 | `HeroHashEntry` | Пара: имя героя + Matrix8 |
 | `HeroMatch` | Результат: имя, score. `confident()` при score >= 0.80 |
 | `pearson(a, b)` | Корреляция Пирсона двух Matrix8 (dot / 63) |
-| `computeMatrix(bgra, w, h)` | BGRA-пиксели → Matrix8 (greyscale → bilinear 8x8 → нормализация) |
+| `computeMatrix(bgra, w, h)` | BGRA-пиксели -> Matrix8 (greyscale -> bilinear 8x8 -> нормализация) |
 | `HeroRecognizer` | Поиск ближайшего героя по базе хешей |
 | `PosMatch` | Результат OCR-распознавания позиции: pos (0-5), score. `confident()` при score >= 0.50 |
 
@@ -208,10 +208,10 @@ HudLayout содержит координаты портретов (radiant_x_st
 |---------------|----------|
 | `PosOcrRecognizer` | Создаёт `OcrEngine` по списку языков (en-US, ru, uk, de, pl, fr, es - от наиболее вероятного к менее; отсутствующие в Windows языковые пакеты просто выпадают), fallback - язык профиля пользователя. BE/KK убраны - у Dota 2 нет официальной локализации на эти языки (проверено по клиентским localization-файлам), блоки не могли сработать |
 | `.isAvailable()` | true, если хотя бы один движок OCR создан |
-| `.recognize(bmp)` | Апскейл BGRA x4 → SoftwareBitmap → OCR по всем движкам до первого `pos>0` → `PosMatch{pos, score}`. Реализован поверх `.recognizeDebug()` |
+| `.recognize(bmp)` | Апскейл BGRA x4 -> SoftwareBitmap -> OCR по всем движкам до первого `pos>0` -> `PosMatch{pos, score}`. Реализован поверх `.recognizeDebug()` |
 | `.recognizeDebug(bmp)` | То же самое, но возвращает `PosOcrRaw{pos, score, text}` - с сырым распознанным OCR-текстом (сохраняется, даже если ключевое слово не распознано, т.е. `pos==0`). Нужен только для диагностического report.txt кнопки `[screenshot]` (`captureDebugScreenshotWithReport`, `portrait_runner.cpp`) - в горячем 250мс-цикле (`.recognize()`) текст не нужен и отбрасывается |
 | `PosOcrRaw` | `{pos, score, text}` - результат `.recognizeDebug()` |
-| `textToPosition(text)` | Сначала `kExactPhrases` - таблица точных фраз плашки позиции (5 на язык × 7 языков), пока пустые плейсхолдеры (заполняются реальным OCR-текстом из report.txt по мере поступления); дальше - эвристика по ключевым словам EN ("safe/mid/off/soft/hard/supp/lane") и RU + UK/DE/PL/FR/ES ("центр/мид/сложн/полн.../жёстк/лёгк/мягк/поддерж" и аналоги) → позиция 1-5 |
+| `textToPosition(text)` | Сначала `kExactPhrases` - таблица точных фраз плашки позиции (5 на язык × 7 языков), пока пустые плейсхолдеры (заполняются реальным OCR-текстом из report.txt по мере поступления); дальше - эвристика по ключевым словам EN ("safe/mid/off/soft/hard/supp/lane") и RU + UK/DE/PL/FR/ES ("центр/мид/сложн/полн.../жёстк/лёгк/мягк/поддерж" и аналоги) -> позиция 1-5 |
 
 OCR либо уверенно распознаёт (score=1.0), либо возвращает pos=0 (score=0) - бинарный результат, порог `confident()` из `dhash.h` (>=0.50) здесь не критичен.
 Инклюдит `common.h` (для `LOG_INFO`) - диагностика количества доступных OCR-движков теперь через `LOG_INFO`, раньше через `std::printf` (невидимо без консоли).
@@ -226,9 +226,9 @@ GSI HTTP-сервер.
 | Функция | Описание |
 |---------|----------|
 | `runGsiServer(gameInfo)` | Запуск HTTP-сервера, приём GSI-данных |
-| `parsePhaseStr(s)` | Строка GSI game_state → GamePhase |
+| `parsePhaseStr(s)` | Строка GSI game_state -> GamePhase |
 | `updateSpectatorState(body)` | Наблюдаемая игра (спектейт): достаёт hero_id по каждому из 10 игроков из вложенных `player.team2/team3.playerN`-блоков (границы блока - до следующего `playerN+1`, для player9 - до `previously`, тем же линейным поиском, что и `json_get`). Слот в `g_spectatorState` - по `team_name`+`team_slot` игрока, не по порядку playerN. Пишет `g_spectatorState.active=true` + `lastUpdate` |
-| `handle_request(raw)` | Обработка HTTP: POST / → парсинг GSI + обновление lastUpdate, GET /phase → JSON статус. `team_slot` разбирается через `safeStoi` + клэмп 0..4 (не голый `std::stoi`) - иначе исключение на нечисловом значении из непроверенного GSI-payload'а убило бы весь процесс (детач-поток без сетки). `isSpectating` - по наличию `"team2"` в теле: Dota отдаёт вложенный `player.team2/team3`-блок (все 10 игроков) только когда мы не участник матча, а наблюдаем чужой; в этом случае `steamid`/`team_name`/`team_slot`, найденные `json_get` выше, принадлежат случайному первому игроку в JSON и в `GameInfo` не пишутся (`isOurGame = !isSpectating`), а `g_spectatorState` обновляется через `updateSpectatorState`. `accountid` из payload'а с сохранённым Friend ID не сверяется - Friend ID вводится вручную и может не совпадать со Steam-аккаунтом, залогиненным в клиенте Dota (смурф, чужой ПК). Переход "наблюдение закончилось" (payload без `team2`) сбрасывает `g_spectatorState` сразу, а не через watchdog |
+| `handle_request(raw)` | Обработка HTTP: POST / -> парсинг GSI + обновление lastUpdate, GET /phase -> JSON статус. `team_slot` разбирается через `safeStoi` + клэмп 0..4 (не голый `std::stoi`) - иначе исключение на нечисловом значении из непроверенного GSI-payload'а убило бы весь процесс (детач-поток без сетки). `isSpectating` - по наличию `"team2"` в теле: Dota отдаёт вложенный `player.team2/team3`-блок (все 10 игроков) только когда мы не участник матча, а наблюдаем чужой; в этом случае `steamid`/`team_name`/`team_slot`, найденные `json_get` выше, принадлежат случайному первому игроку в JSON и в `GameInfo` не пишутся (`isOurGame = !isSpectating`), а `g_spectatorState` обновляется через `updateSpectatorState`. `accountid` из payload'а с сохранённым Friend ID не сверяется - Friend ID вводится вручную и может не совпадать со Steam-аккаунтом, залогиненным в клиенте Dota (смурф, чужой ПК). Переход "наблюдение закончилось" (payload без `team2`) сбрасывает `g_spectatorState` сразу, а не через watchdog |
 | `client_thread(client)` | Обработчик соединения, запускается через `std::thread(...).detach()`. Всё тело обёрнуто в try/catch - раньше не было ни одной сетки на этом пути |
 
 ---
@@ -239,13 +239,13 @@ GSI HTTP-сервер.
 | Функция | Описание |
 |---------|----------|
 | `loadHeroHashes(path)` | Загрузка `hero_hashes.dat` (бинарный формат) в vector<HeroHashEntry> для `HeroRecognizer` |
-| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 250мс → `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций → запись в livepicks. Тело цикла обёрнуто в try/catch на итерацию (логирует и продолжает, не убивая поток - раньше во всей функции не было ни одного try/catch). На ветке ошибки открытия БД теперь вызывается `winrt::uninit_apartment()` (раньше пропускался, в отличие от нормального пути через `cleanup:`). Диагностика - через `LOG_INFO/WARN/ERR` (раньше `printf`/`puts`, невидимые в GUI-приложении без консоли). Без гистерезиса/фиксации: каждый кадр - всегда ближайший по Пирсону кандидат среди героев и `"null"` (own запись в базе хешей, участвует в том же argmax) немедленно перезаписывает слот, если отличается от уже записанного. Порог `score >= 0.4` - не решающий фильтр (решение - argmax по всей базе), а только отсев нечитаемых кадров. Расчёт: единичный кадр с ложным совпадением (напр. чат/scoreboard/шоп на секунду перекрыли регион) даёт максимум один неверный кадр в БД - следующий цикл (250мс) его перезапишет, так как ничего не "запоминается" против нового результата |
+| `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 250мс -> `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций -> запись в livepicks. Тело цикла обёрнуто в try/catch на итерацию (логирует и продолжает, не убивая поток - раньше во всей функции не было ни одного try/catch). На ветке ошибки открытия БД теперь вызывается `winrt::uninit_apartment()` (раньше пропускался, в отличие от нормального пути через `cleanup:`). Диагностика - через `LOG_INFO/WARN/ERR` (раньше `printf`/`puts`, невидимые в GUI-приложении без консоли). Без гистерезиса/фиксации: каждый кадр - всегда ближайший по Пирсону кандидат среди героев и `"null"` (own запись в базе хешей, участвует в том же argmax) немедленно перезаписывает слот, если отличается от уже записанного. Порог `score >= 0.4` - не решающий фильтр (решение - argmax по всей базе), а только отсев нечитаемых кадров. Расчёт: единичный кадр с ложным совпадением (напр. чат/scoreboard/шоп на секунду перекрыли регион) даёт максимум один неверный кадр в БД - следующий цикл (250мс) его перезапишет, так как ничего не "запоминается" против нового результата |
 | `updateSlot(db, slot, heroId)` | Обновление hero в слоте livepicks |
 | `updateSlotPos(db, slot, pos)` | Обновление позиции в слоте livepicks |
 | `clearHeroSlots(db)` | Обнуление всех hero + pos слотов в livepicks |
 | `clearHeroSlot(db, slot)` | Обнуление одного hero-слота |
-| `captureDebugScreenshotWithReport(dbPath, dir="screenshots")` | Одноразовый диагностический снимок для кнопки `[screenshot]`: свой `Dota2Capture` → `findGameWindow()` + `capturePortraits()` → `saveDebugRegions(dir)` (10+10 PNG, как раньше `dota2::captureDebugScreenshot`) + `saveFullScreenshotWithRegions(dir)` (один `fullscreen_regions.png` - полный кадр HUD с наложенными рамками всех 20 регионов) + **`report.txt`** - по каждому герою-слоту: распознанное имя (или `NULL`) / `heroId` / Pearson-score; по каждому позиционному слоту: сырой OCR-текст (`.recognizeDebug()` из `pos_ocr.h`), итоговая позиция и score. Использует свою, независимую от фонового `runPortraitCapture`, пару `HeroRecognizer`/`PosOcrRecognizer` (не трогает состояние живого 250мс-цикла). `false`, если окно Dota 2 не найдено или кадр не захвачен (папка тогда не трогается). Вызывается из `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке |
-| `wideToUtf8(w)` | `std::wstring` → UTF-8 `std::string` через `WideCharToMultiByte` - нужен, чтобы записать сырой OCR-текст (может быть на любом из 9 поддерживаемых языков) в `report.txt` |
+| `captureDebugScreenshotWithReport(dbPath, dir="screenshots")` | Одноразовый диагностический снимок для кнопки `[screenshot]`: свой `Dota2Capture` -> `findGameWindow()` + `capturePortraits()` -> `saveDebugRegions(dir)` (10+10 PNG, как раньше `dota2::captureDebugScreenshot`) + `saveFullScreenshotWithRegions(dir)` (один `fullscreen_regions.png` - полный кадр HUD с наложенными рамками всех 20 регионов) + **`report.txt`** - по каждому герою-слоту: распознанное имя (или `NULL`) / `heroId` / Pearson-score; по каждому позиционному слоту: сырой OCR-текст (`.recognizeDebug()` из `pos_ocr.h`), итоговая позиция и score. Использует свою, независимую от фонового `runPortraitCapture`, пару `HeroRecognizer`/`PosOcrRecognizer` (не трогает состояние живого 250мс-цикла). `false`, если окно Dota 2 не найдено или кадр не захвачен (папка тогда не трогается). Вызывается из `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке |
+| `wideToUtf8(w)` | `std::wstring` -> UTF-8 `std::string` через `WideCharToMultiByte` - нужен, чтобы записать сырой OCR-текст (может быть на любом из 9 поддерживаемых языков) в `report.txt` |
 
 Распознавание позиций: только для своей команды (manualPos override > screen capture > 0). Вражеские позиции = 0.
 
@@ -280,23 +280,25 @@ CatBoost-модель, "чисто про драфт") + Component B (персо
 | `TeamAgg` / `computeTeamAgg(...)` | Агрегаты по стороне (n_revealed, mean/std vs_adv/with_adv/global_wr/pick_rate, best_vs_max, worst_vs_min) - портирует `_team_aggregates` из `draft_features.py` |
 | `heroDimPresence(hid, md, presence[5])` | Доля игр героя по 5 ролевым размерностям (core/support/safe/mid/off), из `md.hero_pos_games` - портирует `_hero_dim_presence` |
 | `teamComposition(base, ids, positions, md, out[5])` | Дефицит ролевой формы стороны: `-max(0, target-filled)/target` на размерность - портирует `_team_composition` |
-| `buildVector(v, lp, hero_map, md, candidate_hero_id)` | Заполнение вектора Component A: global_wr → vs_adv → with_adv → hero_pos_wr → best_vs → worst_vs → pick_rate → best_with → worst_with → team aggregates(17) → composition(10), порядок побитово соответствует `ALL_FEATURES` в `draft_features.py`. Без mastery и без `our_stats` - параметр убран из сигнатуры |
+| `buildVector(v, lp, hero_map, md, candidate_hero_id)` | Заполнение вектора Component A: global_wr -> vs_adv -> with_adv -> hero_pos_wr -> best_vs -> worst_vs -> pick_rate -> best_with -> worst_with -> team aggregates(17) -> composition(10), порядок побитово соответствует `ALL_FEATURES` в `draft_features.py`. Без mastery и без `our_stats` - параметр убран из сигнатуры |
 | `personalAdjustment(hero_id, pos, heroAlltime, heroRanked, heroPos, basePosStats)` | Component B: персональная поправка (all-time WR + recent-ranked "форма" + comfort-бонус за наигранность, сглаживание к `base_wr`). База `base_wr` - из `immortal_map` (живая STRATZ-стата), а не из `immortalherostats` (та таблица удалена, см. ниже) |
 | `combinePersonal(pOurs, adj, beta)` | `sigmoid(logit(p_ours) + beta*adj)`. `PERSONAL_BETA = 0.0f` - как в Python, по калибровке (`calibrate_personal.py` не нашёл прироста accuracy при beta>0) слой посчитан и подключён к ранжированию, но эффективно выключен |
 | `ModelHandle` | RAII для `ModelCalcerHandle*` (CatBoost C API) - раньше модель освобождалась вручную только на пути нормального завершения цикла, при исключении посреди инференса память утекала |
-| `loadHeroes(db)` | SQLite → map\<id, name\> (через общие `SqliteDB`/`SqliteStmt` из common.h) |
-| `loadMatchupData(dataDb)` | Data DB → MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr, **hero_pos_games**, pick_rates). `hero_pos_wr.games` грузится отдельным запросом от `wr` - на БД со старой схемой (`schema_version=1`, без колонки `games`) падает только этот запрос, `hero_pos_wr` остаётся рабочим, composition деградирует до нулевого presence вместо падения |
-| `loadImmortalHeroStats(db, pos)` | Player DB, таблица `stats` (живой STRATZ, DIVINE_IMMORTAL) → map\<hero_id, PickerHeroStat\>. Порог отсечения - динамический: 1% от суммарных игр на позиции за неделю. Двойное назначение: пул кандидатов + источник `base_wr` для Component B |
-| `loadPlayerStats(db, account_id)` | Player DB, `playerheroes` → map\<hero_id, PlayerStats\> (all-time). Источник `heroAlltime` для Component B |
-| `loadPlayerHeroesRanked(db, account_id)` | Player DB, `playerheroesranked` → map\<hero_id, PlayerStats\>. Источник "формы" (recent ranked) для Component B |
-| `loadPlayerHeroPos(db, account_id)` | Player DB, `relevantplayerherobyposstats` → map\<(hero_id,pos), PlayerStats\>, без фильтра по позиции. Источник перс. WR hero+pos для Component B |
-| `loadLatestLivePick(db, lp)` | Последняя строка livepicks → LivePick |
-| `runBatch(model, batch)` | Батч-инференс CatBoost → sigmoid → P(radiant_win) (сырая, ещё не ориентированная под сторону/персонализацию) |
+| `loadHeroes(db)` | SQLite -> map\<id, name\> (через общие `SqliteDB`/`SqliteStmt` из common.h) |
+| `loadMatchupData(dataDb)` | Data DB -> MatchupData (global_wr, vs_wr, with_wr, modal_pos, hero_pos_wr, **hero_pos_games**, pick_rates). `hero_pos_wr.games` грузится отдельным запросом от `wr` - на БД со старой схемой (`schema_version=1`, без колонки `games`) падает только этот запрос, `hero_pos_wr` остаётся рабочим, composition деградирует до нулевого presence вместо падения |
+| `loadImmortalHeroStats(db, pos)` | Player DB, таблица `stats` (живой STRATZ, DIVINE_IMMORTAL) -> map\<hero_id, PickerHeroStat\>. Порог отсечения - динамический: 1% от суммарных игр на позиции за неделю. Двойное назначение: пул кандидатов + источник `base_wr` для Component B |
+| `loadPlayerStats(db, account_id)` | Player DB, `playerheroes` -> map\<hero_id, PlayerStats\> (all-time). Источник `heroAlltime` для Component B |
+| `loadPlayerHeroesRanked(db, account_id)` | Player DB, `playerheroesranked` -> map\<hero_id, PlayerStats\>. Источник "формы" (recent ranked) для Component B |
+| `loadPlayerHeroPos(db, account_id)` | Player DB, `relevantplayerherobyposstats` -> map\<(hero_id,pos), PlayerStats\>, без фильтра по позиции. Источник перс. WR hero+pos для Component B |
+| `loadLatestLivePick(db, lp)` | Последняя строка livepicks -> LivePick |
+| `runBatch(model, batch)` | Батч-инференс CatBoost -> sigmoid -> P(radiant_win) (сырая, ещё не ориентированная под сторону/персонализацию) |
 | `renderToGui(state, lp, hero_map, md, our_stats, our_stats_ranked, our_stats_pos, immortal_map, model)` | Запись результатов в GuiPickerState (слоты + winProb + top-10) + inferenceGen++. Ранжирование кандидатов и `winProb` уже выбранного героя проходят через `combinePersonal` (Component B) |
-| `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks → renderToGui каждые 500мс. При смене `account_id` перезагружает `our_stats`/`our_stats_ranked`/`our_stats_pos` |
+| `runPickerGui(modelPath, dbPath, running, guiState, portraitState)` | Главный цикл пикера: poll livepicks -> renderToGui каждые 500мс. При смене `account_id` перезагружает `our_stats`/`our_stats_ranked`/`our_stats_pos` |
+| `computeSpectatorPrediction(model, hero_map, md, spec, specState)` | Наблюдаемая игра: тот же `buildVector`/`runBatch`, что и для своей игры, но **только Component A** - `personalAdjustment`/`combinePersonal` не вызываются вообще (не только `beta=0`, а полностью пропущены - для чужого матча нет accountId, сверяться не с чем). `candidate_hero_id=0` (все 10 героев уже из GSI, ранжировать нечего). modal_pos-фолбэк для пустых позиций применяется симметрично к обеим сторонам (в отличие от `buildVector`, где он только для "вражеской" - у своей игры позиции идут из OCR) - досчитывается до вызова `buildVector`, так что его собственный асимметричный фолбэк становится no-op. Пишет `radiantWinProb`/`hasPrediction` в `SpectatorDraftState` |
+| `runSpectatorPickerGui(modelPath, dbPath, running, specState)` | Отдельный лёгкий цикл (500мс) для наблюдаемой игры: та же схема загрузки, что и `runPickerGui` (model/hero_map/matchup data, schema gate), но без account-зависимых `our_stats*`/`immortal_map`. Не требует accountId - гейтится оркестратором только по `g_spectatorState.active` (`manageSpectatorPicker`, orchestrator.cpp), независимо от HERO_SELECTION/accountId, которыми управляется `runPickerGui` |
 
 Matchup-данные читаются из `{modelPath}_data.db` (отдельная БД). Immortal/мета-стата - из `playerandlivestats.db` (`stats`), не из data.db.
-Schema gate: перед загрузкой модели проверяет `meta.schema_version == kSupportedSchema` (мета-стата в схему не входит - `buildVector` её не использует).
+Schema gate: перед загрузкой модели проверяет `meta.schema_version == kSupportedSchema` (мета-стата в схему не входит - `buildVector` её не использует). Тот же гейт - в `runSpectatorPickerGui`.
 
 ---
 
@@ -331,20 +333,20 @@ Schema gate: перед загрузкой модели проверяет `meta
 | `UpdateAction` | Enum: NONE, APP_UPDATE, DATA_UPDATE, SCHEMA_TOO_NEW |
 | `ManifestInfo` | Структура: версии app/data, URL, SHA-256, dataFiles (map) |
 | `fetchManifest(out)` | GET manifest.json с SSL verify, connect 5с, total 10с |
-| `checkForUpdates(manifest)` | App: kAppVersion vs manifest. Data: SHA-256 **каждого** файла из dataFiles на диске vs манифест → UpdateAction |
+| `checkForUpdates(manifest)` | App: kAppVersion vs manifest. Data: SHA-256 **каждого** файла из dataFiles на диске vs манифест -> UpdateAction |
 | `downloadToStaging(url, sha256, path, progress)` | Скачивание в .part + SHA-256 через BCrypt + rename. Создаёт вложенные директории назначения (`ensureParentDir`). Логирует `LOG_ERR`/`LOG_WARN` на всех путях отказа (`curl_easy_init`, открытие .part, сетевая ошибка/не-200) - раньше эти ветки были беззвучными |
 | `fileSha256(path)` | SHA-256 файла через BCrypt API (64KB чанки) |
 | `downloadAndStageData(manifest, stagedFiles, progress)` | **Выборочно**: для каждого файла манифеста сначала проверяет `localFileUpToDate` (существует + SHA-256 совпадает) - совпавшие пропускает без скачивания; скачивает только отсутствующие/изменившиеся, их ключи возвращает через `stagedFiles` (out-параметр) |
-| `swapDataFiles(manifest, stagedFiles)` | Backup (.bak) + MoveFileEx только для файлов из `stagedFiles` (не всего манифеста) + `cleanupObsoleteAssets` + удаление .bak/lock. Пустой `stagedFiles` → no-op |
+| `swapDataFiles(manifest, stagedFiles)` | Backup (.bak) + MoveFileEx только для файлов из `stagedFiles` (не всего манифеста) + `cleanupObsoleteAssets` + удаление .bak/lock. Пустой `stagedFiles` -> no-op |
 | `cleanupObsoleteAssets(manifest)` | Удаляет `assets\*.png`, которых нет среди ключей `assets/*` в манифесте (герой переименован/убран) - иначе маска `assets\*.png` только добавляет/перезаписывает и никогда не подчищает лишнее |
 | `rollbackDataFiles()` | Без ManifestInfo (вызывается до fetchManifest): восстанавливает `*.bak` и `assets\*.bak` по маске, а не по жёстко заданному списку файлов |
-| `checkPendingSwap()` | Проверка swap.lock при старте → rollback если найден |
+| `checkPendingSwap()` | Проверка swap.lock при старте -> rollback если найден |
 | `cleanupStaging()` | Удаление orphan `.part` в staging/ и staging/assets/ |
 | `compareVersions(a, b)` | Посегментное числовое сравнение версий |
 
 SSL verification включена (CURLSSLOPT_NATIVE_CA). Не использует общий applyCurlNetworkOpts.
 
-**Ассеты и hero_hashes.dat в манифесте** (добавлено, см. `scripts/update_assets.ps1`): в отличие от `.cbm`/`_data.db` (версионированные GitHub Releases, `scripts/pack_data.bat`), `hero_hashes.dat` и каждый `assets/<name>.png` попадают в `manifest.json → data.files` с `url` на `raw.githubusercontent.com/.../main/finalapp/...` - т.е. приложение сверяется напрямую с содержимым main-ветки репозитория, без отдельных релизов/версий для ассетов. При каждом старте `checkForUpdates` хэширует и эти файлы; расхождение (или лишний PNG, которого больше нет в манифесте) чинится тем же DATA_UPDATE-путём.
+**Ассеты и hero_hashes.dat в манифесте** (добавлено, см. `scripts/update_assets.ps1`): в отличие от `.cbm`/`_data.db` (версионированные GitHub Releases, `scripts/pack_data.bat`), `hero_hashes.dat` и каждый `assets/<name>.png` попадают в `manifest.json -> data.files` с `url` на `raw.githubusercontent.com/.../main/finalapp/...` - т.е. приложение сверяется напрямую с содержимым main-ветки репозитория, без отдельных релизов/версий для ассетов. При каждом старте `checkForUpdates` хэширует и эти файлы; расхождение (или лишний PNG, которого больше нет в манифесте) чинится тем же DATA_UPDATE-путём.
 
 ---
 
@@ -357,11 +359,11 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 | `CleanupD3D()` | Освобождение D3D11 ресурсов |
 | `ApplyStyle()` | Тёмная тема ImGui с масштабированием 1.25x, палитра - из gui_draw.h |
 | `WndProc(hWnd, msg, ...)` | WM_GETMINMAXINFO (мин. размер окна), WM_SIZE (ресайз swap chain + живой рендер во время интерактивного resize), WM_DESTROY |
-| `RenderFrame()` | Главный кадр: аватар-текстура из буфера → root window → Header → StatusBar → баннеры (`schemaError` пикера + единый `g_appNotice`) → Draft + Picks + Meta Heroes (3 колонки, все панели - из gui_draw.h) |
-| `PresentFrame()` | ImGui NewFrame → RenderFrame → Render → D3D11 Present |
+| `RenderFrame()` | Главный кадр: аватар-текстура из буфера -> root window -> Header -> StatusBar -> баннеры (`schemaError` пикера + единый `g_appNotice`) -> Draft + Picks + Meta Heroes (3 колонки, все панели - из gui_draw.h) |
+| `PresentFrame()` | ImGui NewFrame -> RenderFrame -> Render -> D3D11 Present |
 | `CreateDIcon(sz)` | Программная отрисовка иконки [D] через GDI (фоллбэк, если ресурс иконки не загрузился) |
 | `PlatformStartupFixups()` | CWD/exe-dir фикс, DPI awareness, `initConsole()`, `installCrashHandlers()` |
-| `RunStartupUpdateCheck(hInst)` | Блокирующая проверка обновлений (до D3D11/ImGui), делегирует в update_window.h. `false` → приложение должно завершиться сейчас |
+| `RunStartupUpdateCheck(hInst)` | Блокирующая проверка обновлений (до D3D11/ImGui), делегирует в update_window.h. `false` -> приложение должно завершиться сейчас |
 | `InitPlayerStateAndBackgroundThreads()` | Конфиг из env, загрузка сохранённого игрока (`SqliteDB`), запуск фазы 1a, `startOrchestrator()`, условный `startPhase1()` |
 | `CreateMainWindow(hInst)` | Класс окна, размеры, `CreateWindowW`, тёмная тема DWM, иконка |
 | `InitGuiAndAssets(hwnd)` | `InitD3D` + ImGui/шрифты + `ApplyStyle` + `loadHeroPortraits()`. `false` при провале `InitD3D` - единственная явная fatal-ветка |
@@ -412,16 +414,17 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 | `requestPositionRefresh()` | Сигнал оркестратору: пользователь вручную сменил позицию в GUI (вызывается из gui_draw.cpp вместо прямой записи в приватный атомик) |
 | `createPlayerInfoTable(db)` / `loadSavedPlayer(db, nameOut)` | Таблица `player_info` (экспортированы - используются и из WinMain при старте) |
 | `resetSpectatorStateIfStale()` | Watchdog для наблюдаемой игры (спектейт): `livestatsfetcher.cpp` сбрасывает `g_spectatorState` сразу, как только приходит payload без `team2`/`team3`, но если Dota 2 закрывается прямо во время наблюдения - POST'ы перестают идти вообще, сбрасывать некому. Та же логика, что у `readGameStateWithTimeoutWatchdog` (GSI_WATCHDOG_SEC), но отдельно - `g_spectatorState` не связан с `g_gameInfo` |
-| `orchestratorMain()` | Фоновый цикл (300мс), разбит на именованных шагов с общей `OrchestratorLoopState` (вместо function-local `static`): `refreshAccountId`, `readGameStateWithTimeoutWatchdog` (GSI watchdog), `resetSpectatorStateIfStale`, `syncSlotSideToDb`, `handleAccountIdChanged`, `handleNewMatch` (safeStoll), `runPhaseStateMachine` (IDLE/POSTGAME/HERO_SELECTION/tail), `syncPortraitOnlyToGui`, `runOneShotRefresh`. Открытие БД - в try/catch (fatal при провале, пишет в `g_appNotice`); каждая итерация цикла - во внутреннем try/catch (логирует и продолжает, не убивая поток) |
+| `manageSpectatorPicker()` | Старт/стоп `runSpectatorPickerGui` (Component A для наблюдаемой игры, dota_picker.cpp) - привязан только к `g_spectatorState.active`, не к HERO_SELECTION/accountId, которыми управляется свой пикер ниже (`runPhaseStateMachine` этот поток вообще не трогает) |
+| `orchestratorMain()` | Фоновый цикл (300мс), разбит на именованных шагов с общей `OrchestratorLoopState` (вместо function-local `static`): `refreshAccountId`, `readGameStateWithTimeoutWatchdog` (GSI watchdog), `resetSpectatorStateIfStale`, `manageSpectatorPicker`, `syncSlotSideToDb`, `handleAccountIdChanged`, `handleNewMatch` (safeStoll), `runPhaseStateMachine` (IDLE/POSTGAME/HERO_SELECTION/tail), `syncPortraitOnlyToGui`, `runOneShotRefresh`. Открытие БД - в try/catch (fatal при провале, пишет в `g_appNotice`); каждая итерация цикла - во внутреннем try/catch (логирует и продолжает, не убивая поток) |
 
 Оркестратор:
 - Portrait capture стартует при HERO_SELECTION **без accountId**
 - Picker стартует при HERO_SELECTION/DRAFT **с accountId**
-- Portrait→GUI sync: когда portrait работает но picker нет - показывает драфт из g_portraitState
-- GSI таймаут: GSI_WATCHDOG_SEC (60с) без обновлений → IDLE
-- One-shot: при смене позиции в GUI вне фазы 3 → запись в DB + запуск пикера до первого inferenceGen
+- Portrait->GUI sync: когда portrait работает но picker нет - показывает драфт из g_portraitState
+- GSI таймаут: GSI_WATCHDOG_SEC (60с) без обновлений -> IDLE
+- One-shot: при смене позиции в GUI вне фазы 3 -> запись в DB + запуск пикера до первого inferenceGen
 - При idChanged: обновляется только accountId в livepicks, portrait capture не останавливается
-- Наблюдаемая игра (спектейт чужого матча) не проходит через эту машину состояний вообще: `g_gameInfo`/`isHeroSel` для неё не обновляются (см. `isOurGame` в livestatsfetcher.cpp), поэтому portrait capture и ML-пикер во время наблюдения не запускаются - герои берутся напрямую из GSI в `g_spectatorState`, отдельным watchdog'ом (`resetSpectatorStateIfStale`) выше
+- Наблюдаемая игра (спектейт чужого матча) не проходит через эту машину состояний вообще: `g_gameInfo`/`isHeroSel` для неё не обновляются (см. `isOurGame` в livestatsfetcher.cpp), поэтому portrait capture и свой ML-пикер во время наблюдения не запускаются - герои берутся напрямую из GSI в `g_spectatorState`, отдельным watchdog'ом (`resetSpectatorStateIfStale`) и отдельным Component A-пикером (`manageSpectatorPicker`/`runSpectatorPickerGui`) выше
 
 ---
 
@@ -433,7 +436,7 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 | `DrawHeader(fullW)` | Шапка: логотип [D], заголовок, карточка игрока / ввод Friend ID |
 | `DrawStatusBar(fullW)` | Полоса статуса: Player data (no ID/pending/fetching/ready/error) + Refresh + Game phase + match ID. При `phase1Error` теперь показывает реальный `phase1Msg`, а не захардкоженную заглушку "error" |
 | `DrawDraftPanel(panelW)` | Левая панель: слоты Radiant/Dire + полоса winProb. Кнопка `[screenshot]` справа от заголовка секции ("DRAFT PHASE"/"STRATEGY PHASE") - оформлена как position-бейдж (тот же rect/border/text через ImDrawList + InvisibleButton, что и `SectionLabelWithPosBadge`), а не нативная ImGui-кнопка. По клику на отдельном потоке вызывает `captureDebugScreenshotWithReport(DB_PATH, "screenshots")` (portrait_runner.h/.cpp): сохраняет 10 регионов героев + 10 регионов позиций текущего кадра HUD + `fullscreen_regions.png` (полный кадр HUD с наложенными рамками всех 20 регионов) + `report.txt` (распознанное имя/score героя на слот, сырой OCR-текст/позиция/score на позиционный слот) в папку `screenshots\` рядом с exe (создаётся инсталлятором). Тултип "Press in case of draft recognition error" - диагностика, когда портреты/позиции распознаются неверно. Если своего активного драфта нет (`!gameStarted`), но идёт наблюдение (`g_spectatorState.active`) - делегирует в `DrawSpectatorDraftPanel` и возвращается, не показывая обычный "Waiting for a game..." оверлей |
-| `DrawSpectatorDraftPanel(panelW, spec)` | Наблюдаемая игра (спектейт чужого матча): 10 слотов из `g_spectatorState` (герои - из GSI, не portrait capture), заголовок "SPECTATING", вместо win probability bar - статичное сообщение "нет личных предсказаний". Позиционный popup на `DrawHeroSlot` кликабелен для обеих команд (нет понятия "наша сторона" в чужом матче), пишет через `SetSpectatorManualPos` в `g_spectatorState` - не пересекается с `g_portraitState`/livepicks. Picks/Meta-панели в это время не знают о наблюдении (`g_pickerState.gameStarted` не трогается) и остаются в обычном idle-состоянии - этим и достигается "без личной статистики" |
+| `DrawSpectatorDraftPanel(panelW, spec, hasPrediction, radiantWinProb)` | Наблюдаемая игра (спектейт чужого матча): 10 слотов из `g_spectatorState` (герои - из GSI, не portrait capture), заголовок "SPECTATING". Win probability bar - `g_spectatorState.radiantWinProb` (сырая P(radiant_win) от Component A, `runSpectatorPickerGui`/dota_picker.cpp, без Component B) вместо `winProb` из `g_pickerState`; "Computing prediction..." пока `hasPrediction=false` (поток ещё не успел посчитать первый инференс). Позиционный popup на `DrawHeroSlot` кликабелен для обеих команд (нет понятия "наша сторона" в чужом матче), пишет через `SetSpectatorManualPos` в `g_spectatorState` - не пересекается с `g_portraitState`/livepicks. Picks/Meta-панели в это время не знают о наблюдении (`g_pickerState.gameStarted` не трогается) и остаются в обычном idle-состоянии - этим и достигается "без личной статистики" в них (win probability в Draft-панели - исключение, Component A её не требует) |
 | `DrawTeamColumnHeader(colW, radiantSide, count)` | Заголовок колонки команды (цветная метка + RADIANT/DIRE + n/5) - общий для `DrawDraftPanel` и `DrawSpectatorDraftPanel`, раньше дублировался инлайн в обеих командных колонках `DrawDraftPanel` |
 | `DrawPicksPanel(panelW)` | Средняя панель: рекомендации top-10 / выбранный герой (ML) |
 | `DrawMetaHeroesPanel(panelW)` | Правая панель: топ-10 героев по популярности (STRATZ, сумма матчей, без ML), винрейт - вторичная цветная метрика. Оформление как у DrawPicksPanel. Бейдж позиции кликабелен всегда, не только во время игры: вне игры - это локальное превью меты (`SetMetaPreviewPosition`/`s_metaPreviewPos`, без livepicks/оркестратора), с началом реального драфта/матча панель переключается на настоящую позицию (`g_pickerState.ourPosition`, клик вызывает `SetOurPosition`, как в Draft/Picks) - превью полностью вытесняется. Когда наш герой выбран - вместо топ-10 показывает единственную выделенную строку "YOUR HERO" из нефильтрованного `g_metaHeroLookup` (виден даже без прохождения 1%-порога) |
@@ -446,9 +449,9 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 | `SetSpectatorManualPos(absSlot, pos)` | Колбэк позиции для слотов НАБЛЮДАЕМОЙ игры - пишет `g_spectatorState.slots[absSlot].manualPos` + `requestRedraw()`. Чисто локальная метка, не задевает `g_portraitState`/livepicks - оркестратору и пикеру в чужом матче сверяться не с чем |
 | `DrawHeroSlot(rowW, h, ..., setPos)` | Слот героя с кликабельным popup позиции (1-5, свап). `setPos(slot, pos)` - `std::function<void(int,int)>`, вызывается попапом вместо прежней жёстко зашитой записи в `g_portraitState` - хранилище позиций (своя игра vs наблюдаемая) выбирает вызывающая панель: `DrawDraftPanel` передаёт `SetOwnGameManualPos`, `DrawSpectatorDraftPanel` - `SetSpectatorManualPos` |
 | `DrawPortrait(dl, p, sz, ...)` | Квадрат портрета: PNG-текстура или инициалы |
-| `loadHeroPortraits()` / `unloadHeroPortraits()` | Загрузка PNG из assets/ → кэш `g_heroPortraits` / освобождение при завершении (вызывается из `ShutdownApp`) |
+| `loadHeroPortraits()` / `unloadHeroPortraits()` | Загрузка PNG из assets/ -> кэш `g_heroPortraits` / освобождение при завершении (вызывается из `ShutdownApp`) |
 | `createTextureFromImageData(data, size)` | D3D11-текстура из байт JPEG/PNG - используется и здесь (портреты), и в mainGUI.cpp (RenderFrame - текстура аватара) |
-| `heroDisplayName(heroId, fallback)` | heroId → localized_name для отображения, ленивая загрузка через `SqliteDB(readOnly=true)` |
+| `heroDisplayName(heroId, fallback)` | heroId -> localized_name для отображения, ленивая загрузка через `SqliteDB(readOnly=true)` |
 | `loadMetaHeroStatsIfNeeded()` | Ленивая загрузка `stats` из `playerandlivestats.db` в `g_metaHeroStats` (по позиции 1-5 + агрегат по всем под ключом 0), с порогом 1% от суммарных игр, сортировка по сумме матчей (games) убыв. Повторяет попытку каждый кадр, пока таблица пуста - тот же паттерн, что `heroDisplayName()`. Читает БД через `SqliteDB(readOnly=true)` |
 
 Все кликабельные элементы (позиционные бейджи/теги, [D]-логотип, Refresh, Set/x в карточке игрока, иконки Powered by, кнопка `[screenshot]`) имеют `ImGui::SetTooltip(...)` при наведении (`ImGui::IsItemHovered()`) - поясняющий текст того, что делает клик. Не покрыты: нативные Win32-кнопки вне ImGui (например "Try again" в `update_window.cpp`, показывается до инициализации ImGui).
@@ -456,9 +459,9 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 ---
 
 ### build_unified.bat
-Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp`, а также более поздней разбивкой `portrait_runner.cpp` (→ `overlay_button.cpp`) и `playerdatafetcher.cpp` (→ `hero_meta_stats.cpp`) - компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки - по-прежнему один `cl.exe`-инвок, без CMake.
+Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp`, а также более поздней разбивкой `portrait_runner.cpp` (-> `overlay_button.cpp`) и `playerdatafetcher.cpp` (-> `hero_meta_stats.cpp`) - компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки - по-прежнему один `cl.exe`-инвок, без CMake.
 
-Версия ресурса PE (`version.rc` → `FileVersion`/`ProductVersion`) и версия SxS-манифеста (`app.manifest` → `assemblyIdentity/@version`) больше не захардкожены на `1.0.0.0`: перед компиляцией скрипт через временный `.ps1` (`%TEMP%\dd_read_ver.ps1`) читает `kAppVersion` из `version.h` (сейчас `0.5.0`), парсит MAJOR.MINOR.PATCH и передаёт их в `rc.exe /dVER_MAJOR=.../dVER_MINOR=.../dVER_PATCH=...` (VER_BUILD всегда 0). Тем же значением через второй временный `.ps1` (`dd_patch_manifest.ps1`) патчится **копия** `app.manifest` в `%OUT_DIR%\app.manifest` (исходный `app.manifest` в репозитории не трогается, чтобы обычная локальная сборка не пачкала git diff) - именно эта копия встраивается `mt.exe`. Regex патча манифеста намеренно узкий (привязан к `name="DotaDrafter.DraftAssistant"` перед `version="..."`), чтобы не задеть `<?xml version="1.0"...?>` и `manifestVersion="1.0"` на `<assembly>` - широкий `version="[^"]*"` цеплял оба этих атрибута тоже. `release_app.bat` (в `dota_drafter\scripts\`, вне `finalapp/`) не менялся - он только обновляет `kAppVersion` в `version.h` и затем вызывает `build_unified.bat`, который сам подхватывает новую версию.
+Версия ресурса PE (`version.rc` -> `FileVersion`/`ProductVersion`) и версия SxS-манифеста (`app.manifest` -> `assemblyIdentity/@version`) больше не захардкожены на `1.0.0.0`: перед компиляцией скрипт через временный `.ps1` (`%TEMP%\dd_read_ver.ps1`) читает `kAppVersion` из `version.h` (сейчас `0.5.0`), парсит MAJOR.MINOR.PATCH и передаёт их в `rc.exe /dVER_MAJOR=.../dVER_MINOR=.../dVER_PATCH=...` (VER_BUILD всегда 0). Тем же значением через второй временный `.ps1` (`dd_patch_manifest.ps1`) патчится **копия** `app.manifest` в `%OUT_DIR%\app.manifest` (исходный `app.manifest` в репозитории не трогается, чтобы обычная локальная сборка не пачкала git diff) - именно эта копия встраивается `mt.exe`. Regex патча манифеста намеренно узкий (привязан к `name="DotaDrafter.DraftAssistant"` перед `version="..."`), чтобы не задеть `<?xml version="1.0"...?>` и `manifestVersion="1.0"` на `<assembly>` - широкий `version="[^"]*"` цеплял оба этих атрибута тоже. `release_app.bat` (в `dota_drafter\scripts\`, вне `finalapp/`) не менялся - он только обновляет `kAppVersion` в `version.h` и затем вызывает `build_unified.bat`, который сам подхватывает новую версию.
 
 Ключевые пути:
 - vcpkg: `C:\vcpkg\installed\x64-windows-static`
@@ -523,16 +526,16 @@ Inno Setup скрипт полной установки/апдейта прил�
 ### Поток запуска (WinMain)
 
 ```
-CWD → curl_global_init → GDI+
-  → checkPendingSwap() + cleanupStaging()
-  → CreateUpdateWindow()
-  → retry loop: fetchManifest() или "Failed to check" + "Try again"
-  → checkForUpdates():   // SHA-256 каждого файла из manifest.dataFiles, без сохранённого снимка версии
-      APP_UPDATE  → download → sha256 → bat(3s delay + installer /SILENT) → exit
-      DATA_UPDATE → downloadAndStageData() [только несовпавшие файлы] → swapDataFiles() [только скачанные] (+ cleanupObsoleteAssets) → continue
-      SCHEMA_TOO_NEW → banner flag
-  → DestroyUpdateWindow()
-  → config → DB → Phase 1a → orchestrator → Phase 1b → D3D11 → ImGui → loop
+CWD -> curl_global_init -> GDI+
+  -> checkPendingSwap() + cleanupStaging()
+  -> CreateUpdateWindow()
+  -> retry loop: fetchManifest() или "Failed to check" + "Try again"
+  -> checkForUpdates():   // SHA-256 каждого файла из manifest.dataFiles, без сохранённого снимка версии
+      APP_UPDATE  -> download -> sha256 -> bat(3s delay + installer /SILENT) -> exit
+      DATA_UPDATE -> downloadAndStageData() [только несовпавшие файлы] -> swapDataFiles() [только скачанные] (+ cleanupObsoleteAssets) -> continue
+      SCHEMA_TOO_NEW -> banner flag
+  -> DestroyUpdateWindow()
+  -> config -> DB -> Phase 1a -> orchestrator -> Phase 1b -> D3D11 -> ImGui -> loop
 ```
 
 Нет `version.json`/сохранённого локального снимка версии - на каждом старте `checkForUpdates` заново хэширует все файлы из `manifest.dataFiles` и сравнивает с манифестом, вместо сравнения версий.
@@ -541,7 +544,7 @@ CWD → curl_global_init → GDI+
 
 | Файл | Расположение | Описание |
 |------|-------------|----------|
-| `manifest.json` | GitHub repo root (raw.githubusercontent, main) | Источник правды: `app` (версия/URL/sha256 инсталлятора), `data.files` - map ключ→{url, sha256} |
+| `manifest.json` | GitHub repo root (raw.githubusercontent, main) | Источник правды: `app` (версия/URL/sha256 инсталлятора), `data.files` - map ключ->{url, sha256} |
 | `version.h` | Исходный код | Компилируемые константы: kAppVersion, kSupportedSchema |
 | `version.rc` | Исходный код | RC-ресурс с параметризованной версией (VER_MAJOR/MINOR/PATCH) |
 | `meta` таблица | _data.db | schema_version + data_version внутри пакета данных |
@@ -554,9 +557,9 @@ CWD → curl_global_init → GDI+
 
 | Скрипт | Описание |
 |--------|----------|
-| `scripts/release_app.bat VERSION` | Обновить version.h → build → installer → gh release → manifest.json (app) |
-| `scripts/pack_data.bat DVER SCHEMA` | meta в _data.db → gh release → manifest.json (cbm/db) |
-| `scripts/update_assets.ps1` (+ `.bat` обёртка) | Пересчитать sha256 hero_hashes.dat + assets/*.png → manifest.json (raw main URL, без релиза) → commit + push |
+| `scripts/release_app.bat VERSION` | Обновить version.h -> build -> installer -> gh release -> manifest.json (app) |
+| `scripts/pack_data.bat DVER SCHEMA` | meta в _data.db -> gh release -> manifest.json (cbm/db) |
+| `scripts/update_assets.ps1` (+ `.bat` обёртка) | Пересчитать sha256 hero_hashes.dat + assets/*.png -> manifest.json (raw main URL, без релиза) -> commit + push |
 
 VS Code Tasks: "Release App", "Release Data", "Update Assets".
 
@@ -583,7 +586,7 @@ VS Code Tasks: "Release App", "Release Data", "Update Assets".
 Данные модели: `draft_helper_abstract_data.db` (`schema_version=2`).
 
 Вход: **10 категориальных** (имена героев) + **117 числовых** признаков (Component A,
-"чисто про драфт", без mastery). Выход Component A: logit → sigmoid → P(radiant_win).
+"чисто про драфт", без mastery). Выход Component A: logit -> sigmoid -> P(radiant_win).
 Поверх - Component B (персонализация, опционально): `sigmoid(logit(p_ours) +
 beta*personal_adj)`, `beta` по умолчанию 0 (см. `dota_picker.cpp` в списке файлов
 выше).

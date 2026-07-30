@@ -215,7 +215,7 @@ inline long long safeStoll(const std::string& s, long long fallback = -1) {
     try { return s.empty() ? fallback : std::stoll(s); } catch (...) { return fallback; }
 }
 
-// STRATZ "POSITION_n" (n=1..5) → int; 0, если формат не распознан.
+// STRATZ "POSITION_n" (n=1..5) -> int; 0, если формат не распознан.
 // Используется и в пайплайне живой меты (hero_meta_stats.cpp), и в пайплайне
 // истории матчей игрока (playerdatafetcher.cpp) - общий разбор одного и того
 // же перечисления STRATZ.

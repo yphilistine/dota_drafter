@@ -31,7 +31,7 @@
 static bool  s_editMode     = false;
 static char  s_inputBuf[32] = {};
 
-// --- heroId → localized_name (для отображения) --------------------------------
+// --- heroId -> localized_name (для отображения) --------------------------------
 // Заполняется лениво из heroes: на момент первого вызова таблица могла ещё не
 // наполниться (runDataFetcherInit работает в фоне), поэтому пробуем снова,
 // пока она пустая.
@@ -195,7 +195,7 @@ ID3D11ShaderResourceView* createTextureFromImageData(const uint8_t* data, size_t
 // на отображение.
 static std::map<int, ID3D11ShaderResourceView*> g_heroPortraits;
 
-// Суффикс heroes.name → heroId. Зашито в бинарник (не читается из БД), т.к.
+// Суффикс heroes.name -> heroId. Зашито в бинарник (не читается из БД), т.к.
 // heroId в Dota 2 неизменны, а таблица heroes на первом запуске приложения
 // ещё не заполнена (runDataFetcherInit работает в фоновом потоке и не успевает
 // до вызова loadHeroPortraits() при старте GUI). При добавлении нового героя
@@ -267,7 +267,7 @@ void loadHeroPortraits() {
         auto* srv = createTextureFromImageData(buf.data(), buf.size());
         if (!srv) continue;
 
-        // Имя файла (без .png) = суффикс heroes.name → находим heroId
+        // Имя файла (без .png) = суффикс heroes.name -> находим heroId
         int len = WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1,
                                       nullptr, 0, nullptr, nullptr);
         std::string name(len - 1, '\0');
@@ -461,7 +461,7 @@ static void SectionLabel(const char* label) {
 // --- Метка секции + бейдж текущей позиции (RECOMMENDED PICKS / META HEROES) ---
 // Бейдж по умолчанию делит строку с заголовком (справа). Если панель узкая и
 // полный текст бейджа перекрыл бы заголовок - сначала пробуем сократить текст
-// бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает - переносим
+// бейджа ("[=] Position 5" -> "Pos 5"), а если и он не влезает - переносим
 // бейдж на отдельную строку под заголовком. Так бейдж никогда не наезжает на
 // текст секции, при любой ширине панели.
 // onPositionPick != nullptr делает бейдж кликабельным: клик открывает popup с
@@ -875,13 +875,16 @@ static void DrawTeamColumnHeader(float colW, bool radiantSide, int count) {
 
 // --- Наблюдаемая игра (спектейт чужого матча) ---------------------------------
 // Герои - из g_spectatorState (GSI player.team2/team3.playerN.hero_id, см.
-// livestatsfetcher.cpp), без portrait capture и без ML: это не наш драфт, нет
-// "нашей" стороны/позиции. Позиции - только ручная метка, кликабельна для
-// обеих команд (в отличие от DrawDraftPanel, где popup виден только на своей
-// стороне) и ни на что за пределами этой панели не влияет - Picks/Meta-панели
-// в это время остаются в обычном idle-состоянии (gameStarted у пикера не
-// трогается, см. orchestrator.cpp).
-static void DrawSpectatorDraftPanel(float panelW, const SpectatorHeroSlot spec[10]) {
+// livestatsfetcher.cpp), без portrait capture: это не наш драфт, нет "нашей"
+// стороны/позиции. Позиции - только ручная метка, кликабельна для обеих команд
+// (в отличие от DrawDraftPanel, где popup виден только на своей стороне) и ни
+// на что за пределами этой панели не влияет - Picks/Meta-панели в это время
+// остаются в обычном idle-состоянии (gameStarted у пикера не трогается, см.
+// orchestrator.cpp). Win probability - Component A (runSpectatorPickerGui,
+// dota_picker.cpp): та же CatBoost-модель, что и для своей игры, но БЕЗ
+// Component B (personalAdjustment) - для чужого матча нет accountId.
+static void DrawSpectatorDraftPanel(float panelW, const SpectatorHeroSlot spec[10],
+                                    bool hasPrediction, float radiantWinProb) {
     const float PAD  = 8.f;
     const float colW = (panelW - PAD) * 0.5f;
     const float lh   = ImGui::GetTextLineHeight();
@@ -931,7 +934,8 @@ static void DrawSpectatorDraftPanel(float panelW, const SpectatorHeroSlot spec[1
         DrawHeroSlot(colW, dir[i], false, true, i+1, 5+i, dirUsedPos, SetSpectatorManualPos);
     ImGui::EndGroup();
 
-    // Вместо win probability bar - нет ML-предсказания для чужого драфта.
+    // Win probability - Component A (без personal), сырая P(radiant_win): нет
+    // "нашей" стороны, чтобы ориентировать её, как в DrawDraftPanel.
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -940,9 +944,21 @@ static void DrawSpectatorDraftPanel(float panelW, const SpectatorHeroSlot spec[1
     float  bW = panelW, bH = 52.f;
     dl->AddRectFilled(bp,{bp.x+bW,bp.y+bH},Ca(kCard2,0.4f));
     dl->AddRect      (bp,{bp.x+bW,bp.y+bH},C(kBorder));
-    const char* msg = "Spectating - no personal predictions";
-    ImVec2 mts = ImGui::CalcTextSize(msg);
-    dl->AddText({bp.x+(bW-mts.x)*0.5f, bp.y+(bH-lh)*0.5f}, C(kMuted), msg);
+    float cy = bp.y+(bH-lh)*0.5f;
+    if (hasPrediction) {
+        ImVec4 wc = WinColor(radiantWinProb);
+        dl->AddText({bp.x+10.f,cy}, C(kMuted), ">");
+        dl->AddText({bp.x+24.f,cy}, C(kMuted), "Radiant win chance (model only, no personal data)");
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%.1f%%", radiantWinProb*100.f);
+        ImVec2 vts = ImGui::CalcTextSize(buf);
+        dl->AddText({bp.x+bW-vts.x-10.f, cy}, C(wc), buf);
+        DrawBar(dl, {bp.x+1.f, bp.y+bH-6.f}, bW-2.f, 4.f, radiantWinProb, C(wc));
+    } else {
+        const char* msg = "Computing prediction...";
+        ImVec2 mts = ImGui::CalcTextSize(msg);
+        dl->AddText({bp.x+(bW-mts.x)*0.5f, cy}, C(kMuted), msg);
+    }
     ImGui::Dummy({bW, bH});
 
     DrawPoweredBy(panelW);
@@ -982,15 +998,18 @@ void DrawDraftPanel(float panelW) {
     // одного и того же GSI-клиента, но на всякий случай не перекрываем реальный
     // драфт наблюдением.
     if (!gameStarted) {
-        bool specActive;
+        bool specActive, specHasPrediction;
+        float specWinProb;
         SpectatorHeroSlot specSlots[10];
         {
             std::lock_guard<std::mutex> lk(g_spectatorState.mtx);
-            specActive = g_spectatorState.active;
+            specActive        = g_spectatorState.active;
+            specHasPrediction = g_spectatorState.hasPrediction;
+            specWinProb       = g_spectatorState.radiantWinProb;
             for (int i=0;i<10;i++) specSlots[i] = g_spectatorState.slots[i];
         }
         if (specActive) {
-            DrawSpectatorDraftPanel(panelW, specSlots);
+            DrawSpectatorDraftPanel(panelW, specSlots, specHasPrediction, specWinProb);
             return;
         }
     }
@@ -1413,10 +1432,10 @@ void DrawStatusBar(float fullW) {
         float r = btnSz * 0.34f;
         ImU32 col = refreshHovered ? IM_COL32(220,220,220,255) : C(kMuted);
 
-        // Дуга 1: верх (10 → 2 часа по часовой)
+        // Дуга 1: верх (10 -> 2 часа по часовой)
         dl->PathArcTo({cx,cy}, r, 200.f*PI/180.f, 340.f*PI/180.f, 12);
         dl->PathStroke(col, 0, 2.f);
-        // Дуга 2: низ (4 → 8 часов по часовой)
+        // Дуга 2: низ (4 -> 8 часов по часовой)
         dl->PathArcTo({cx,cy}, r, 20.f*PI/180.f, 160.f*PI/180.f, 12);
         dl->PathStroke(col, 0, 2.f);
 

@@ -28,7 +28,7 @@ inline const ImVec4 kAmber  = {0.88f, 0.73f, 0.35f, 1.f};
 inline ImU32 C(ImVec4 v)           { return ImGui::ColorConvertFloat4ToU32(v); }
 inline ImU32 Ca(ImVec4 v, float a) { v.w = a; return ImGui::ColorConvertFloat4ToU32(v); }
 
-// --- Кэш портретов героев (assets/*.png → D3D11 текстуры) ---------------------
+// --- Кэш портретов героев (assets/*.png -> D3D11 текстуры) ---------------------
 void loadHeroPortraits();
 void unloadHeroPortraits();
 
@@ -39,7 +39,7 @@ void unloadPoweredByIcons();
 // текстура аватара из буферизованных байт).
 ID3D11ShaderResourceView* createTextureFromImageData(const uint8_t* data, size_t size);
 
-// heroId → localized_name для отображения (не для сопоставления портретов -
+// heroId -> localized_name для отображения (не для сопоставления портретов -
 // см. portrait_runner.cpp).
 std::string heroDisplayName(int heroId, const char* fallback);
 

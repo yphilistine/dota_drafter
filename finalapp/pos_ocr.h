@@ -60,7 +60,7 @@ static std::vector<uint8_t> upscaleBgra(const uint8_t* src, int sw, int sh, int 
     return dst;
 }
 
-// --- Keyword → position mapping ---------------------------------------------
+// --- Keyword -> position mapping ---------------------------------------------
 
 // CharLowerW (а не towlower) - свёртка регистра не зависит от текущей C-локали
 // (нигде в проекте нет setlocale) и корректно работает для не-ASCII: кириллица
@@ -116,9 +116,9 @@ static int textToPosition(const std::wstring& raw) {
     if (containsW(t, L"soft"))  return 4;
     if (containsW(t, L"hard"))  return 5;
 
-    // EN fallback: "support" without soft/hard qualifier → pos 4
+    // EN fallback: "support" without soft/hard qualifier -> pos 4
     if (containsW(t, L"supp"))  return 4;
-    // EN fallback: "lane" without safe/mid/off → pos 1
+    // EN fallback: "lane" without safe/mid/off -> pos 1
     if (containsW(t, L"lane"))  return 1;
 
     // RU keywords
