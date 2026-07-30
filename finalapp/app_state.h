@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <cstdio>
 
-// ─── Данные игрока: пишутся фоновыми потоками (orchestrator.cpp), читаются GUI ─
+// --- Данные игрока: пишутся фоновыми потоками (orchestrator.cpp), читаются GUI -
 struct PlayerState {
     std::mutex  mtx;
     long long   accountId     = 0;
@@ -40,12 +40,12 @@ struct PlayerState {
 };
 extern PlayerState g_player;
 
-// ─── Общее состояние потоков (GSI / portrait / picker) ────────────────────────
+// --- Общее состояние потоков (GSI / portrait / picker) ------------------------
 extern GameInfo            g_gameInfo;
 extern SharedPortraitState g_portraitState;
 extern GuiPickerState      g_pickerState;
 
-// ─── Конфигурация (из переменных окружения / умолчаний, затем read-only) ──────
+// --- Конфигурация (из переменных окружения / умолчаний, затем read-only) ------
 extern std::string g_stratzToken;
 
 inline constexpr const char* DB_PATH    = "playerandlivestats.db";
@@ -71,7 +71,7 @@ extern ID3D11Device* g_Device;
 // gui_draw.cpp (DrawHeader: клик по логотипу [D] возвращает фокус на окно).
 extern HWND g_Hwnd;
 
-// ─── Событийный рендер ──────────────────────────────────────────────────────
+// --- Событийный рендер ------------------------------------------------------
 // RunMessageLoop (mainGUI.cpp) спит на этом Win32-событии (плюс оконные
 // сообщения, плюс safety-net таймаут). Producer-потоки (orchestrator/portrait/
 // picker/GSI) вызывают requestRedraw() только когда реально поменяли что-то
@@ -80,7 +80,7 @@ extern HWND g_Hwnd;
 void requestRedraw();
 HANDLE redrawEventHandle();
 
-// ─── Единый канал уведомлений для GUI ──────────────────────────────────────────
+// --- Единый канал уведомлений для GUI ------------------------------------------
 // Общий канал для любых баннеров уровня приложения (fatal DB open, network,
 // и т.п.). GuiPickerState::schemaError — отдельный, самодостаточный механизм
 // для одного частного случая (несовместимость схемы данных пикера).

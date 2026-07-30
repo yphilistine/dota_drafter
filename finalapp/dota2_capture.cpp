@@ -100,7 +100,7 @@ bool Dota2Capture::findGameWindow() {
         return false;
     }
 
-    // ── Auto-select layout by aspect ratio ───────────────────────────────────
+    // -- Auto-select layout by aspect ratio -----------------------------------
     layout_ = selectStrategyLayout(res_.width, res_.height);
     {
         float ratio = static_cast<float>(res_.width) / static_cast<float>(res_.height);

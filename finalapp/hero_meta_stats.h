@@ -7,7 +7,7 @@
 
 #include "common.h"
 
-// ─── STRATZ: живая статистика героев (heroStats, DIVINE_IMMORTAL, по позициям) ──
+// --- STRATZ: живая статистика героев (heroStats, DIVINE_IMMORTAL, по позициям) --
 struct HeroWeekStat {
     long long heroId;
     int       pos;         // позиция 1-5
@@ -23,7 +23,7 @@ std::vector<HeroWeekStat> parseHeroStatsResponse(const std::string& response);
 void createHeroStatsTableIfNotExists(sqlite3* db);
 void storeHeroStatsTable(sqlite3* db, const std::vector<HeroWeekStat>& rows);
 
-// ─── OpenDota-фолбек (если STRATZ недоступен): без разбивки по позициям ──────
+// --- OpenDota-фолбек (если STRATZ недоступен): без разбивки по позициям ------
 std::string fetchHeroStatsOpenDotaFallback();
 std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& response);
 

@@ -28,6 +28,6 @@ void startPhase1(long long accountId);
 // (static внутри orchestrator.cpp).
 void requestPositionRefresh();
 
-// ─── SQLite: таблица player_info (используется также из WinMain при старте) ───
+// --- SQLite: таблица player_info (используется также из WinMain при старте) ---
 void createPlayerInfoTable(sqlite3* db);
 long long loadSavedPlayer(sqlite3* db, char nameOut[128]);

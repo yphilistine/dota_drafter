@@ -38,7 +38,7 @@ static OverlayLayout selectOverlayLayout(int w, int h) {
 
 static int g_curBtnW = 0, g_curBtnH = 0;
 
-// ─── Overlay-кнопка [D] (WS_EX_LAYERED, per-pixel alpha) ─────────────────────
+// --- Overlay-кнопка [D] (WS_EX_LAYERED, per-pixel alpha) ---------------------
 static void paintLayeredButton(HWND hwnd, int W, int H);
 
 static const COLORREF TRANSPARENT_KEY = RGB(1, 1, 1);
@@ -311,7 +311,7 @@ static DWORD WINAPI overlayThread(LPVOID param) {
     return 0;
 }
 
-// ─── startDotaOverlay — запуск кнопки [D] (один раз при старте) ───────────────
+// --- startDotaOverlay — запуск кнопки [D] (один раз при старте) ---------------
 
 static Dota2Capture  s_overlayCap("");
 static OverlayCtx    s_overlayCtx{ &s_overlayCap };

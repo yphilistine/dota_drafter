@@ -20,7 +20,7 @@ static bool isExternalManifestKey(const std::string& fname) {
     return fname == GSI_CONFIG_KEY;
 }
 
-// ─── Утилиты ─────────────────────────────────────────────────────────────────
+// --- Утилиты -----------------------------------------------------------------
 
 // Создаёт все директории-предки файла (напр. "staging\assets\foo.png" ->
 // "staging" затем "staging\assets"). Нужно, т.к. manifest.dataFiles может
@@ -58,7 +58,7 @@ int compareVersions(const std::string& a, const std::string& b) {
     return 0;
 }
 
-// ─── SHA-256 через BCrypt ────────────────────────────────────────────────────
+// --- SHA-256 через BCrypt ----------------------------------------------------
 
 std::string fileSha256(const std::string& path) {
     BCRYPT_ALG_HANDLE  hAlg  = nullptr;
@@ -108,7 +108,7 @@ std::string fileSha256(const std::string& path) {
     return hex.str();
 }
 
-// ─── fetchManifest ───────────────────────────────────────────────────────────
+// --- fetchManifest -----------------------------------------------------------
 
 static size_t writeStringCb(char* ptr, size_t size, size_t nmemb, void* ud) {
     auto* s = static_cast<std::string*>(ud);
@@ -166,7 +166,7 @@ bool fetchManifest(ManifestInfo& out) {
     return true;
 }
 
-// ─── checkForUpdates ─────────────────────────────────────────────────────────
+// --- checkForUpdates ---------------------------------------------------------
 
 UpdateAction checkForUpdates(const ManifestInfo& manifest) {
     // App: сравнение скомпилированной версии с манифестом
@@ -198,7 +198,7 @@ UpdateAction checkForUpdates(const ManifestInfo& manifest) {
     return UpdateAction::NONE;
 }
 
-// ─── downloadToStaging ───────────────────────────────────────────────────────
+// --- downloadToStaging -------------------------------------------------------
 
 struct DownloadCtx {
     FILE*      fp = nullptr;
@@ -282,7 +282,7 @@ bool downloadToStaging(const std::string& url,
     return true;
 }
 
-// ─── Data channel ────────────────────────────────────────────────────────────
+// --- Data channel ------------------------------------------------------------
 
 // Локальный файл уже совпадает с манифестом — перекачивать не нужно.
 static bool localFileUpToDate(const std::string& fname, const std::string& expectedSha256) {
@@ -466,7 +466,7 @@ void cleanupStaging() {
     deletePartGlob(std::string(STAGING_DIR) + "\\assets\\*.part");
 }
 
-// ─── GSI config sync (файл вне {app}, живёт в папке Dota 2) ──────────────────
+// --- GSI config sync (файл вне {app}, живёт в папке Dota 2) ------------------
 
 static bool regReadString(HKEY root, const char* subKey, const char* value, std::string& out) {
     HKEY hKey;

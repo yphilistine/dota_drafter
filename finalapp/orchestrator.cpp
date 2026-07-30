@@ -21,8 +21,8 @@
 #include <cstring>
 #include <cstdio>
 
-// ─── Управление потоками: наружу — только функции startOrchestrator/
-// stopOrchestrator/startPhase1/requestPositionRefresh ────────────────────────
+// --- Управление потоками: наружу — только функции startOrchestrator/
+// stopOrchestrator/startPhase1/requestPositionRefresh ------------------------
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
 static std::atomic<bool> g_orchestratorRunning{false};
@@ -35,7 +35,7 @@ void requestPositionRefresh() {
     g_posRefreshNeeded.store(true);
 }
 
-// ─── SQLite: таблица player_info ──────────────────────────────────────────────
+// --- SQLite: таблица player_info ----------------------------------------------
 void createPlayerInfoTable(sqlite3* db) {
     sqlite3_exec(db,
         "CREATE TABLE IF NOT EXISTS player_info ("
@@ -73,7 +73,7 @@ static void savePlayerInfo(sqlite3* db, long long accountId, const char* name) {
     sqlite3_finalize(st);
 }
 
-// ─── Таблица livepicks ────────────────────────────────────────────────────────
+// --- Таблица livepicks --------------------------------------------------------
 static void createLivePicksIfNotExists(sqlite3* db) {
     sqlite3_exec(db, R"(
         CREATE TABLE IF NOT EXISTS livepicks (
@@ -116,7 +116,7 @@ static void initLivePicksRow(sqlite3* db, long long matchId,
     sqlite3_finalize(st);
 }
 
-// ─── OpenDota: получение имени и аватара игрока (фоновый поток) ───────────────
+// --- OpenDota: получение имени и аватара игрока (фоновый поток) ---------------
 static void fetchOpenDotaProfile(long long accountId) {
     std::string url = "https://api.opendota.com/api/players/"
                     + std::to_string(accountId);
@@ -155,7 +155,7 @@ static void fetchOpenDotaProfile(long long accountId) {
     }
 }
 
-// ─── Запуск фазы 1 (DataFetcher + имя игрока) ────────────────────────────────
+// --- Запуск фазы 1 (DataFetcher + имя игрока) --------------------------------
 void startPhase1(long long accountId) {
     {
         std::lock_guard<std::mutex> lk(g_player.mtx);
@@ -190,7 +190,7 @@ void startPhase1(long long accountId) {
     }).detach();
 }
 
-// ─── Состояние оркестратора, живущее между итерациями цикла ─────────────────
+// --- Состояние оркестратора, живущее между итерациями цикла -----------------
 struct OrchestratorLoopState {
     long long   accountId       = 0;
     std::string lastMatchId;

@@ -49,13 +49,13 @@
 #include <sqlite3.h>
 #include <c_api.h>
 
-// ─── Константы ───────────────────────────────────────────────────────────────
+// --- Константы ---------------------------------------------------------------
 
 static const char* UNKNOWN_HERO      = "unknown";
 static constexpr int TOP_N           = 10;
 static constexpr int POLL_INTERVAL_MS = 500;
 
-// ─── Внутренние структуры ────────────────────────────────────────────────────
+// --- Внутренние структуры ----------------------------------------------------
 
 struct PlayerStats {
     int games=0, wins=0;
@@ -94,7 +94,7 @@ struct MatchupData {
     std::map<int, float> pick_rates;
 };
 
-// ─── Team aggregates helper ──────────────────────────────────────────────────
+// --- Team aggregates helper --------------------------------------------------
 
 struct TeamAgg {
     int n=0;
@@ -137,7 +137,7 @@ static TeamAgg computeTeamAgg(int base, const int ids[10], const float gwr[10],
     return a;
 }
 
-// ─── Composition / role-shape helper ─────────────────────────────────────────
+// --- Composition / role-shape helper -----------------------------------------
 // Портирует _team_composition/_hero_dim_presence из draft_features.py дословно.
 // ROLE_DIMS порядок: core, support, safe, mid, off.
 
@@ -195,7 +195,7 @@ static void teamComposition(int base, const int ids[10], const int positions[10]
     }
 }
 
-// ─── Вектор признаков для CatBoost ───────────────────────────────────────────
+// --- Вектор признаков для CatBoost -------------------------------------------
 
 static constexpr int N_CAT=10, N_FLOAT=117;
 struct FeatureVector {
@@ -242,11 +242,11 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         }
     }
 
-    // ── 10 categorical: hero names ──
+    // -- 10 categorical: hero names --
     for (int i = 0; i < 10; ++i)
         v.cat_str[i] = hero_name(ids[i]);
 
-    // ── Per-slot precompute: global_wr ──
+    // -- Per-slot precompute: global_wr --
     float gwr[10];
     for (int s = 0; s < 10; ++s) {
         gwr[s] = 0.5f;
@@ -256,7 +256,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         }
     }
 
-    // ── Per-slot precompute: vs_adv / with_adv raw arrays (для avg+best+worst) ──
+    // -- Per-slot precompute: vs_adv / with_adv raw arrays (для avg+best+worst) --
     float vs_adv_arr[10][5];   int vs_adv_cnt[10] = {};
     float with_adv_arr[10][5]; int with_adv_cnt[10] = {};
     for (int s = 0; s < 10; ++s) {
@@ -277,7 +277,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         }
     }
 
-    // ── Per-slot reduce: avg/best/worst для vs_adv и with_adv ──
+    // -- Per-slot reduce: avg/best/worst для vs_adv и with_adv --
     float vs_adv_avg[10]={}, vs_adv_best[10]={}, vs_adv_worst[10]={};
     float with_adv_avg[10]={}, with_adv_best[10]={}, with_adv_worst[10]={};
     for (int s = 0; s < 10; ++s) {
@@ -303,7 +303,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         }
     }
 
-    // ── Per-slot precompute: hero_pos_wr, pick_rate ──
+    // -- Per-slot precompute: hero_pos_wr, pick_rate --
     float hpwr[10], pickrate[10];
     for (int s = 0; s < 10; ++s) {
         hpwr[s] = 0.5f;
@@ -318,7 +318,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
         }
     }
 
-    // ── Запись в порядке ALL_FEATURES (draft_features.py) ──
+    // -- Запись в порядке ALL_FEATURES (draft_features.py) --
     int fi = 0;
     for (int s = 0; s < 10; ++s) v.flt[fi++] = ids[s] ? gwr[s] : 0.5f;      // global_wr
     for (int s = 0; s < 10; ++s) v.flt[fi++] = vs_adv_avg[s];              // vs_adv
@@ -330,7 +330,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     for (int s = 0; s < 10; ++s) v.flt[fi++] = with_adv_best[s];           // best_with
     for (int s = 0; s < 10; ++s) v.flt[fi++] = with_adv_worst[s];          // worst_with
 
-    // ── Team aggregates (17): метрика-внешний-цикл / сторона-внутренний ──
+    // -- Team aggregates (17): метрика-внешний-цикл / сторона-внутренний --
     TeamAgg rAgg = computeTeamAgg(0, ids, gwr, vs_adv_avg, with_adv_avg,
                                   vs_adv_best, vs_adv_worst, pickrate);
     TeamAgg dAgg = computeTeamAgg(5, ids, gwr, vs_adv_avg, with_adv_avg,
@@ -345,7 +345,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
     v.flt[fi++] = rAgg.worstVsMin; v.flt[fi++] = dAgg.worstVsMin;
     v.flt[fi++] = rAgg.meanVs - dAgg.meanVs; // team_vs_adv_diff
 
-    // ── Composition/role-shape (10): сторона-внешний / dim-внутренний ──
+    // -- Composition/role-shape (10): сторона-внешний / dim-внутренний --
     float rComp[N_ROLE_DIMS], dComp[N_ROLE_DIMS];
     teamComposition(0, ids, positions, md, rComp);
     teamComposition(5, ids, positions, md, dComp);
@@ -357,7 +357,7 @@ static void buildVector(FeatureVector& v, const LivePick& lp,
 
 // SQLite-обёртки (readonly) — SqliteDB/SqliteStmt из common.h.
 
-// ─── Загрузка данных из SQLite ────────────────────────────────────────────────
+// --- Загрузка данных из SQLite ------------------------------------------------
 
 static std::map<int,std::string> loadHeroes(sqlite3* db) {
     std::map<int,std::string> m;
@@ -493,7 +493,7 @@ static bool loadLatestLivePick(sqlite3* db, LivePick& lp) {
     return true;
 }
 
-// ─── CatBoost инференс ───────────────────────────────────────────────────────
+// --- CatBoost инференс -------------------------------------------------------
 
 static inline double sigmoid(double x) { return 1.0/(1.0+std::exp(-x)); }
 
@@ -509,7 +509,7 @@ static std::vector<double> runBatch(ModelCalcerHandle* model, std::vector<Featur
     return result;
 }
 
-// ─── Component B: персональная поправка (personal_score.py, датафетчер-репо) ──
+// --- Component B: персональная поправка (personal_score.py, датафетчер-репо) --
 // Портирует personal_adjustment/combine дословно, кроме источника base_wr: там
 // это immortalherostats (таблица удалена из finalapp — см. header-комментарий),
 // здесь — уже загруженный immortal_map (живая STRATZ-стата,
@@ -575,7 +575,7 @@ static inline double combinePersonal(double pOurs, float adj, float beta) {
     return 1.0 / (1.0 + std::exp(-(logit + (double)beta * (double)adj)));
 }
 
-// ─── GUI режим: результаты → GuiPickerState ─────────────────────────────────
+// --- GUI режим: результаты → GuiPickerState ---------------------------------
 
 static void renderToGui(
     GuiPickerState*                        state,
@@ -730,7 +730,7 @@ static void renderToGui(
     state->inferenceGen.fetch_add(1, std::memory_order_release);
 }
 
-// ─── CatBoost model RAII ─────────────────────────────────────────────────────
+// --- CatBoost model RAII -----------------------------------------------------
 // Без этого ModelCalcerDelete вызывался только после нормального завершения
 // цикла (см. ниже) — исключение из runBatch/renderToGui посреди цикла
 // пропускало освобождение и утекало модель.
@@ -744,7 +744,7 @@ public:
     ModelHandle& operator=(const ModelHandle&) = delete;
 };
 
-// ─── Главный цикл пикера ─────────────────────────────────────────────────────
+// --- Главный цикл пикера -----------------------------------------------------
 
 int runPickerGui(const char* model_path, const char* db_path,
                  std::atomic<bool>& running,
@@ -764,7 +764,7 @@ int runPickerGui(const char* model_path, const char* db_path,
         std::string base(model_path);
         std::string dataDbPath = base + "_data.db";
 
-        // ── Schema compatibility gate ────────────────────────────────────
+        // -- Schema compatibility gate ------------------------------------
         try {
             auto dm = readDataDbMeta(dataDbPath);
             if (dm.schema != kSupportedSchema) {

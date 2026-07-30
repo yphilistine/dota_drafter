@@ -1,6 +1,6 @@
 #include "hero_meta_stats.h"
 
-// ─── STRATZ: живая статистика героев (heroStats, DIVINE_IMMORTAL) ─────────────
+// --- STRATZ: живая статистика героев (heroStats, DIVINE_IMMORTAL) -------------
 
 // Понедельник 00:00 UTC последней полностью завершившейся недели
 long long lastCompletedWeekTimestamp() {
@@ -75,7 +75,7 @@ std::vector<HeroWeekStat> parseHeroStatsResponse(const std::string& response) {
     return rows;
 }
 
-// ─── SQLite: создание таблицы ─────────────────────────────────────────────────
+// --- SQLite: создание таблицы -------------------------------------------------
 void createHeroStatsTableIfNotExists(sqlite3* db) {
     const char* sql = R"(
         CREATE TABLE IF NOT EXISTS stats (
@@ -91,7 +91,7 @@ void createHeroStatsTableIfNotExists(sqlite3* db) {
     if (rc != SQLITE_OK) { std::string e = errMsg; sqlite3_free(errMsg); throw std::runtime_error("Ошибка создания таблицы stats: " + e); }
 }
 
-// ─── SQLite: запись данных ────────────────────────────────────────────────────
+// --- SQLite: запись данных ----------------------------------------------------
 void storeHeroStatsTable(sqlite3* db, const std::vector<HeroWeekStat>& rows) {
     {
         char* errMsg = nullptr;
@@ -116,7 +116,7 @@ void storeHeroStatsTable(sqlite3* db, const std::vector<HeroWeekStat>& rows) {
     txn.commit();
 }
 
-// ─── OpenDota-фолбек (если STRATZ недоступен): без разбивки по позициям ──────
+// --- OpenDota-фолбек (если STRATZ недоступен): без разбивки по позициям ------
 // OpenDota heroStats не даёт срез по позициям, поэтому один и тот же
 // агрегат Immortal (бакет "8_*") записывается во все 5 позиций.
 std::string fetchHeroStatsOpenDotaFallback() {
@@ -145,7 +145,7 @@ std::vector<HeroWeekStat> parseHeroStatsOpenDotaFallback(const std::string& resp
     return rows;
 }
 
-// ─── STRATZ heroStats (последняя завершённая неделя) → SQLite `stats` ────────
+// --- STRATZ heroStats (последняя завершённая неделя) → SQLite `stats` --------
 void fetchAndStoreHeroStats(sqlite3* db, const std::string& authToken) {
     if (authToken.empty()) {
         LOG_WARN("HeroStats (meta): нет STRATZ токена, сразу фолбек на OpenDota");

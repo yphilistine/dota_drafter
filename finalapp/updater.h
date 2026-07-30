@@ -5,7 +5,7 @@
 #include <vector>
 #include "version_utils.h"
 
-// ─── Типы ────────────────────────────────────────────────────────────────────
+// --- Типы --------------------------------------------------------------------
 
 enum class UpdateAction {
     NONE,
@@ -32,7 +32,7 @@ struct ManifestInfo {
 
 using ProgressCb = std::function<void(size_t done, size_t total)>;
 
-// ─── API ─────────────────────────────────────────────────────────────────────
+// --- API ---------------------------------------------------------------------
 
 bool         fetchManifest(ManifestInfo& out);
 UpdateAction checkForUpdates(const ManifestInfo& manifest);

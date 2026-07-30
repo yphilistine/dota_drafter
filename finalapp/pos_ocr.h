@@ -33,7 +33,7 @@ namespace wmo = winrt::Windows::Media::Ocr;
 namespace wgl = winrt::Windows::Globalization;
 namespace wss = winrt::Windows::Storage::Streams;
 
-// ─── Bilinear upscale (BGRA) ────────────────────────────────────────────────
+// --- Bilinear upscale (BGRA) ------------------------------------------------
 
 static std::vector<uint8_t> upscaleBgra(const uint8_t* src, int sw, int sh, int scale) {
     int dw = sw * scale, dh = sh * scale;
@@ -60,7 +60,7 @@ static std::vector<uint8_t> upscaleBgra(const uint8_t* src, int sw, int sh, int 
     return dst;
 }
 
-// ─── Keyword → position mapping ─────────────────────────────────────────────
+// --- Keyword → position mapping ---------------------------------------------
 
 // CharLowerW (а не towlower) — свёртка регистра не зависит от текущей C-локали
 // (нигде в проекте нет setlocale) и корректно работает для не-ASCII: кириллица
@@ -222,7 +222,7 @@ static int textToPosition(const std::wstring& raw) {
     return 0;
 }
 
-// ─── PosOcrRecognizer ───────────────────────────────────────────────────────
+// --- PosOcrRecognizer -------------------------------------------------------
 
 // Полный результат одного OCR-прохода: та же (pos, score), что PosMatch, плюс
 // сырой распознанный текст — нужен только для report.txt кнопки [screenshot]

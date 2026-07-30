@@ -55,7 +55,7 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ole32.lib")
 
-// ─── D3D11 инициализация ──────────────────────────────────────────────────────
+// --- D3D11 инициализация ------------------------------------------------------
 // g_Device и g_Hwnd — в app_state.h (нужны и gui_draw.cpp).
 static ID3D11DeviceContext*    g_Context   = nullptr;
 static IDXGISwapChain*         g_SwapChain = nullptr;
@@ -133,7 +133,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hWnd, msg, wp, lp);
 }
 
-// ─── Стиль ImGui ─────────────────────────────────────────────────────────────
+// --- Стиль ImGui -------------------------------------------------------------
 static void ApplyStyle() {
     ImGuiStyle& s = ImGui::GetStyle();
     s.WindowRounding = s.ChildRounding = s.FrameRounding  = 0.f;
@@ -216,7 +216,7 @@ static void RenderFrame() {
     DrawStatusBar(FULL);
     ImGui::SetCursorPos({PAD, PAD + headerH + GAP + 26.f + GAP});
 
-    // ── Баннеры совместимости / общие уведомления ───────────────────────
+    // -- Баннеры совместимости / общие уведомления -----------------------
     {
         bool schemaErr = false;
         char msg[256] = {};
@@ -304,7 +304,7 @@ static void PresentFrame() {
     g_SwapChain->Present(kPresentSyncInterval, 0);
 }
 
-// ─── Иконка приложения [D] (программно через GDI) ────────────────────────────
+// --- Иконка приложения [D] (программно через GDI) ----------------------------
 static HICON g_AppIcon = nullptr;
 
 static HICON CreateDIcon(int sz) {
@@ -344,7 +344,7 @@ static HICON CreateDIcon(int sz) {
     return icon;
 }
 
-// ─── Точка входа: подфункции WinMain ──────────────────────────────────────────
+// --- Точка входа: подфункции WinMain ------------------------------------------
 
 static void PlatformStartupFixups() {
     // Рабочая директория = папка с моделью (exe dir или parent, если exe в build/)
@@ -549,7 +549,7 @@ static HWND CreateMainWindow(HINSTANCE hInst) {
                       L"Dota_Drafter", nullptr};
     RegisterClassExW(&wc);
 
-    // ── Начальный размер окна: 1.5× базового (1200×900), но не больше экрана ─
+    // -- Начальный размер окна: 1.5× базового (1200×900), но не больше экрана -
     int sw   = GetSystemMetrics(SM_CXSCREEN);
     int sh   = GetSystemMetrics(SM_CYSCREEN);
     int winW = (std::min)(1800, (int)(sw * 0.94f));
@@ -576,7 +576,7 @@ static HWND CreateMainWindow(HINSTANCE hInst) {
     DwmSetWindowAttribute(hwnd, 36, &textColor, sizeof(textColor));
     DwmSetWindowAttribute(hwnd, 34, &borColor,  sizeof(borColor));
 
-    // ── Icon (16×16 для заголовка, 32×32 для панели задач) ──────────────
+    // -- Icon (16×16 для заголовка, 32×32 для панели задач) --------------
     int smSz = GetSystemMetrics(SM_CXSMICON);  // обычно 16
     int bgSz = GetSystemMetrics(SM_CXICON);    // обычно 32
     HICON iconSm = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON,
@@ -685,7 +685,7 @@ static void ShutdownApp(HINSTANCE hInst, HWND hwnd, ULONG_PTR gdipToken) {
     Gdiplus::GdiplusShutdown(gdipToken);
 }
 
-// ─── Точка входа ─────────────────────────────────────────────────────────────
+// --- Точка входа -------------------------------------------------------------
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     PlatformStartupFixups();
 

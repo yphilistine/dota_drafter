@@ -1,6 +1,6 @@
 #include "playerdatafetcher.h"
 
-// ─── OpenDota: справочник героев ──────────────────────────────────────────────
+// --- OpenDota: справочник героев ----------------------------------------------
 std::string fetchHeroesList() {
     std::string url = "https://api.opendota.com/api/heroes";
     LOG_INFO("GET heroes: " << url);
@@ -26,7 +26,7 @@ std::vector<HeroInfo> parseHeroesList(const std::string& jsonStr) {
     return heroes;
 }
 
-// ─── STRATZ-фолбек: справочник героев, если OpenDota недоступен ─────────────
+// --- STRATZ-фолбек: справочник героев, если OpenDota недоступен -------------
 std::string fetchHeroesListStratz(const std::string& authToken) {
     std::string url = "https://api.stratz.com/graphql";
     json requestBody;
@@ -56,7 +56,7 @@ std::vector<HeroInfo> parseHeroesListStratz(const std::string& jsonStr) {
     return heroes;
 }
 
-// ─── OpenDota: статистика героев игрока ───────────────────────────────────────
+// --- OpenDota: статистика героев игрока ---------------------------------------
 std::string fetchPlayerHeroesStats(const std::string& accountId) {
     std::string url = "https://api.opendota.com/api/players/" + accountId + "/heroes";
     LOG_INFO("GET player heroes (all): " << url);
@@ -88,7 +88,7 @@ std::vector<HeroStats> parseHeroesStats(const std::string& jsonStr) {
     return heroes;
 }
 
-// ─── OpenDota: список матчей (90 дней, ranked) ───────────────────────────────
+// --- OpenDota: список матчей (90 дней, ranked) -------------------------------
 std::vector<long long> fetchRecentMatchIds(long long accountId) {
     std::string url = "https://api.opendota.com/api/players/"
                     + std::to_string(accountId)
@@ -110,7 +110,7 @@ std::vector<long long> fetchRecentMatchIds(long long accountId) {
     return ids;
 }
 
-// ─── STRATZ-фолбек: список match_id игрока, если OpenDota недоступен ────────
+// --- STRATZ-фолбек: список match_id игрока, если OpenDota недоступен --------
 static std::vector<long long> fetchRecentMatchIdsStratzPage(
     const std::string& authToken, long long accountId, long long startDateTime,
     int take, int skip)
@@ -164,7 +164,7 @@ std::vector<long long> fetchRecentMatchIdsStratz(const std::string& authToken, l
     return ids;
 }
 
-// ─── STRATZ: батч GraphQL-запрос ──────────────────────────────────────────────
+// --- STRATZ: батч GraphQL-запрос ----------------------------------------------
 std::string buildMatchesBatchQuery(const std::vector<long long>& matchIds) {
     std::ostringstream q;
     q.imbue(std::locale::classic());
@@ -195,7 +195,7 @@ std::string sendStratzMatchesBatch(const std::string& authToken,
     }
 }
 
-// ─── SQLite: создание таблиц ──────────────────────────────────────────────────
+// --- SQLite: создание таблиц --------------------------------------------------
 void createHeroTableIfNotExists(sqlite3* db) {
     const char* sql = R"(
         CREATE TABLE IF NOT EXISTS heroes (
@@ -307,7 +307,7 @@ void createIndexesIfNotExist(sqlite3* db) {
     if (rc != SQLITE_OK) { std::string e = errMsg; sqlite3_free(errMsg); LOG_WARN("Ошибка создания индексов: " << e); }
 }
 
-// ─── SQLite: запись данных ────────────────────────────────────────────────────
+// --- SQLite: запись данных ----------------------------------------------------
 void storeHeroTable(sqlite3* db, const std::vector<HeroInfo>& heroes) {
     const char* sql = "INSERT OR IGNORE INTO heroes (id, name, localized_name) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt;
@@ -460,7 +460,7 @@ void storePlayerHeroWithHeroByPos(sqlite3* db, long long accountId,
     sqlite3_finalize(stmt);
 }
 
-// ─── Парсинг STRATZ ответа → агрегация → SQLite ──────────────────────────────
+// --- Парсинг STRATZ ответа → агрегация → SQLite ------------------------------
 void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::string& response) {
     if (response.size() >= 2 &&
         static_cast<unsigned char>(response[0]) == 0x1F &&
@@ -602,7 +602,7 @@ void parseAndStoreBatchMatches(sqlite3* db, long long accountId, const std::stri
     } catch (...) { throw; }
 }
 
-// ─── Главная функция: матчи → батчи STRATZ → парсинг → SQLite ────────────────
+// --- Главная функция: матчи → батчи STRATZ → парсинг → SQLite ----------------
 void fetchAndStorePlayerRecentData(sqlite3* db, const std::string& authToken, long long accountId) {
     try {
         std::vector<long long> matchIds;

@@ -27,11 +27,11 @@
 #include <thread>
 #include <functional>
 
-// ─── Состояние GUI (только из GUI-потока) ─────────────────────────────────────
+// --- Состояние GUI (только из GUI-потока) -------------------------------------
 static bool  s_editMode     = false;
 static char  s_inputBuf[32] = {};
 
-// ─── heroId → localized_name (для отображения) ────────────────────────────────
+// --- heroId → localized_name (для отображения) --------------------------------
 // Заполняется лениво из heroes: на момент первого вызова таблица могла ещё не
 // наполниться (runDataFetcherInit работает в фоне), поэтому пробуем снова,
 // пока она пустая.
@@ -48,7 +48,7 @@ std::string heroDisplayName(int heroId, const char* fallback) {
     return it != g_heroDisplayNames.end() ? it->second : (fallback ? fallback : "");
 }
 
-// ─── Meta Heroes: живая стата по героям (таблица `stats`, живой STRATZ heroStats) ─
+// --- Meta Heroes: живая стата по героям (таблица `stats`, живой STRATZ heroStats) -
 // Тот же ленивый паттерн, что и heroDisplayName(): читаем DB_PATH напрямую из
 // GUI-потока, повторяем попытку, пока фаза 1a (фоновый поток) не наполнит таблицу.
 struct MetaHeroRow { char name[64] = {}; int heroId = 0; int games = 0; float winRate = 0.f; };
@@ -131,7 +131,7 @@ static void loadMetaHeroStatsIfNeeded() {
     } catch (...) { /* таблица ещё не создана фазой 1a — попробуем в следующий раз */ }
 }
 
-// ─── Создание D3D11 текстуры из байтов изображения (JPEG/PNG) ─────────────────
+// --- Создание D3D11 текстуры из байтов изображения (JPEG/PNG) -----------------
 ID3D11ShaderResourceView* createTextureFromImageData(const uint8_t* data, size_t size) {
     if (!data || size == 0 || !g_Device) return nullptr;
 
@@ -188,7 +188,7 @@ ID3D11ShaderResourceView* createTextureFromImageData(const uint8_t* data, size_t
     return result;
 }
 
-// ─── Загрузка портретов героев из папки assets/ ──────────────────────────────
+// --- Загрузка портретов героев из папки assets/ ------------------------------
 // Файлы assets/*.png именованы по heroes.name (без префикса npc_dota_hero_,
 // напр. "antimage.png"), а не по localized_name — тот Valve иногда временно
 // меняет. Портреты кэшируются по heroId, поэтому переименование Valve не влияет
@@ -290,7 +290,7 @@ void unloadHeroPortraits() {
     g_heroPortraits.clear();
 }
 
-// ─── Вспомогательные функции отрисовки ────────────────────────────────────────
+// --- Вспомогательные функции отрисовки ----------------------------------------
 static void DrawPortrait(ImDrawList* dl, ImVec2 p, float sz,
                          ImU32 fill, ImU32 border, const char* label,
                          ImTextureID tex = 0) {
@@ -330,7 +330,7 @@ static ImVec4 WinColor(float w) {
     return kRed;
 }
 
-// ─── Отрисовка слота героя ────────────────────────────────────────────────────
+// --- Отрисовка слота героя ----------------------------------------------------
 // absSlot: 0-9 (0-4 Radiant, 5-9 Dire). usedPos: позиции 1-5 занятые другими слотами в команде.
 static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
                          bool radiantSide, bool showPos, int slotNum,
@@ -447,7 +447,7 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
     ImGui::Spacing();
 }
 
-// ─── Метка секции ────────────────────────────────────────────────────────────
+// --- Метка секции ------------------------------------------------------------
 static void SectionLabel(const char* label) {
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
     ImGui::TextUnformatted(">");
@@ -456,7 +456,7 @@ static void SectionLabel(const char* label) {
     ImGui::TextUnformatted(label);
 }
 
-// ─── Метка секции + бейдж текущей позиции (RECOMMENDED PICKS / META HEROES) ───
+// --- Метка секции + бейдж текущей позиции (RECOMMENDED PICKS / META HEROES) ---
 // Бейдж по умолчанию делит строку с заголовком (справа). Если панель узкая и
 // полный текст бейджа перекрыл бы заголовок — сначала пробуем сократить текст
 // бейджа ("[=] Position 5" → "Pos 5"), а если и он не влезает — переносим
@@ -596,7 +596,7 @@ static void SetMetaPreviewPosition(int newPos) {
     s_metaPreviewPos = newPos;
 }
 
-// ─── Общая строка героя со статистикой ───────────────────────────────────────
+// --- Общая строка героя со статистикой ---------------------------------------
 // Общий рендер строки (портрет/имя/вторичная стата/win% + бар) для
 // DrawPicksPanel и DrawMetaHeroesPanel — отличается только вторичная строка статы.
 struct HeroStatRowParams {
@@ -692,7 +692,7 @@ static void DrawWinRateLegend(float rowW) {
     ImGui::Dummy({rowW, lhL + 4.f});
 }
 
-// ─── "Powered by" — иконки источников данных (STRATZ/OpenDota/D2PT) ──────────
+// --- "Powered by" — иконки источников данных (STRATZ/OpenDota/D2PT) ----------
 // Иконки — favicon'ы сайтов, тянутся по HTTP (тот же приём, что и аватар игрока
 // в fetchOpenDotaProfile: байты через httpGet в фоновом потоке под мьютексом,
 // декодирование в D3D11-текстуру — только на GUI-потоке, при отрисовке).
@@ -835,7 +835,7 @@ static void DrawPoweredBy(float panelW) {
     ImGui::SetCursorScreenPos({origin.x, origin.y + ImGui::GetTextLineHeightWithSpacing() + kIconRowIconSz});
 }
 
-// ─── Панель драфта (Radiant/Dire слоты + win probability bar) ────────────────
+// --- Панель драфта (Radiant/Dire слоты + win probability bar) ----------------
 void DrawDraftPanel(float panelW) {
     const float PAD  = 8.f;
     const float colW = (panelW - PAD) * 0.5f;
@@ -910,7 +910,7 @@ void DrawDraftPanel(float panelW) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // ── Waiting overlay ────────────────────────────────────────────────────
+    // -- Waiting overlay ----------------------------------------------------
     if (!gameStarted) {
         ImDrawList* dl  = ImGui::GetWindowDrawList();
         ImVec2      cp  = ImGui::GetCursorScreenPos();
@@ -950,7 +950,7 @@ void DrawDraftPanel(float panelW) {
     int radUsedPos[5] = {}, dirUsedPos[5] = {};
     for (int i=0;i<5;i++) { radUsedPos[i] = rad[i].pos; dirUsedPos[i] = dir[i].pos; }
 
-    // ── Radiant column ─────────────────────────────────────────────────────
+    // -- Radiant column -----------------------------------------------------
     ImGui::BeginGroup();
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -972,7 +972,7 @@ void DrawDraftPanel(float panelW) {
 
     ImGui::SameLine(0, PAD);
 
-    // ── Dire column ────────────────────────────────────────────────────────
+    // -- Dire column --------------------------------------------------------
     ImGui::BeginGroup();
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -992,7 +992,7 @@ void DrawDraftPanel(float panelW) {
     }
     ImGui::EndGroup();
 
-    // ── Win probability bar ────────────────────────────────────────────────
+    // -- Win probability bar ------------------------------------------------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1021,7 +1021,7 @@ void DrawDraftPanel(float panelW) {
     DrawPoweredBy(panelW);
 }
 
-// ─── Панель рекомендаций (top-10 / выбранный герой) ───────────────────────────
+// --- Панель рекомендаций (top-10 / выбранный герой) ---------------------------
 void DrawPicksPanel(float panelW) {
     const float rW_ref = panelW;
     const float lh     = ImGui::GetTextLineHeight();
@@ -1061,7 +1061,7 @@ void DrawPicksPanel(float panelW) {
     ImGui::Spacing();
     ImGui::Separator();
 
-    // ── Waiting overlay ────────────────────────────────────────────────────
+    // -- Waiting overlay ----------------------------------------------------
     if (!gameStarted) {
         ImGui::Spacing();
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1140,7 +1140,7 @@ void DrawPicksPanel(float panelW) {
     DrawWinRateLegend(rW_ref);
 }
 
-// ─── Панель "Meta Heroes" (живая стата по героям из STRATZ, без ML) ───────────
+// --- Панель "Meta Heroes" (живая стата по героям из STRATZ, без ML) -----------
 // Позиция кликабельна всегда, а не только во время игры: вне игры это просто
 // превью меты по позиции (SetMetaPreviewPosition, локальный выбор в GUI, без
 // livepicks/оркестратора). Как только начинается реальный драфт/матч, панель
@@ -1231,7 +1231,7 @@ void DrawMetaHeroesPanel(float panelW) {
     DrawWinRateLegend(rW_ref);
 }
 
-// ─── Полоса статуса (Data + Game phase + match ID) ────────────────────────────
+// --- Полоса статуса (Data + Game phase + match ID) ----------------------------
 void DrawStatusBar(float fullW) {
     // Снимок состояния player state
     bool   phase1Running, phase1Done, phase1Error;
@@ -1368,7 +1368,7 @@ void DrawStatusBar(float fullW) {
     ImGui::Dummy({fullW, 0.f});
 }
 
-// ─── Шапка: логотип [D] + заголовок + карточка игрока / ввод Friend ID ────────
+// --- Шапка: логотип [D] + заголовок + карточка игрока / ввод Friend ID --------
 // Возвращает высоту шапки (фиксированная 60 — высота шапки не растёт; в
 // режиме ввода Friend ID содержимое карточки сжимается по вертикали, чтобы
 // уместиться в те же 60px, см. ниже).
@@ -1393,7 +1393,7 @@ float DrawHeader(float fullW) {
     }
     const bool inputMode = !hasPlayer || s_editMode;
 
-    // ── [D] logo box (на всю высоту шапки) ─────────────────────────────
+    // -- [D] logo box (на всю высоту шапки) -----------------------------
     const float LOGO_W = H;
     ImVec2 logoPos = {hs.x, hs.y};
 
@@ -1415,14 +1415,14 @@ float DrawHeader(float fullW) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Bring window to front");
 
-    // ── Title (вертикально по центру шапки, две строки) ───────────────────
+    // -- Title (вертикально по центру шапки, две строки) -------------------
     float tx       = hs.x + LOGO_W + 10.f;
     float textH    = lh * 2.f + 2.f;
     float titleY   = hs.y + (H - textH) * 0.5f;
     dl->AddText({tx, titleY},            C(kText),  "Dota_Drafter");
     dl->AddText({tx, titleY + lh + 2.f}, C(kMuted), "Dota 2 Draft Analyzer - Live Overlay");
 
-    // ── Player card (right side) ──────────────────────────────────────────
+    // -- Player card (right side) ------------------------------------------
     const float INPUT_W = 120.f;
     float CW = 240.f;
     if (inputMode) {
@@ -1458,7 +1458,7 @@ float DrawHeader(float fullW) {
     dl->AddRect      ({cx+8, avY}, {cx+8+AVS, avY+AVS}, C(kBorder));
 
     if (inputMode) {
-        // ── Input mode ────────────────────────────────────────────────────
+        // -- Input mode ----------------------------------------------------
         // Не увеличиваем шапку — вместо этого сжимаем отступы и высоту строки
         // input/Set/x (уменьшенный FramePadding), чтобы label + обе строки
         // гарантированно уместились в фиксированные 60px карточки.
@@ -1512,7 +1512,7 @@ float DrawHeader(float fullW) {
         ImGui::PopStyleVar(); // FramePadding (input/Set/x row)
 
     } else {
-        // ── Display mode ──────────────────────────────────────────────────
+        // -- Display mode --------------------------------------------------
         if (g_avatarSRV) {
             dl->AddImage((ImTextureID)g_avatarSRV,
                          {cx+8.f, avY}, {cx+8.f+AVS, avY+AVS});

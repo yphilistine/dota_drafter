@@ -38,12 +38,12 @@
 
 using json = nlohmann::json;
 
-// ─── Константы ───────────────────────────────────────────────────────────────
+// --- Константы ---------------------------------------------------------------
 
 const std::string DEFAULT_STRATZ_TOKEN =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTdWJqZWN0IjoiNjhjODAzMjItMzQyYS00NWYwLWFlOWYtNjlhZjA3NzllMTMxIiwiU3RlYW1JZCI6IjEyNjE2NjAxMzUiLCJBUElVc2VyIjoidHJ1ZSIsIm5iZiI6MTc4NTAyNDk3MywiZXhwIjoxODE2NTYwOTczLCJpYXQiOjE3ODUwMjQ5NzMsImlzcyI6Imh0dHBzOi8vYXBpLnN0cmF0ei5jb20ifQ.0Os8gKLGGO00cyKGct-gjo_b6ohnglC37z6gxsDFYXk";
 
-// ─── Типы данных ─────────────────────────────────────────────────────────────
+// --- Типы данных -------------------------------------------------------------
 
 // Статистика героя игрока (из OpenDota)
 struct HeroStats {
@@ -59,7 +59,7 @@ struct HeroInfo {
     std::string localized_name; // отображаемое имя
 };
 
-// ─── RAII-обёртки ────────────────────────────────────────────────────────────
+// --- RAII-обёртки ------------------------------------------------------------
 
 // curl_global_init / cleanup
 class CurlGlobal {
@@ -172,7 +172,7 @@ public:
     SqliteTransaction& operator=(const SqliteTransaction&) = delete;
 };
 
-// ─── Логирование ─────────────────────────────────────────────────────────────
+// --- Логирование -------------------------------------------------------------
 
 enum class LogLevel { INFO, WARN, ERR };
 
@@ -193,14 +193,14 @@ void ensureLogsDir();
 #define LOG_WARN(msg) do { std::ostringstream _ss; _ss.imbue(std::locale::classic()); _ss << msg; logConsole(LogLevel::WARN, _ss.str()); } while(0)
 #define LOG_ERR(msg)  do { std::ostringstream _ss; _ss.imbue(std::locale::classic()); _ss << msg; logConsole(LogLevel::ERR,  _ss.str()); } while(0)
 
-// ─── HTTP ────────────────────────────────────────────────────────────────────
+// --- HTTP --------------------------------------------------------------------
 
 // GET-запрос с ретраями (3 попытки, пауза 10 сек). Бросает исключение при неудаче.
 std::string httpGet (const std::string& url);
 // POST-запрос с ретраями и Bearer-авторизацией. Бросает исключение при неудаче.
 std::string httpPost(const std::string& url, const std::string& postData, const std::string& authToken);
 
-// ─── Утилиты ─────────────────────────────────────────────────────────────────
+// --- Утилиты -----------------------------------------------------------------
 
 // Замена невалидных UTF-8 последовательностей на U+FFFD
 std::string sanitizeUtf8(const std::string& input);

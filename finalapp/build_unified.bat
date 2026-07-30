@@ -22,7 +22,7 @@ set "CATBOOST=C:\catboost"
 set "OPT_FLAGS=/O2"
 if /i "%~1"=="debug" set "OPT_FLAGS=/Od /Zi"
 
-:: ── Найти vcvarsall.bat ───────────────────────────────────────────────────────
+:: -- Найти vcvarsall.bat -------------------------------------------------------
 set "VCVARS="
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -53,7 +53,7 @@ echo [INFO] MSVC: %VCVARS%
 call "%VCVARS%" x64 >nul 2>&1
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 
-:: ── Windows SDK (d3d11.lib, dxgi.lib и т.д.) ─────────────────────────────────
+:: -- Windows SDK (d3d11.lib, dxgi.lib и т.д.) ---------------------------------
 set "WINSDK_LIB="
 if defined WindowsSdkDir (
     if defined WindowsSdkLibVersion (
@@ -75,7 +75,7 @@ if not defined WINSDK_LIB (
 )
 echo [INFO] WINSDK: %WINSDK_LIB%
 
-:: ─────────────────────────────────────────────────────────────────────────────
+:: -----------------------------------------------------------------------------
 :: Компиляция
 ::
 :: Исходники:
@@ -94,9 +94,9 @@ echo [INFO] WINSDK: %WINSDK_LIB%
 ::   livestatsfetcher.cpp    — runGsiServer   (фаза 2)
 ::   dota_picker.cpp         — runPickerGui   (фаза 3, вывод в GUI)
 ::   dota2_capture.cpp       — захват окна Dota 2
-:: ─────────────────────────────────────────────────────────────────────────────
+:: -----------------------------------------------------------------------------
 
-:: ── Читаем версию приложения из version.h (kAppVersion) ──────────────────────
+:: -- Читаем версию приложения из version.h (kAppVersion) ----------------------
 set "PS_VER=%TEMP%\dd_read_ver.ps1"
 (
     echo $c = Get-Content 'version.h' -Raw
@@ -119,7 +119,7 @@ for /f "tokens=1,2,3 delims=." %%a in ("%APP_VER%") do (
 set "VER_BUILD=0"
 echo [INFO] App version: %APP_VER% -^> resource %VER_MAJOR%.%VER_MINOR%.%VER_PATCH%.%VER_BUILD%
 
-:: ── Компилируем version.rc → version.res ─────────────────────────────────────
+:: -- Компилируем version.rc → version.res -------------------------------------
 rc.exe /nologo /dVER_MAJOR=%VER_MAJOR% /dVER_MINOR=%VER_MINOR% /dVER_PATCH=%VER_PATCH% /dVER_BUILD=%VER_BUILD% /fo "%OUT_DIR%\version.res" version.rc
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] rc.exe: version.rc
@@ -186,7 +186,7 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-:: ── Подставляем версию в manifest (копия в OUT_DIR, исходный app.manifest не трогаем) ──
+:: -- Подставляем версию в manifest (копия в OUT_DIR, исходный app.manifest не трогаем) --
 set "PS_MANIFEST=%TEMP%\dd_patch_manifest.ps1"
 (
     echo $c = Get-Content 'app.manifest' -Raw
@@ -196,7 +196,7 @@ set "PS_MANIFEST=%TEMP%\dd_patch_manifest.ps1"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_MANIFEST%"
 del "%PS_MANIFEST%" >nul 2>&1
 
-:: ── Встраиваем manifest ──────────────────────────────────────────────────────
+:: -- Встраиваем manifest ------------------------------------------------------
 mt.exe -nologo -manifest "%OUT_DIR%\app.manifest" -outputresource:"%OUT_DIR%\%TARGET%.exe;1"
 if %ERRORLEVEL% neq 0 (
     echo [WARN] mt.exe: не удалось встроить manifest
