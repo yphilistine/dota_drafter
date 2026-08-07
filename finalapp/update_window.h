@@ -17,6 +17,11 @@ void SetUpdateProgress(const wchar_t* label, int percent);
 void ShowRetryButton(bool show);
 bool WaitForRetryClick();
 
+// true, если пользователь закрыл окно апдейтера крестиком. Стартовая проверка
+// обновлений (WinMain) обязана прерваться и завершить приложение: GUI ещё не
+// создан, и без окна процесс жил бы дальше невидимым.
+bool UpdateWindowAborted();
+
 // Прокачка очереди сообщений без блокировки - используется между шагами
 // обновления (см. WinMain) и внутри SetUpdateStatus/SetUpdateProgress, чтобы
 // окно оставалось отзывчивым во время скачивания/установки.

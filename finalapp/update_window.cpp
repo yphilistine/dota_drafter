@@ -7,12 +7,26 @@ static HWND  g_updateLabel    = nullptr;
 static HWND  g_updatePercent  = nullptr;
 static HWND  g_updateBtn      = nullptr;
 static bool  g_retryClicked   = false;
+// Окно сносим мы сами (DestroyUpdateWindow) - тогда WM_DESTROY не должен
+// трактоваться как отказ пользователя от запуска.
+static bool  g_selfDestroy    = false;
+// Пользователь закрыл окно крестиком - приложение обязано завершиться.
+static bool  g_aborted        = false;
 static constexpr int IDC_RETRY_BTN = 101;
 
 static LRESULT CALLBACK UpdateWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_COMMAND:
         if (LOWORD(wp) == IDC_RETRY_BTN) g_retryClicked = true;
+        return 0;
+    case WM_DESTROY:
+        // Без этого закрытие окна крестиком оставляет процесс жить: GUI ещё не
+        // создан, а WaitForRetryClick() блокируется в GetMessage навсегда -
+        // приложение висит в списке процессов без единого окна.
+        if (!g_selfDestroy) {
+            g_aborted = true;
+            PostQuitMessage(0);
+        }
         return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -107,9 +121,12 @@ void CreateUpdateWindow(HINSTANCE hInst) {
 void PumpMessages() {
     MSG msg;
     while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        if (msg.message == WM_QUIT) { g_aborted = true; return; }
         TranslateMessage(&msg); DispatchMessage(&msg);
     }
 }
+
+bool UpdateWindowAborted() { return g_aborted; }
 
 void SetUpdateStatus(const wchar_t* text) {
     if (g_updateLabel) SetWindowTextW(g_updateLabel, text);
@@ -146,6 +163,7 @@ void ShowRetryButton(bool show) {
 }
 
 void DestroyUpdateWindow() {
+    g_selfDestroy = true;
     if (g_updateWnd) { DestroyWindow(g_updateWnd); g_updateWnd = nullptr; }
     g_updateLabel   = nullptr;
     g_updatePercent = nullptr;
