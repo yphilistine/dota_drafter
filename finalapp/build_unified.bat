@@ -211,8 +211,18 @@ if exist "%CATBOOST%\catboostmodel-windows-x86_64-1.2.10.dll" (
     copy /Y "%CATBOOST%\catboostmodel-windows-x86_64-1.2.10.dll" "%OUT_DIR%\" >nul
 )
 
-:: Копируем exe в корневую папку проекта
+:: Копируем exe в корневую папку проекта.
+:: Проверка ERRORLEVEL обязательна: чаще всего копию блокирует запущенное
+:: приложение, и без неё в корне остаётся бинарник от прошлой сборки, а скрипт
+:: рапортует об успехе - тестируется старый exe.
 copy /Y "%OUT_DIR%\%TARGET%.exe" "%TARGET%.exe" >nul
+if %ERRORLEVEL% neq 0 (
+    echo(
+    echo [ERROR] Не удалось скопировать %TARGET%.exe в корень проекта.
+    echo         Скорее всего приложение запущено - закрой его и собери заново.
+    echo         Свежий бинарник: %OUT_DIR%\%TARGET%.exe
+    exit /b 1
+)
 echo [INFO] Copied %TARGET%.exe to project root
 
 echo(
