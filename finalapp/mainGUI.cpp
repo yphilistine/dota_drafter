@@ -399,6 +399,13 @@ static bool RunStartupUpdateCheck(HINSTANCE hInst) {
         }
     }
 
+    // Окно могли закрыть крестиком прямо во время запроса манифеста - дальше
+    // идти нельзя, пользователь отказался от запуска.
+    if (UpdateWindowAborted()) {
+        DestroyUpdateWindow();
+        return false;
+    }
+
     UpdateAction action = checkForUpdates(manifest);
 
     // GSI-конфиг живёт вне {app} (в папке Dota 2) и не завязан на схему
@@ -503,7 +510,10 @@ static bool RunStartupUpdateCheck(HINSTANCE hInst) {
     }
 
     DestroyUpdateWindow();
-    return true;
+    // Закрытие окна во время скачивания читается как отказ от запуска: качать
+    // фоном уже нечего, обновление данных к этому моменту либо применено, либо
+    // пропущено с логом.
+    return !UpdateWindowAborted();
 }
 
 // Конфиг из env, загрузка сохранённого игрока из БД, запуск фазы 1a, оркестратора

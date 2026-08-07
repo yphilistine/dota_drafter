@@ -31,21 +31,144 @@
 static bool  s_editMode     = false;
 static char  s_inputBuf[32] = {};
 
-// --- heroId -> localized_name (для отображения) --------------------------------
+// --- Справочник героев (для отображения и для поиска в popup'е) ----------------
 // Заполняется лениво из heroes: на момент первого вызова таблица могла ещё не
 // наполниться (runDataFetcherInit работает в фоне), поэтому пробуем снова,
-// пока она пустая.
+// пока она пустая. Один запрос даёт и lookup id -> имя, и каталог для поиска.
+struct HeroCatalogEntry {
+    int         id = 0;
+    std::string display;   // localized_name как есть ("Anti-Mage")
+    std::string key;       // canonicalHeroKey(localized_name) -> "antimage"
+    std::string nameKey;   // canonicalHeroKey(heroes.name)    -> "antimage"
+    std::string acronym;   // первые буквы слов display ("Phantom Assassin" -> "pa")
+};
 static std::map<int, std::string> g_heroDisplayNames;
-std::string heroDisplayName(int heroId, const char* fallback) {
-    if (g_heroDisplayNames.empty()) {
-        try {
-            SqliteDB db(DB_PATH, /*readOnly=*/true);
-            SqliteStmt st(db.get(), "SELECT id, localized_name FROM heroes");
-            while (st.row()) g_heroDisplayNames[st.col_int(0)] = st.col_text(1);
-        } catch (...) { /* таблица ещё не создана фазой 1a - попробуем в следующий раз */ }
+static std::vector<HeroCatalogEntry> g_heroCatalog;   // отсортирован по display
+
+// Первые буквы слов отображаемого имени: "Phantom Assassin" -> "pa".
+static std::string heroAcronym(const std::string& display) {
+    std::string acr;
+    bool wordStart = true;
+    for (char c : display) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc)) {
+            if (wordStart) acr += static_cast<char>(std::tolower(uc));
+            wordStart = false;
+        } else {
+            wordStart = true;
+        }
     }
+    return acr;
+}
+
+static void loadHeroesIfNeeded() {
+    if (!g_heroDisplayNames.empty()) return;
+    try {
+        SqliteDB db(DB_PATH, /*readOnly=*/true);
+        SqliteStmt st(db.get(), "SELECT id, name, localized_name FROM heroes");
+        while (st.row()) {
+            HeroCatalogEntry e;
+            e.id      = st.col_int(0);
+            e.display = st.col_text(2);
+            e.key     = canonicalHeroKey(e.display);
+            e.nameKey = canonicalHeroKey(st.col_text(1));
+            e.acronym = heroAcronym(e.display);
+            if (e.id <= 0 || e.display.empty()) continue;
+            g_heroDisplayNames[e.id] = e.display;
+            g_heroCatalog.push_back(std::move(e));
+        }
+        std::sort(g_heroCatalog.begin(), g_heroCatalog.end(),
+                  [](const HeroCatalogEntry& a, const HeroCatalogEntry& b) {
+                      return a.display < b.display;
+                  });
+    } catch (...) { /* таблица ещё не создана фазой 1a - попробуем в следующий раз */ }
+}
+
+std::string heroDisplayName(int heroId, const char* fallback) {
+    loadHeroesIfNeeded();
     auto it = g_heroDisplayNames.find(heroId);
     return it != g_heroDisplayNames.end() ? it->second : (fallback ? fallback : "");
+}
+
+// --- Лексический поиск героя (popup ручной смены героя в слоте) ----------------
+// Запрос сравнивается и с localized_name, и с внутренним heroes.name (оба в
+// канонической форме, canonicalHeroKey из common.h) - берётся лучший результат.
+// Тиры сверху вниз: точное совпадение -> префикс (короткое дополнение выше) ->
+// аббревиатура по первым буквам слов ("pa", "cm", "sf") -> подстрока (чем левее,
+// тем выше) -> подпоследовательность ("phasn") -> опечатка (расстояние
+// Левенштейна <= 2). Ниже последнего тира кандидат не показывается вообще.
+static constexpr int kHeroNoMatch = -1;
+
+static int levenshtein(const std::string& a, const std::string& b) {
+    std::vector<int> prev(b.size() + 1), cur(b.size() + 1);
+    for (size_t j = 0; j <= b.size(); ++j) prev[j] = (int)j;
+    for (size_t i = 1; i <= a.size(); ++i) {
+        cur[0] = (int)i;
+        for (size_t j = 1; j <= b.size(); ++j) {
+            int cost = (a[i-1] == b[j-1]) ? 0 : 1;
+            cur[j] = std::min({ prev[j] + 1, cur[j-1] + 1, prev[j-1] + cost });
+        }
+        prev.swap(cur);
+    }
+    return prev[b.size()];
+}
+
+// Все символы запроса встречаются в key по порядку - возвращает число "дыр"
+// между ними, или -1 если подпоследовательности нет.
+static int subsequenceGaps(const std::string& q, const std::string& key) {
+    size_t k = 0;
+    int    gaps = 0;
+    for (char c : q) {
+        size_t found = key.find(c, k);
+        if (found == std::string::npos) return -1;
+        gaps += (int)(found - k);
+        k = found + 1;
+    }
+    return gaps;
+}
+
+static int keyMatchScore(const std::string& q, const std::string& key) {
+    if (key.empty()) return kHeroNoMatch;
+    if (key == q) return 1000;
+    if (q.size() < key.size() && key.compare(0, q.size(), q) == 0)
+        return 900 - (int)(key.size() - q.size());
+    size_t pos = key.find(q);
+    if (pos != std::string::npos) return 700 - (int)pos;
+    int gaps = subsequenceGaps(q, key);
+    if (gaps >= 0) return 600 - std::min(gaps, 99);
+    if (q.size() >= 3) {
+        int d = levenshtein(q, key);
+        if (d <= 2) return 500 - d * 50;
+    }
+    return kHeroNoMatch;
+}
+
+static int heroSearchScore(const std::string& q, const HeroCatalogEntry& e) {
+    if (q.empty()) return 0;
+    if (q.size() >= 2 && q == e.acronym) return 850;
+    return std::max(keyMatchScore(q, e.key), keyMatchScore(q, e.nameKey));
+}
+
+// Кандидаты для popup'а: пустой запрос - весь справочник по алфавиту, иначе
+// подходящие по heroSearchScore, лучшие сверху (при равном счёте - по алфавиту,
+// g_heroCatalog уже отсортирован).
+static std::vector<const HeroCatalogEntry*> heroSearchCandidates(const char* filter) {
+    loadHeroesIfNeeded();
+    std::string q = canonicalHeroKey(filter ? filter : "");
+
+    std::vector<std::pair<int, const HeroCatalogEntry*>> scored;
+    scored.reserve(g_heroCatalog.size());
+    for (const auto& e : g_heroCatalog) {
+        int s = heroSearchScore(q, e);
+        if (s != kHeroNoMatch) scored.emplace_back(s, &e);
+    }
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    std::vector<const HeroCatalogEntry*> out;
+    out.reserve(scored.size());
+    for (const auto& p : scored) out.push_back(p.second);
+    return out;
 }
 
 // --- Meta Heroes: живая стата по героям (таблица `stats`, живой STRATZ heroStats) -
@@ -330,17 +453,140 @@ static ImVec4 WinColor(float w) {
     return kRed;
 }
 
+// --- Popup ручной смены героя в слоте -----------------------------------------
+// Поле поиска + прокручиваемый список (5 строк видно). Первая строка при пустом
+// фильтре - последний результат капчура для этого слота (портрет героя с именем,
+// либо "?" с именем "empty"):
+// это и подсказка "что там сейчас видит захват экрана", и способ отменить ручную
+// правку, т.к. ручной выбор побеждает распознавание во всех фазах
+// (portrait_runner.cpp). Уже занятые в драфте герои недоступны - один герой в
+// двух слотах ломает признаки модели.
+static char s_heroFilter[48]  = {};
+static bool s_heroFilterFocus = false;
+
+static void DrawHeroPickPopup(const char* popupId, float rowW, int absSlot,
+                              const int draftHeroes[10],
+                              const std::function<void(int,int)>& setHero) {
+    const float lh   = ImGui::GetTextLineHeight();
+    const float rowH = lh * 1.9f;
+
+    ImGui::SetNextWindowSize({std::max(rowW, lh * 11.f), 0.f});
+    if (!ImGui::BeginPopup(popupId)) return;
+
+    if (s_heroFilterFocus) { ImGui::SetKeyboardFocusHere(); s_heroFilterFocus = false; }
+    ImGui::SetNextItemWidth(-1.f);
+    bool enterPressed = ImGui::InputTextWithHint(
+        "##heroFilter", "type hero name...", s_heroFilter, sizeof(s_heroFilter),
+        ImGuiInputTextFlags_EnterReturnsTrue);
+
+    int  detected      = 0;
+    bool captureActive = false;
+    {
+        std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+        detected      = g_portraitState.detectedHero[absSlot];
+        captureActive = g_portraitState.active;
+    }
+
+    bool picked = false;
+    auto pick = [&](int heroId) {
+        setHero(absSlot, heroId);
+        picked = true;
+    };
+    auto isTaken = [&](int heroId) {
+        for (int i = 0; i < 10; ++i)
+            if (i != absSlot && draftHeroes[i] == heroId) return true;
+        return false;
+    };
+
+    std::vector<const HeroCatalogEntry*> cands = heroSearchCandidates(s_heroFilter);
+
+    // Enter - верхний доступный кандидат. Только при непустом фильтре: на пустом
+    // список идёт по алфавиту, и Enter выбрал бы случайного "Abaddon".
+    if (enterPressed && s_heroFilter[0] != '\0') {
+        for (const HeroCatalogEntry* e : cands)
+            if (!isTaken(e->id)) { pick(e->id); break; }
+    }
+
+    ImGui::BeginChild("##herolist", {0.f, rowH * 5.f}, ImGuiChildFlags_Borders);
+    ImDrawList* dl  = ImGui::GetWindowDrawList();
+    const float psz = rowH - 4.f;
+
+    // Строка списка: портрет героя (или "?", если героя нет) + имя. Selectable
+    // подаётся только как кликабельная подложка с ID, видимая часть рисуется
+    // поверх - как в DrawHeroStatRow.
+    auto drawRow = [&](ImVec2 rp, int heroId, const char* name, bool dim) {
+        ImTextureID tex = 0;
+        auto it = g_heroPortraits.find(heroId);
+        if (it != g_heroPortraits.end()) tex = (ImTextureID)it->second;
+        DrawPortrait(dl, {rp.x + 2.f, rp.y + 2.f}, psz,
+                     C(kCard2), C(kBorder), tex ? nullptr : "?", tex);
+        if (name && *name)
+            dl->AddText({rp.x + psz + 8.f, rp.y + (rowH - lh) * 0.5f},
+                        dim ? Ca(kMuted, 0.5f) : C(kText), name);
+    };
+
+    // Первая строка - то, что для этого слота в последний раз распознал капчур:
+    // портрет героя с его именем, либо "?" с именем "empty", если не распознано
+    // ничего.
+    if (!picked && s_heroFilter[0] == '\0') {
+        ImVec2 rp = ImGui::GetCursorScreenPos();
+        if (ImGui::Selectable("##detected", false, 0, {0.f, rowH})) {
+            // Герой распознан - вернуть слот на авто-детект. Ничего не распознано:
+            // при живом капчуре тоже авто (он сам запишет, что увидит), при
+            // остановленном - "вручную пусто" (-1), иначе слот никто не очистит
+            // (writeManualOverridesToLivePicks, orchestrator.cpp).
+            pick((detected > 0 || captureActive) ? 0 : -1);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(detected > 0 ? "Back to screen recognition"
+                                           : "Mark this slot as empty");
+        std::string detName = (detected > 0) ? heroDisplayName(detected, "")
+                                             : std::string("empty");
+        drawRow(rp, detected, detName.c_str(), /*dim=*/false);
+        ImGui::Separator();
+    }
+
+    if (!picked) {
+        for (const HeroCatalogEntry* e : cands) {
+            bool   taken = isTaken(e->id);
+            ImVec2 rp    = ImGui::GetCursorScreenPos();
+
+            char rowId[24];
+            std::snprintf(rowId, sizeof(rowId), "##pick_%d", e->id);
+            if (ImGui::Selectable(rowId, false,
+                                  taken ? ImGuiSelectableFlags_Disabled : 0,
+                                  {0.f, rowH}))
+                pick(e->id);
+            if (taken && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Already in draft");
+
+            drawRow(rp, e->id, e->display.c_str(), taken);
+
+            if (picked) break;
+        }
+    }
+
+    ImGui::EndChild();
+    if (picked) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
 // --- Отрисовка слота героя ----------------------------------------------------
 // absSlot: 0-9 (0-4 Radiant, 5-9 Dire). usedPos: позиции 1-5 занятые другими слотами в команде.
+// draftHeroes: heroId всех 10 слотов (0 = пусто) - popup смены героя блокирует уже занятых.
 // setPos(slot, pos) - вызывается попапом выбора позиции (на absSlot и, при свапе,
 // на слоте партнёра); хранилище позиций не хардкожено здесь - своя игра пишет в
 // g_portraitState (см. DrawDraftPanel), наблюдаемая - в g_spectatorState
 // (см. DrawSpectatorDraftPanel), чтобы ручная метка на чужом матче не задевала
 // нашу реальную позицию в собственном драфте.
+// setHero(slot, heroId) - пустой std::function отключает ручную смену героя
+// целиком (наблюдаемая игра: герои приходят из GSI, править нечего).
 static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
                          bool radiantSide, bool showPos, int slotNum,
                          int absSlot, const int usedPos[5],
-                         const std::function<void(int,int)>& setPos) {
+                         const std::function<void(int,int)>& setPos,
+                         const int draftHeroes[10] = nullptr,
+                         const std::function<void(int,int)>& setHero = {}) {
     ImDrawList* dl  = ImGui::GetWindowDrawList();
     ImVec2      rp  = ImGui::GetCursorScreenPos();
     const float lh  = ImGui::GetTextLineHeight();
@@ -351,6 +597,24 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
     ImU32 bgCol     = h.filled ? C(kCard) : Ca(kCard2, h.isYou ? 0.45f : 0.55f);
     ImU32 borderCol = h.isYou  ? Ca(kText, 0.55f) : C(kBorder);
     float bThick    = h.isYou  ? 2.f : 1.f;
+
+    // Клик по строке слота - ручная смена героя. InvisibleButton подаётся до
+    // кнопки позиционного бейджа и разрешает перекрытие: бейдж, поданный позже,
+    // лежит сверху и ловит свои клики сам.
+    const bool heroEditable = (bool)setHero && draftHeroes != nullptr;
+    char heroPopupId[24];
+    std::snprintf(heroPopupId, sizeof(heroPopupId), "##hero_%d", absSlot);
+    if (heroEditable) {
+        ImGui::SetCursorScreenPos(rp);
+        ImGui::SetNextItemAllowOverlap();
+        if (ImGui::InvisibleButton(heroPopupId, {rowW, H})) {
+            s_heroFilter[0]   = '\0';
+            s_heroFilterFocus = true;
+            ImGui::OpenPopup(heroPopupId);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click to change hero manually");
+    }
 
     dl->AddRectFilled(rp, {rp.x+rowW, rp.y+H}, bgCol);
     if (!h.filled && !h.isYou)
@@ -442,6 +706,11 @@ static void DrawHeroSlot(float rowW, const HeroSlotGui& h,
             }
             ImGui::EndPopup();
         }
+    }
+
+    if (heroEditable) {
+        ImGui::SetNextWindowPos({rp.x, rp.y + H + 2.f}, ImGuiCond_Always);
+        DrawHeroPickPopup(heroPopupId, rowW, absSlot, draftHeroes, setHero);
     }
 
     ImGui::SetCursorScreenPos(rp);
@@ -551,7 +820,7 @@ static void SectionLabelWithPosBadge(const char* label, float panelW, int positi
 
 // Меняет НАШУ настоящую позицию в текущем драфте - тот же эффект, что и клик
 // по позиции нашего слота в Draft-панели (DrawHeroSlot: свап с тиммейтом, если
-// позиция уже занята, запись в g_portraitState.manualPos + requestPositionRefresh).
+// позиция уже занята, запись в g_portraitState.manualPos + requestDraftRefresh).
 // newPos: 0 = All/сброс (снять ручной override, вернуться к авто-детекту с экрана),
 // 1-5 = конкретная позиция. Вынесено отдельно, т.к. это единая точка изменения нашей
 // позиции - вызывается и из бейджа Picks-панели, и из бейджа Meta-панели, держит
@@ -588,7 +857,7 @@ static void SetOurPosition(int newPos) {
         }
     }
     g_portraitState.manualPos[absSlot] = newPos;
-    requestPositionRefresh();
+    requestDraftRefresh();
 }
 
 // Смена позиции для превью в Meta Heroes вне игры - просто локальный выбор
@@ -603,7 +872,40 @@ static void SetMetaPreviewPosition(int newPos) {
 static void SetOwnGameManualPos(int absSlot, int pos) {
     std::lock_guard<std::mutex> lk(g_portraitState.mtx);
     g_portraitState.manualPos[absSlot] = pos;
-    requestPositionRefresh();
+    requestDraftRefresh();
+}
+
+// Колбэк ручной смены героя для слотов СВОЕЙ игры (DrawDraftPanel).
+// heroId: >0 - выбранный герой, 0 - вернуться к авто-детекту с экрана,
+// -1 - слот вручную объявлен пустым (капчур остановлен и ничего в этом слоте не
+// видит, очистить его в livepicks некому). Приоритет override'а над распознаванием
+// разбирает portrait_runner.cpp, запись в livepicks вне фазы захвата -
+// оркестратор (writeManualOverridesToLivePicks по requestDraftRefresh).
+// Слот в g_pickerState обновляется сразу, не дожидаясь круга через БД, -
+// через 250-500мс оттуда приедет то же значение.
+static void SetOwnGameManualHero(int absSlot, int heroId) {
+    if (absSlot < 0 || absSlot >= 10) return;
+
+    int shownId = heroId;
+    {
+        std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+        g_portraitState.manualHero[absSlot] = heroId;
+        // Сброс на авто - показываем то, что видит капчур прямо сейчас.
+        if (heroId == 0) shownId = g_portraitState.detectedHero[absSlot];
+    }
+    if (shownId < 0) shownId = 0;
+    std::string shownName = (shownId > 0) ? heroDisplayName(shownId, "") : std::string();
+
+    {
+        std::lock_guard<std::mutex> lk(g_pickerState.mtx);
+        HeroSlotGui& s = (absSlot < 5) ? g_pickerState.radiant[absSlot]
+                                       : g_pickerState.dire[absSlot - 5];
+        s.heroId = shownId;
+        s.filled = (shownId > 0);
+        std::snprintf(s.name, sizeof(s.name), "%s", shownName.c_str());
+    }
+    requestDraftRefresh();
+    requestRedraw();
 }
 
 // Колбэк позиции для слотов НАБЛЮДАЕМОЙ игры (DrawSpectatorDraftPanel) - чисто
@@ -1100,10 +1402,15 @@ void DrawDraftPanel(float panelW) {
     int radUsedPos[5] = {}, dirUsedPos[5] = {};
     for (int i=0;i<5;i++) { radUsedPos[i] = rad[i].pos; dirUsedPos[i] = dir[i].pos; }
 
+    // Герои всех 10 слотов - popup ручной смены героя блокирует уже занятых
+    int draftHeroes[10] = {};
+    for (int i=0;i<5;i++) { draftHeroes[i] = rad[i].heroId; draftHeroes[5+i] = dir[i].heroId; }
+
     // -- Radiant column -----------------------------------------------------
     ImGui::BeginGroup();
     DrawTeamColumnHeader(colW, true, rCount);
-    for (int i=0;i<5;i++) DrawHeroSlot(colW, rad[i], true,  isRadiant,  i+1, i, radUsedPos, SetOwnGameManualPos);
+    for (int i=0;i<5;i++) DrawHeroSlot(colW, rad[i], true,  isRadiant,  i+1, i, radUsedPos,
+                                       SetOwnGameManualPos, draftHeroes, SetOwnGameManualHero);
     ImGui::EndGroup();
 
     ImGui::SameLine(0, PAD);
@@ -1111,7 +1418,8 @@ void DrawDraftPanel(float panelW) {
     // -- Dire column --------------------------------------------------------
     ImGui::BeginGroup();
     DrawTeamColumnHeader(colW, false, dCount);
-    for (int i=0;i<5;i++) DrawHeroSlot(colW, dir[i], false, !isRadiant, i+1, 5+i, dirUsedPos, SetOwnGameManualPos);
+    for (int i=0;i<5;i++) DrawHeroSlot(colW, dir[i], false, !isRadiant, i+1, 5+i, dirUsedPos,
+                                       SetOwnGameManualPos, draftHeroes, SetOwnGameManualHero);
     ImGui::EndGroup();
 
     // -- Win probability bar ------------------------------------------------

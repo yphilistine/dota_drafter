@@ -22,11 +22,12 @@ void stopOrchestrator();
 // (ввод/смена Friend ID, кнопка Refresh).
 void startPhase1(long long accountId);
 
-// Сигнал оркестратору: пользователь вручную сменил позицию в GUI - записать
-// manualPos в livepicks и запустить one-shot переинференс. Единственная точка
-// входа для gui_draw.cpp (SetOurPosition): флаг-атомик оркестратора приватен
+// Сигнал оркестратору: пользователь вручную поменял драфт в GUI (позиция слота
+// или герой слота) - записать ручные значения в livepicks и запустить one-shot
+// переинференс. Единственная точка входа для gui_draw.cpp (SetOurPosition,
+// SetOwnGameManualPos, SetOwnGameManualHero): флаг-атомик оркестратора приватен
 // (static внутри orchestrator.cpp).
-void requestPositionRefresh();
+void requestDraftRefresh();
 
 // --- SQLite: таблица player_info (используется также из WinMain при старте) ---
 void createPlayerInfoTable(sqlite3* db);

@@ -52,12 +52,20 @@ struct SharedPortraitState {
     PortraitResult slots[10];
     int            manualPos[10]   = {};  // 0 = auto (screen capture), 1-5 = GUI override
     int            detectedPos[10] = {};  // Итоговая позиция (manualPos либо OCR), для отображения без пикера/accountId
+    // Пара manual/detected для героев - симметрична позициям выше. manualHero
+    // имеет приоритет над распознаванием во всех фазах (portrait_runner.cpp),
+    // detectedHero пишется капчуром всегда, даже когда слот перекрыт вручную:
+    // GUI показывает его первой строкой popup'а выбора героя ("что видит капчур").
+    int            manualHero[10]   = {};  // 0 = auto (screen capture), >0 = heroId из GUI, -1 = вручную пусто
+    int            detectedHero[10] = {};  // Последний результат распознавания, 0 = null/пусто
     bool           active = false;
     void clear() {
         std::lock_guard<std::mutex> lk(mtx);
         for (auto& s : slots) s = {};
         for (auto& p : manualPos) p = 0;
         for (auto& p : detectedPos) p = 0;
+        for (auto& h : manualHero) h = 0;
+        for (auto& h : detectedHero) h = 0;
         active = false;
     }
 };

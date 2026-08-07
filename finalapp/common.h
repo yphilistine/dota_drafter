@@ -11,6 +11,7 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <clocale>
+#include <cctype>
 #include <sstream>
 #include <cstdlib>
 #include <ctime>
@@ -213,6 +214,28 @@ inline int safeStoi(const std::string& s, int fallback = 0) {
 }
 inline long long safeStoll(const std::string& s, long long fallback = -1) {
     try { return s.empty() ? fallback : std::stoll(s); } catch (...) { return fallback; }
+}
+
+// Каноническая форма имени героя: нижний регистр, только буквы и цифры, без
+// префикса npc_dota_hero_ ("npc_dota_hero_crystal_maiden" и "Crystal Maiden"
+// дают один ключ "crystalmaiden"). Используется как ключ сопоставления вместо
+// localized_name, т.к. Valve иногда временно/некорректно меняет localized_name
+// (напр. видели в БД "Axe?" вместо "Axe") - это ломает распознавание,
+// heroes.name стабилен. Общая для сопоставления портретов (portrait_runner.cpp)
+// и поиска героя по тексту в GUI (gui_draw.cpp).
+inline std::string canonicalHeroKey(const std::string& raw) {
+    static const std::string kPrefix = "npc_dota_hero_";
+    std::string s = raw;
+    if (s.size() >= kPrefix.size() && s.compare(0, kPrefix.size(), kPrefix) == 0)
+        s = s.substr(kPrefix.size());
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (!std::isalnum(uc)) continue;
+        out += static_cast<char>(std::tolower(uc));
+    }
+    return out;
 }
 
 // STRATZ "POSITION_n" (n=1..5) -> int; 0, если формат не распознан.

@@ -82,23 +82,8 @@ static long long nowMs() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-// Каноническая форма имени героя: нижний регистр, без '_'/'-', без префикса
-// npc_dota_hero_. Используется как ключ сопоставления вместо localized_name,
-// т.к. Valve иногда временно/некорректно меняет localized_name (напр. видели
-// в БД "Axe?" вместо "Axe") - это ломает распознавание. heroes.name стабилен.
-static std::string canonicalHeroKey(const std::string& raw) {
-    static const std::string kPrefix = "npc_dota_hero_";
-    std::string s = raw;
-    if (s.size() >= kPrefix.size() && s.compare(0, kPrefix.size(), kPrefix) == 0)
-        s = s.substr(kPrefix.size());
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        if (c == '_' || c == '-') continue;
-        out += static_cast<char>(::tolower(static_cast<unsigned char>(c)));
-    }
-    return out;
-}
+// canonicalHeroKey() - в common.h: тот же ключ сопоставления нужен и GUI
+// (поиск героя по тексту в popup'е выбора, gui_draw.cpp).
 
 static std::map<std::string, int> loadHeroNameToId(sqlite3* db) {
     std::map<std::string, int> m;
@@ -272,10 +257,8 @@ void runPortraitCapture(GameInfo&           gameInfo,
 
             const auto& portraits = cap.portraits();
 
-            for (int slot = 0; slot < 10 && slot < (int)portraits.size(); ++slot) {
-                const Bitmap& bmp = portraits[slot];
-                if (bmp.empty()) continue;
-
+            for (int slot = 0; slot < 10; ++slot) {
+                // -- Распознавание кадра --------------------------------------
                 // Никакой "фиксации"/гистерезиса: всегда доверяем ближайшему по Пирсону
                 // кандидату текущего кадра (среди героев и "null" - он такая же запись в
                 // базе хешей). Один плохой кадр (перекрытие чатом/scoreboard/шопом) даёт
@@ -283,39 +266,77 @@ void runPortraitCapture(GameInfo&           gameInfo,
                 // цикле (250мс), т.к. ничего не "запоминается" против нового результата.
                 // Порог 0.4 - не решающий фильтр (это делает argmax по всей базе, включая
                 // null), а просто отсев совсем нечитаемых кадров (пустой/чёрный кадр и т.п.).
-                HeroMatch m = recognizer.recognize(bmp);
-                if (!m.name || m.score < 0.4f) continue;
-
-                bool isNullHero  = (std::strcmp(m.name, "null") == 0);
-                int  detectedId  = isNullHero ? 0 : lookupHeroId(nameToId, m.name);
-
-                if (!isNullHero && detectedId > 0) {
-                    std::lock_guard<std::mutex> lk(out.mtx);
-                    out.slots[slot].heroName = m.name;
-                    out.slots[slot].heroId   = detectedId;
-                    out.slots[slot].score    = m.score;
+                int         detectedId = -1;   // -1 = кадр нечитаем (не то же, что 0 = "null")
+                float       score      = 0.f;
+                const char* detName    = nullptr;
+                if (slot < (int)portraits.size() && !portraits[slot].empty()) {
+                    HeroMatch m = recognizer.recognize(portraits[slot]);
+                    if (m.name && m.score >= 0.4f) {
+                        detectedId = (std::strcmp(m.name, "null") == 0)
+                                   ? 0 : lookupHeroId(nameToId, m.name);
+                        score      = m.score;
+                        detName    = m.name;
+                    }
                 }
 
-                if (detectedId != lastHeroId[slot]) {
-                    if (detectedId == 0) {
+                // -- Ручной выбор героя в GUI побеждает распознавание ----------
+                // Тот же порядок, что и у позиций ниже (manualPos > OCR). Результат
+                // кадра всё равно сохраняется в detectedHero: GUI показывает его
+                // первой строкой popup'а выбора ("что сейчас видит капчур") и
+                // предлагает вернуться к нему.
+                int manual = 0;
+                {
+                    std::lock_guard<std::mutex> lk(out.mtx);
+                    if (detectedId >= 0) out.detectedHero[slot] = detectedId;
+                    manual = out.manualHero[slot];
+                }
+
+                // -1 = слот вручную объявлен пустым, >0 = вручную выбранный герой.
+                // Ручной выбор применяется и на нечитаемом кадре: слот, чей регион
+                // не читается вообще, иначе застрянет в livepicks на том герое,
+                // который был записан туда последним.
+                int effectiveId;
+                if (manual != 0)          effectiveId = (manual > 0) ? manual : 0;
+                else if (detectedId >= 0) effectiveId = detectedId;
+                else                      continue;
+
+                if (effectiveId > 0) {
+                    std::lock_guard<std::mutex> lk(out.mtx);
+                    // heroName нужен только как фолбэк для heroDisplayName() -
+                    // у ручного выбора его нет, там имя всегда находится по id.
+                    out.slots[slot].heroName = (manual > 0 || !detName) ? "" : detName;
+                    out.slots[slot].heroId   = effectiveId;
+                    out.slots[slot].score    = (manual > 0) ? 1.0f : score;
+                }
+
+                if (effectiveId != lastHeroId[slot]) {
+                    const char* team = (slot < 5) ? "Radiant" : "Dire";
+                    int idx = (slot < 5) ? slot+1 : slot-4;
+                    if (effectiveId == 0) {
                         clearHeroSlot(db, slot);
                         {
                             std::lock_guard<std::mutex> lk(out.mtx);
                             out.slots[slot] = {};
                         }
-                        const char* team = (slot < 5) ? "Radiant" : "Dire";
-                        int idx = (slot < 5) ? slot+1 : slot-4;
-                        LOG_INFO("[portrait] " << team << " #" << idx
-                                 << " -> NULL  score=" << std::fixed << std::setprecision(3) << m.score);
+                        if (manual != 0) {
+                            LOG_INFO("[portrait] " << team << " #" << idx << " -> NULL  (manual)");
+                        } else {
+                            LOG_INFO("[portrait] " << team << " #" << idx
+                                     << " -> NULL  score=" << std::fixed
+                                     << std::setprecision(3) << score);
+                        }
                     } else {
-                        updateSlot(db, slot, detectedId);
-                        const char* team = (slot < 5) ? "Radiant" : "Dire";
-                        int idx = (slot < 5) ? slot+1 : slot-4;
-                        LOG_INFO("[portrait] " << team << " #" << idx << " -> "
-                                 << std::left << std::setw(22) << m.name
-                                 << "  score=" << std::fixed << std::setprecision(3) << m.score);
+                        updateSlot(db, slot, effectiveId);
+                        if (manual > 0) {
+                            LOG_INFO("[portrait] " << team << " #" << idx
+                                     << " -> heroId " << effectiveId << "  (manual)");
+                        } else {
+                            LOG_INFO("[portrait] " << team << " #" << idx << " -> "
+                                     << std::left << std::setw(22) << (detName ? detName : "?")
+                                     << "  score=" << std::fixed << std::setprecision(3) << score);
+                        }
                     }
-                    lastHeroId[slot] = detectedId;
+                    lastHeroId[slot] = effectiveId;
                 }
             }
 

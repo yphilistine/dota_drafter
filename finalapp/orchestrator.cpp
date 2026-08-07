@@ -22,19 +22,19 @@
 #include <cstdio>
 
 // --- Управление потоками: наружу - только функции startOrchestrator/
-// stopOrchestrator/startPhase1/requestPositionRefresh ------------------------
+// stopOrchestrator/startPhase1/requestDraftRefresh ---------------------------
 static std::atomic<bool> g_pickerRunning{false};
 static std::atomic<bool> g_portraitRunning{false};
 static std::atomic<bool> g_spectatorPickerRunning{false};
 static std::atomic<bool> g_orchestratorRunning{false};
-static std::atomic<bool> g_posRefreshNeeded{false};
+static std::atomic<bool> g_draftRefreshNeeded{false};
 static std::thread       g_pickerThread;
 static std::thread       g_portraitThread;
 static std::thread       g_spectatorPickerThread;
 static std::thread       g_orchestratorThread;
 
-void requestPositionRefresh() {
-    g_posRefreshNeeded.store(true);
+void requestDraftRefresh() {
+    g_draftRefreshNeeded.store(true);
 }
 
 // --- SQLite: таблица player_info ----------------------------------------------
@@ -202,7 +202,16 @@ struct OrchestratorLoopState {
     int         prevOurSide      = -1;
     bool        oneShotActive    = false;
     int         oneShotGen       = 0;
+    std::chrono::steady_clock::time_point oneShotStart;
 };
+
+// Потолок ожидания одноразового прогона пикера (runOneShotRefresh). Обычный
+// прогон - меньше секунды; потолок закрывает случаи, когда inferenceGen так и не
+// сдвинется: поток пикера снесли тир-дауном фазы сразу после запуска или он сам
+// вышел на несовместимой схеме данных. Пока oneShotActive взведён,
+// runPhaseStateMachine выходит по раннему return и не отсчитывает хвост фазы 3 -
+// зависший флаг оставил бы захват и пикер работать до конца сессии.
+static constexpr int ONESHOT_MAX_SEC = 10;
 
 // Снимок состояния GSI на одну итерацию цикла.
 struct GsiSnapshot {
@@ -384,6 +393,10 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
             g_portraitState.clear();
         }
         st.phase3EndPending = false;
+        // Одноразовый прогон пикера тут же и снесли - его флаг надо снять здесь,
+        // иначе он останется взведённым (inferenceGen уже не сдвинется) и
+        // заблокирует хвост фазы 3 в следующем матче.
+        st.oneShotActive = false;
         if (g_pickerState.gameStarted) {
             g_pickerState.reset();
         }
@@ -436,7 +449,14 @@ static void runPhaseStateMachine(OrchestratorLoopState& st, const GsiSnapshot& g
                 if (g_pickerThread.joinable()) g_pickerThread.join();
                 g_portraitRunning.store(false);
                 if (g_portraitThread.joinable()) g_portraitThread.join();
-                g_portraitState.clear();
+                // Поток остановлен, но состояние захвата живёт до конца матча:
+                // manualHero/detectedHero нужны GUI (popup выбора героя
+                // показывает последний результат капчура и даёт вернуться к
+                // нему). Полный сброс - в ветке IDLE/POSTGAME и handleNewMatch.
+                {
+                    std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+                    g_portraitState.active = false;
+                }
                 st.phase3EndPending = false;
                 requestRedraw();
             }
@@ -486,59 +506,98 @@ static void syncPortraitOnlyToGui(const GsiSnapshot& gs) {
     requestRedraw();
 }
 
-// One-shot: ручная смена позиции вне фазы 3 (клик по бейджу в GUI) -> запись
-// manualPos в livepicks + одноразовый запуск пикера до первого inferenceGen.
-static void runOneShotRefresh(sqlite3* db, OrchestratorLoopState& st) {
-    if (g_posRefreshNeeded.exchange(false)
-        && !g_pickerRunning.load()
-        && g_pickerState.gameStarted
-        && st.accountId != 0)
+// Запись ручных правок GUI (позиции своей команды + герои любого из 10 слотов)
+// в livepicks. Позиции - только те, что реально выставлены вручную; герои -
+// только слоты с manualHero != 0: после остановки капчура detectedHero больше
+// не обновляется, и запись "того, что видел капчур" затёрла бы реальный драфт.
+static void writeManualOverridesToLivePicks(sqlite3* db) {
+    int side = 0;
     {
-        int side = 0;
-        {
-            std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
-            side = g_gameInfo.ourSide;
-        }
-        int base = (side == 1) ? 0 : 5;
-        for (int i = 0; i < 5; ++i) {
-            int slot = base + i;
-            int mp = 0;
-            {
-                std::lock_guard<std::mutex> lk(g_portraitState.mtx);
-                mp = g_portraitState.manualPos[slot];
-            }
-            if (mp > 0 && mp <= 5) {
-                char col[16];
-                if (slot < 5) std::snprintf(col, sizeof(col), "r%d_pos", slot + 1);
-                else          std::snprintf(col, sizeof(col), "d%d_pos", slot - 4);
-                char sql[128];
-                std::snprintf(sql, sizeof(sql),
-                    "UPDATE livepicks SET %s=%d, updated_at=%lld;",
-                    col, mp, (long long)std::chrono::duration_cast<
-                        std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch()).count());
-                sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
-            }
-        }
+        std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
+        side = g_gameInfo.ourSide;
+    }
 
-        st.oneShotGen = g_pickerState.inferenceGen.load(std::memory_order_acquire);
-        g_pickerRunning.store(true);
-        if (g_pickerThread.joinable()) g_pickerThread.join();
-        g_pickerThread = std::thread([]{
-            runPickerGui(MODEL_PATH, DB_PATH,
-                         g_pickerRunning, &g_pickerState, &g_portraitState);
-        });
-        st.oneShotActive = true;
+    int manualPos[10], manualHero[10];
+    {
+        std::lock_guard<std::mutex> lk(g_portraitState.mtx);
+        for (int i = 0; i < 10; ++i) {
+            manualPos[i]  = g_portraitState.manualPos[i];
+            manualHero[i] = g_portraitState.manualHero[i];
+        }
+    }
+
+    long long now = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    auto updateCol = [&](const char* col, int value) {
+        char sql[128];
+        std::snprintf(sql, sizeof(sql),
+            "UPDATE livepicks SET %s=%d, updated_at=%lld;", col, value, now);
+        sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
+    };
+    auto colName = [](char out[16], int slot, const char* suffix) {
+        if (slot < 5) std::snprintf(out, 16, "r%d_%s", slot + 1, suffix);
+        else          std::snprintf(out, 16, "d%d_%s", slot - 4, suffix);
+    };
+
+    // Позиции распознаются только для своей команды (portrait_runner.cpp),
+    // вражеские остаются нулями - вручную их выставить тоже нельзя.
+    int base = (side == 1) ? 0 : 5;
+    for (int i = 0; i < 5; ++i) {
+        int slot = base + i;
+        if (manualPos[slot] > 0 && manualPos[slot] <= 5) {
+            char col[16]; colName(col, slot, "pos");
+            updateCol(col, manualPos[slot]);
+        }
+    }
+
+    for (int slot = 0; slot < 10; ++slot) {
+        if (manualHero[slot] == 0) continue;
+        char col[16]; colName(col, slot, "hero");
+        updateCol(col, manualHero[slot] > 0 ? manualHero[slot] : 0);
+    }
+}
+
+// One-shot: ручная правка драфта вне фазы 3 (клик по бейджу позиции или выбор
+// героя в GUI) -> запись ручных значений в livepicks + одноразовый запуск
+// пикера до первого inferenceGen.
+static void runOneShotRefresh(sqlite3* db, OrchestratorLoopState& st) {
+    if (g_draftRefreshNeeded.exchange(false)
+        && !g_pickerRunning.load()
+        && g_pickerState.gameStarted)
+    {
+        // Запись в БД - всегда: без accountId пикера нет, но livepicks должен
+        // оставаться согласованным с тем, что показано в GUI.
+        writeManualOverridesToLivePicks(db);
+
+        if (st.accountId != 0) {
+            st.oneShotGen = g_pickerState.inferenceGen.load(std::memory_order_acquire);
+            g_pickerRunning.store(true);
+            if (g_pickerThread.joinable()) g_pickerThread.join();
+            g_pickerThread = std::thread([]{
+                runPickerGui(MODEL_PATH, DB_PATH,
+                             g_pickerRunning, &g_pickerState, &g_portraitState);
+            });
+            st.oneShotActive = true;
+            st.oneShotStart  = std::chrono::steady_clock::now();
+        }
         requestRedraw();
     }
 
-    if (st.oneShotActive &&
-        g_pickerState.inferenceGen.load(std::memory_order_acquire) > st.oneShotGen)
-    {
-        g_pickerRunning.store(false);
-        if (g_pickerThread.joinable()) g_pickerThread.join();
-        st.oneShotActive = false;
-        requestRedraw();
+    // Прогон закончен: пикер посчитал инференс либо истёк ONESHOT_MAX_SEC.
+    if (st.oneShotActive) {
+        bool done = g_pickerState.inferenceGen.load(std::memory_order_acquire) > st.oneShotGen;
+        auto waited = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - st.oneShotStart).count();
+        if (!done && waited >= ONESHOT_MAX_SEC)
+            LOG_WARN("[orchestrator] One-shot picker did not finish in "
+                     << ONESHOT_MAX_SEC << "s - releasing");
+        if (done || waited >= ONESHOT_MAX_SEC) {
+            g_pickerRunning.store(false);
+            if (g_pickerThread.joinable()) g_pickerThread.join();
+            st.oneShotActive = false;
+            requestRedraw();
+        }
     }
 }
 
