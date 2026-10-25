@@ -188,19 +188,26 @@ HudLayout содержит координаты портретов (radiant_x_st
 |---------------|----------|
 | `Matrix8` | 64 float: серая 8x8 матрица (zero-mean, unit-variance) |
 | `HeroHashEntry` | Пара: имя героя + Matrix8 |
-| `HeroMatch` | Результат: имя, score. `confident()` при score >= 0.80 |
-| `pearson(a, b)` | Корреляция Пирсона двух Matrix8 (dot / 63) |
-| `computeMatrix(bgra, w, h)` | BGRA-пиксели -> Matrix8 (greyscale -> bilinear 8x8 -> нормализация) |
-| `HeroRecognizer` | Поиск ближайшего героя по базе хешей |
+| `HeroMatch` | Результат: имя, score. `confident()` при score >= 0.80 - справочный порог, в `finalapp` нигде не вызывается (используется только консольной утилитой `screencapture/main.cpp`) |
+| `pearson(a, b)` | Корреляция Пирсона двух Matrix8: `dot / 64`. Обе матрицы нормализованы популяционной дисперсией (деление на N=64), поэтому самокорреляция ровно 1.0 и score лежит в [-1, 1] |
+| `computeMatrix(bgra, w, h)` | BGRA-пиксели -> Matrix8: серый BT.601 (`0.299R + 0.587G + 0.114B`) -> усреднение по площади до 8x8 (ячейка - прямоугольник w/8 x h/8 пикселей, граничный пиксель входит с весом доли своей площади) -> zero-mean / unit-variance. Выбрано вместо выборки 4 соседних пикселей ради устойчивости к сдвигу региона: на портретах, отрендеренных из текстур игры, сдвиг на 4 px даёт 2 ошибки из 127 против 24, на 3 px при 1080p - 10 против 35 |
+| `HeroRecognizer` | Линейный перебор всей базы, argmax по `pearson`; досрочный выход при score > 0.999. Пустая база -> `{nullptr, -1}` |
 | `PosMatch` | Результат OCR-распознавания позиции: pos (0-5), score. `confident()` при score >= 0.50 |
+| `DHash` | `uint64_t`, нигде не используется |
 
-Порог уверенности героя: score >= 0.80 (same hero ~0.99, different ~0.0).
-`PosHashEntry`/`PosRecognizer` (Pearson-подход к позициям) удалены из этого файла - заменены OCR (`pos_ocr.h`).
+Ориентиры на реальных захватах: тот же герой 0.98-1.0, ближайший чужой герой или `null` обычно 0.5-0.75. Решение в рантайме - argmax по всей базе (герои + `null`), а не порог: `portrait_runner.cpp` отбрасывает только кадры со score < 0.4.
+Позиции этим методом не распознаются - см. `pos_ocr.h`.
+
+Копия `screencapture/dhash.h` (утилита сбора эталонов) отличается от этой: там `pearson` = `dot / 63` (самокорреляция ~1.016), нет `PosMatch` и комментариев. На эталоны это не влияет - `build_hero_db` сохраняет только матрицы `computeMatrix`. А вот `computeMatrix` в обеих копиях обязана быть одинаковой: при её изменении нужно пересобрать `screencapture\build\build_hero_db.exe` и базу (Update Assets).
 
 ---
 
 ### hero_hashes.dat (runtime, не хедер)
-База хешей героев для `HeroRecognizer` - **не компилируется в бинарник** (в отличие от того, что было раньше). Бинарный файл (uint32 count, затем на запись: uint16 nameLen + имя + 64 float32) лежит рядом с exe и грузится в рантайме через `loadHeroHashes("hero_hashes.dat")` (`portrait_runner.cpp`). Генерируется офлайн-инструментом `screencapture/build_hero_db.cpp` (вне `finalapp/`), устанавливается инсталлятором (см. `dota_draft_setup.iss`). Файла `hero_hashes.h` в проекте больше нет.
+База эталонов для `HeroRecognizer` - **не компилируется в бинарник**. Бинарный файл (little-endian `uint32 count`, затем на запись: `uint16 nameLen` + имя без завершающего нуля + 64 float32) лежит рядом с exe и грузится в рантайме через `loadHeroHashes("hero_hashes.dat")` (`portrait_runner.cpp`; при `count > 10000` или обрыве файла база считается незагруженной). Устанавливается инсталлятором (`dota_draft_setup.iss`) и обновляется data-каналом апдейтера (`scripts/update_assets.ps1`). Файла `hero_hashes.h` в `finalapp/` нет.
+
+Генерация - офлайн-утилита `screencapture/build_hero_db.cpp` (вне `finalapp/`), её запускает `scripts/update_assets.bat` с `--dir C:\Users\ANDREY\Desktop\heropngs` (исходные эталоны, 277 файлов; `screencapture/allheroes` - неполная копия), затем копирует результат в `finalapp/`, обновляет манифест, коммитит и пушит. Каждый файл из `--dir` (читается через GDI+, формат внутри любой - `rubick2.png`/`techies1.png` на самом деле JPEG) (опционально `--crop x0 y0 x1 y1` в долях) -> `computeMatrix` -> запись. Ключ записи - имя файла в нижнем регистре **без цифр**, поэтому у героя может быть несколько эталонов (`juggernaut.png`, `juggernaut1.png`); любое имя, содержащее `null` (`NULL.png`, `event_null7.png`), даёт ключ `null` - эталон пустого слота, участвующий в argmax наравне с героями. Записи отсортированы по ключу. Ключ сопоставляется с `heroes.name` через `canonicalHeroKey`, т.е. подчёркивания и регистр не важны (`anti_mage` и `antimage` совпадут). Текущая база: 277 записей, 128 уникальных ключей.
+
+Эталонные PNG обязаны быть вырезаны по тем же регионам, что и в рантайме (`HudLayout` в `finalapp/dota2_capture.h`), иначе корреляция падает - портрет на 1920x1080 всего ~34x32 px, сдвиг в 3-4 px - это почти целая ячейка 8x8. В `screencapture/dota2_capture.h` координаты портретов совпадают с `finalapp/dota2_capture.h` только для 16:10 (16:9 - старые значения, 4:3 и 21:9 - совсем другие); источник вырезок с актуальной разметкой - файлы `radiant_hero_N.png`/`dire_hero_N.png` кнопки `[screenshot]`.
 
 ### pos_ocr.h
 Распознавание **позиции** (1-5) через Windows OCR API (WinRT), заменяет старый Pearson-подход (`PosRecognizer`/`pos_hashes.h`).
@@ -239,13 +246,13 @@ GSI HTTP-сервер.
 
 | Функция | Описание |
 |---------|----------|
-| `loadHeroHashes(path)` | Загрузка `hero_hashes.dat` (бинарный формат) в vector<HeroHashEntry> для `HeroRecognizer` |
+| `loadHeroHashes(path)` | Загрузка `hero_hashes.dat` (бинарный формат) в `vector<HeroHashEntry>` для `HeroRecognizer` |
 | `runPortraitCapture(gameInfo, dbPath, running, out)` | Цикл захвата каждые 250мс -> `HeroRecognizer` (Pearson) для героев + `PosOcrRecognizer` (Windows OCR) для позиций -> запись в livepicks. Тело цикла обёрнуто в try/catch на итерацию (логирует и продолжает, не убивая поток - раньше во всей функции не было ни одного try/catch). На ветке ошибки открытия БД теперь вызывается `winrt::uninit_apartment()` (раньше пропускался, в отличие от нормального пути через `cleanup:`). Диагностика - через `LOG_INFO/WARN/ERR` (раньше `printf`/`puts`, невидимые в GUI-приложении без консоли). Без гистерезиса/фиксации: каждый кадр - всегда ближайший по Пирсону кандидат среди героев и `"null"` (own запись в базе хешей, участвует в том же argmax) немедленно перезаписывает слот, если отличается от уже записанного. Порог `score >= 0.4` - не решающий фильтр (решение - argmax по всей базе), а только отсев нечитаемых кадров. Расчёт: единичный кадр с ложным совпадением (напр. чат/scoreboard/шоп на секунду перекрыли регион) даёт максимум один неверный кадр в БД - следующий цикл (250мс) его перезапишет, так как ничего не "запоминается" против нового результата. Единственное исключение из "всегда верим кадру" - ручной выбор героя в GUI (`out.manualHero[slot]`, тот же приоритет, что у `manualPos` над OCR): такой слот распознаванием не перезаписывается, но результат кадра всё равно кладётся в `out.detectedHero[slot]` - его показывает первой строкой popup выбора героя. Ручной выбор применяется и на нечитаемом кадре (иначе слот, чей регион вообще не читается, остался бы в livepicks с прежним героем) |
 | `updateSlot(db, slot, heroId)` | Обновление hero в слоте livepicks |
 | `updateSlotPos(db, slot, pos)` | Обновление позиции в слоте livepicks |
 | `clearHeroSlots(db)` | Обнуление всех hero + pos слотов в livepicks |
 | `clearHeroSlot(db, slot)` | Обнуление одного hero-слота |
-| `captureDebugScreenshotWithReport(dbPath, dir="screenshots")` | Одноразовый диагностический снимок для кнопки `[screenshot]`: свой `Dota2Capture` -> `findGameWindow()` + `capturePortraits()` -> `saveDebugRegions(dir)` (10+10 PNG, как раньше `dota2::captureDebugScreenshot`) + `saveFullScreenshotWithRegions(dir)` (один `fullscreen_regions.png` - полный кадр HUD с наложенными рамками всех 20 регионов) + **`report.txt`** - по каждому герою-слоту: распознанное имя (или `NULL`) / `heroId` / Pearson-score; по каждому позиционному слоту: сырой OCR-текст (`.recognizeDebug()` из `pos_ocr.h`), итоговая позиция и score. Использует свою, независимую от фонового `runPortraitCapture`, пару `HeroRecognizer`/`PosOcrRecognizer` (не трогает состояние живого 250мс-цикла). `false`, если окно Dota 2 не найдено или кадр не захвачен (папка тогда не трогается). Вызывается из `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке |
+| `captureDebugScreenshotWithReport(dbPath, dir="screenshots")` | Одноразовый диагностический снимок для кнопки `[screenshot]`: свой `Dota2Capture` -> `findGameWindow()` + `capturePortraits()` -> `saveDebugRegions(dir)` (10+10 PNG, как раньше `dota2::captureDebugScreenshot`) + `saveFullScreenshotWithRegions(dir)` (один `fullscreen_regions.png` - полный кадр HUD с наложенными рамками всех 20 регионов) + **`report.txt`** - по каждому герою-слоту: распознанное имя (или `NULL`) / `heroId` / Pearson-score (argmax без фильтра `score >= 0.4` живого цикла - кадр, который цикл проигнорировал бы, здесь всё равно показан с лучшим кандидатом); по каждому позиционному слоту: сырой OCR-текст (`.recognizeDebug()` из `pos_ocr.h`), итоговая позиция и score. Использует свою, независимую от фонового `runPortraitCapture`, пару `HeroRecognizer`/`PosOcrRecognizer` (не трогает состояние живого 250мс-цикла). `false`, если окно Dota 2 не найдено или кадр не захвачен (папка тогда не трогается). Вызывается из `gui_draw.cpp` (`DrawDraftPanel`) на отдельном потоке |
 | `wideToUtf8(w)` | `std::wstring` -> UTF-8 `std::string` через `WideCharToMultiByte` - нужен, чтобы записать сырой OCR-текст (может быть на любом из 9 поддерживаемых языков) в `report.txt` |
 
 Распознавание позиций: только для своей команды (manualPos override > screen capture > 0). Вражеские позиции = 0.
@@ -466,7 +473,7 @@ GUI: D3D11-инициализация, `WndProc`, `RenderFrame`, точка вх
 ---
 
 ### build_unified.bat
-Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp`, а также более поздней разбивкой `portrait_runner.cpp` (-> `overlay_button.cpp`) и `playerdatafetcher.cpp` (-> `hero_meta_stats.cpp`) - компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки - по-прежнему один `cl.exe`-инвок, без CMake.
+Скрипт сборки: cl.exe (MSVC) + vcpkg + CatBoost. `/std:c++17` + `/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS`: cppwinrt (`pos_ocr.h`, включается в `portrait_runner.cpp`) под C++17 использует `<experimental/coroutine>`, которую MSVC 14.51+ (VS 18, его выбирает vswhere `-latest`) без этого define отклоняет ошибкой STL1011. Долгосрочно - переход на `/std:c++20`. Список исходников дополнен новыми файлами разбивки mainGUI.cpp: `app_state.cpp`, `update_window.cpp`, `orchestrator.cpp`, `gui_draw.cpp`, а также более поздней разбивкой `portrait_runner.cpp` (-> `overlay_button.cpp`) и `playerdatafetcher.cpp` (-> `hero_meta_stats.cpp`) - компилируются в общий `Dota_Drafter.exe`, без изменения структуры сборки - по-прежнему один `cl.exe`-инвок, без CMake.
 
 Версия ресурса PE (`version.rc` -> `FileVersion`/`ProductVersion`) и версия SxS-манифеста (`app.manifest` -> `assemblyIdentity/@version`) больше не захардкожены на `1.0.0.0`: перед компиляцией скрипт через временный `.ps1` (`%TEMP%\dd_read_ver.ps1`) читает `kAppVersion` из `version.h` (сейчас `0.5.0`), парсит MAJOR.MINOR.PATCH и передаёт их в `rc.exe /dVER_MAJOR=.../dVER_MINOR=.../dVER_PATCH=...` (VER_BUILD всегда 0). Тем же значением через второй временный `.ps1` (`dd_patch_manifest.ps1`) патчится **копия** `app.manifest` в `%OUT_DIR%\app.manifest` (исходный `app.manifest` в репозитории не трогается, чтобы обычная локальная сборка не пачкала git diff) - именно эта копия встраивается `mt.exe`. Regex патча манифеста намеренно узкий (привязан к `name="DotaDrafter.DraftAssistant"` перед `version="..."`), чтобы не задеть `<?xml version="1.0"...?>` и `manifestVersion="1.0"` на `<assembly>` - широкий `version="[^"]*"` цеплял оба этих атрибута тоже. `release_app.bat` (в `dota_drafter\scripts\`, вне `finalapp/`) не менялся - он только обновляет `kAppVersion` в `version.h` и затем вызывает `build_unified.bat`, который сам подхватывает новую версию.
 
@@ -566,9 +573,11 @@ CWD -> curl_global_init -> GDI+
 |--------|----------|
 | `scripts/release_app.bat VERSION` | Обновить version.h -> build -> installer -> gh release -> manifest.json (app) |
 | `scripts/pack_data.bat DVER SCHEMA` | meta в _data.db -> gh release -> manifest.json (cbm/db) |
-| `scripts/update_assets.ps1` (+ `.bat` обёртка) | Пересчитать sha256 hero_hashes.dat + assets/*.png -> manifest.json (raw main URL, без релиза) -> commit + push |
+| `scripts/update_assets.bat` (+ `update_assets.ps1`) | `build_hero_db --dir Desktop\heropngs` -> копия `hero_hashes.dat` в `finalapp/` -> commit + push `screencapture/hero_hashes.*` -> sha256 hero_hashes.dat + assets/*.png + GSI-конфиг -> manifest.json (raw main URL, без релиза) -> commit + push |
 
 VS Code Tasks: "Release App", "Release Data", "Update Assets".
+
+`release_app.bat` коммитит только `manifest.json`, `version.h`, `.iss` и инсталлятор. Изменения исходников (в том числе `dhash.h`) нужно закоммитить самому до запуска. При изменении `computeMatrix` выкатываются оба канала подряд: Release App (новая функция признака в exe; инсталлятор берёт локальный `finalapp/hero_hashes.dat`) и Update Assets (новая база в манифесте). `hero_hashes.dat` не проходит через schema-гейт, поэтому между двумя шагами старое приложение может скачать новую базу - для перехода на усреднение по площади это не критично (0 ошибок на точном регионе, score ~0.93 вместо ~0.97).
 
 ---
 

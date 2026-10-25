@@ -44,21 +44,28 @@ inline Matrix8 computeMatrix(const uint8_t* bgra, int w, int h) {
         grey[i] = 0.114f*b + 0.587f*g + 0.299f*r;
     }
 
-    const float sx = static_cast<float>(w) / SZ;
-    const float sy = static_cast<float>(h) / SZ;
+    const float cw = static_cast<float>(w) / SZ;
+    const float ch = static_cast<float>(h) / SZ;
     for (int dy = 0; dy < SZ; ++dy) {
-        float fy  = (dy + 0.5f) * sy - 0.5f;
-        int   iy0 = (std::max)(0, static_cast<int>(fy));
-        int   iy1 = (std::min)(h-1, iy0+1);
-        float ay  = fy - static_cast<float>(iy0);
+        const float y0  = dy * ch;
+        const float y1  = y0 + ch;
+        const int   iy0 = static_cast<int>(y0);
+        const int   iy1 = (std::min)(h, static_cast<int>(std::ceil(y1)));
         for (int dx = 0; dx < SZ; ++dx) {
-            float fx  = (dx + 0.5f) * sx - 0.5f;
-            int   ix0 = (std::max)(0, static_cast<int>(fx));
-            int   ix1 = (std::min)(w-1, ix0+1);
-            float ax  = fx - static_cast<float>(ix0);
-            out.v[dy*SZ+dx] =
-                (1-ay)*(1-ax)*grey[iy0*w+ix0] + (1-ay)*ax*grey[iy0*w+ix1] +
-                   ay *(1-ax)*grey[iy1*w+ix0] +    ay *ax*grey[iy1*w+ix1];
+            const float x0  = dx * cw;
+            const float x1  = x0 + cw;
+            const int   ix0 = static_cast<int>(x0);
+            const int   ix1 = (std::min)(w, static_cast<int>(std::ceil(x1)));
+            float sum = 0.0f, area = 0.0f;
+            for (int y = iy0; y < iy1; ++y) {
+                float wy = (std::min)(y + 1.0f, y1) - (std::max)(static_cast<float>(y), y0);
+                for (int x = ix0; x < ix1; ++x) {
+                    float wx = (std::min)(x + 1.0f, x1) - (std::max)(static_cast<float>(x), x0);
+                    sum  += grey[y*w+x] * wx * wy;
+                    area += wx * wy;
+                }
+            }
+            out.v[dy*SZ+dx] = sum / area;
         }
     }
 

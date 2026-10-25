@@ -126,6 +126,9 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+:: _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS: cppwinrt (pos_ocr.h) под
+:: /std:c++17 подключает <experimental/coroutine>, которую MSVC 14.51+ (VS 18)
+:: без этого define отклоняет ошибкой STL1011.
 cl.exe ^
     /nologo ^
     /std:c++17 ^
@@ -134,6 +137,7 @@ cl.exe ^
     %OPT_FLAGS% ^
     /W3 ^
     /DWIN32 /D_WINDOWS /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /DCURL_STATICLIB ^
+    /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS ^
     /Fe:"%OUT_DIR%\%TARGET%.exe" ^
     /Fo:"%OUT_DIR%\\" ^
     /I"%VCPKG%\include" ^

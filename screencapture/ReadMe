@@ -1,84 +1,89 @@
-# dota2_capture
+# screencapture
 
-Инструмент для захвата и распознавания портретов героев Dota 2 в реальном времени.  
-Захватывает портреты из HUD через `PrintWindow`, распознаёт героев методом корреляции Пирсона на матрицах 8×8, выводит результат в консоль и сохраняет PNG-файлы.
+Офлайн-инструменты для базы эталонов портретов героев Dota 2:
+- `dota2_portraits.exe` - консольный захват портретов из HUD через `PrintWindow`, сохранение PNG и (если при сборке был `hero_hashes.h`) распознавание с выводом в консоль
+- `build_hero_db.exe` - генератор базы эталонов `hero_hashes.dat` (для `finalapp`) и `hero_hashes.h` (для `dota2_portraits.exe`) из PNG-вырезок
+
+Основное приложение (`finalapp/`) использует только результат - `hero_hashes.dat`. Описание того, как приложение сравнивает кадры с эталонами, - в разделе "Распознавание героев" `finalapp/ReadMe.md`.
 
 ---
 
-## Структура проекта
+## Структура
 
 ```
-dota2_capture/
-├── main.cpp               # Точка входа — интерактивный / --once / --loop режимы
-├── dota2_capture.h        # Поиск окна, DPI-захват, таблицы HUD-координат
-├── dota2_capture.cpp      # Реализация через GDI/GDI+
-├── dhash.h                # Распознаватель на Pearson 8×8 (header-only) косинус между 64х мерными векторами
-├── hero_hashes.h          # Сгенерированная БД хэшей (подключается автоматически)
-├── build_hero_db.cpp      # Утилита — генерирует hero_hashes.h из PNG-файлов
-├── screencapture.bat      # Сборка dota2_portraits.exe
-└── herodb_build.bat       # Сборка build_hero_db.exe
+screencapture/
+├── main.cpp                  # dota2_portraits.exe: интерактивный / --once / --loop режимы
+├── dota2_capture.h / .cpp    # Поиск окна, DPI-захват, таблицы HUD-координат (своя копия, см. ниже)
+├── dhash.h                   # Признак портрета (серая 8×8) + Pearson (своя копия, см. ниже)
+├── build_hero_db.cpp         # build_hero_db.exe: PNG -> hero_hashes.dat + hero_hashes.h
+├── hero_hashes.dat / .h      # Последний результат build_hero_db
+├── allheroes/                # Неполная копия эталонов из Desktop\heropngs (antimage.png, juggernaut1.png, NULL.png, ...)
+├── liveheroes/               # Живые захваты, часть ещё не переименована в имена героев
+├── screencapture_build.bat   # Сборка build\dota2_portraits.exe
+└── herodb_build.bat          # Сборка build\build_hero_db.exe
 ```
 
 ---
 
 ## Сборка
 
-### dota2_portraits.exe
-
 ```bat
-screencapture.bat
+screencapture_build.bat     :: build\dota2_portraits.exe
+herodb_build.bat            :: build\build_hero_db.exe
 ```
 
-Требует MSVC (Visual Studio 2019 / 2022 / BuildTools). Путь до `vcvarsall.bat` определяется автоматически через vswhere.  
-Результат: `build\dota2_portraits.exe`
+Требует MSVC (Visual Studio 2019 / 2022 / BuildTools), путь до `vcvarsall.bat` определяется через vswhere. vcpkg не нужен - линкуется только с `gdiplus.lib`, `gdi32.lib`, `user32.lib`.
 
-### build_hero_db.exe
-
-```bat
-herodb_build.bat
-```
-
-Результат: `build\build_hero_db.exe`
+`dota2_portraits.exe` подхватывает `hero_hashes.h` из этой папки на момент компиляции (`__has_include`); без него распознавания нет, только захват.
 
 ---
 
-## Использование
-
-### dota2_portraits.exe
+## dota2_portraits.exe
 
 ```
-dota2_portraits.exe                      # интерактивный режим (Enter — захват)
+dota2_portraits.exe                      # интерактивный режим (Enter - захват)
 dota2_portraits.exe --once               # один захват и выход
 dota2_portraits.exe --loop 500           # захват каждые 500 мс
-dota2_portraits.exe --out C:\imgs        # своя папка для сохранения
+dota2_portraits.exe --out C:\imgs        # своя папка для сохранения (по умолчанию portraits\)
 dota2_portraits.exe --debug              # сохранить полный снимок окна + оверлей регионов
+dota2_portraits.exe --list-windows       # вывести список видимых окон (диагностика)
 ```
 
-Портреты сохраняются как:
+Портреты сохраняются как `radiant_0.png ... radiant_4.png`, `dire_5.png ... dire_9.png`.
+
+С `hero_hashes.h` каждый захват печатает имя ближайшего героя и score; при score < 0.80 (`HeroMatch::confident()`) строка помечается `(low confidence)`.
+
+---
+
+## build_hero_db.exe - сборка базы эталонов
 
 ```
-portraits\radiant_0.png ... radiant_4.png
-portraits\dire_5.png    ... dire_9.png
+build_hero_db.exe --dir <папка с PNG> [--out hero_hashes.dat] [--crop x0 y0 x1 y1]
 ```
 
-Если `hero_hashes.h` присутствует на момент компиляции, каждый захват дополнительно выводит в stdout имя героя и значение корреляции Пирсона.
+- `--dir` (обязательно) - папка с PNG; берутся все `*.png`
+- `--out` - имя выходного файла (по умолчанию `hero_hashes.dat`); рядом всегда пишется одноимённый `.h`
+- `--crop` - обрезка каждого PNG перед расчётом признака, в долях 0..1
 
-### build_hero_db.exe — сборка базы хэшей
+Для каждого PNG: обрезка -> `computeMatrix` (серый BT.601 -> усреднение по площади до 8×8 -> zero-mean / unit-variance) -> запись. Записи сортируются по ключу.
 
-**Использование:**
+**Ключ записи** - имя файла в нижнем регистре без цифр:
+- имя героя - внутреннее (`heroes.name` без `npc_dota_hero_`): `antimage.png`, `crystal_maiden.png`. Приложение сопоставляет ключи через `canonicalHeroKey`, поэтому регистр и подчёркивания не важны
+- цифры отбрасываются, так что у героя может быть несколько эталонов: `juggernaut.png`, `juggernaut1.png`
+- любое имя, содержащее `null` (`NULL.png`, `event_null7.png`), даёт ключ `null` - эталон пустого слота
 
-1. Запустить `dota2_portraits.exe --loop` во время живой игры или в лобби стратегии.
-2. Портреты сохранятся как `radiant_0.png … dire_9.png`.
-3. Переименовать каждый файл в имя героя:
-   ```
-   radiant_0.png  →  anti_mage.png
-   radiant_1.png  →  crystal_maiden.png
-   ```
-4. Запустить генератор базы:
-   ```
-   build\build_hero_db.exe --dir C:\portraits\
-   ```
-5. Скопировать сгенерированный `hero_hashes.h` в корень проекта и пересобрать через `screencapture.bat`.
+**Формат `.dat`** (little-endian): `uint32 count`, затем на запись `uint16 nameLen` + имя (без завершающего нуля) + 64 float32.
+
+### Обновление базы для finalapp
+
+Исходные эталоны лежат в `C:\Users\ANDREY\Desktop\heropngs` (277 файлов); `allheroes\` в репозитории - неполная копия (272). Файлы читаются через GDI+, поэтому формат внутри любой: `rubick2.png` и `techies1.png` на самом деле JPEG 1080p.
+
+1. Собрать вырезки портретов **по тем же регионам, что использует finalapp**. Рекомендуемый источник - кнопка [screenshot] в приложении: `screenshots\radiant_hero_N.png` / `dire_hero_N.png` - это ровно те bitmap'ы, которые распознаются в рантайме
+2. Переименовать каждый файл во внутреннее имя героя (см. выше) и положить в `Desktop\heropngs`
+3. Если менялась `computeMatrix` в `dhash.h` - пересобрать `herodb_build.bat` (`build\build_hero_db.exe` лежит в git и используется скриптом из шага 4)
+4. Выполнить в VS Code задачу Update Assets: `scripts/update_assets.bat` запускает `build\build_hero_db.exe --dir Desktop\heropngs --out screencapture\hero_hashes.dat`, копирует `.dat` в `finalapp\`, обновляет sha256 в `manifest.json`, коммитит и пушит. Установленные приложения докачают новую базу при следующем старте
+
+---
 
 ## Алгоритм распознавания
 
@@ -86,19 +91,29 @@ portraits\dire_5.png    ... dire_9.png
 
 | Параметр | Значение |
 |---|---|
-| Признаковый вектор | Серая матрица 8×8, нулевое среднее, единичная дисперсия (64 × float32 = 256 байт/герой) |
-| Метрика сходства | Корреляция Пирсона |
-| Тот же герой | ≈ 0.99 |
-| Разные герои | ≈ 0.0 до −0.1 |
-| Порог уверенности | ≥ 0.80 |
+| Признаковый вектор | Серая матрица 8×8, нулевое среднее, единичная дисперсия (64 × float32 = 256 байт/эталон) |
+| Серый | BT.601: `0.299R + 0.587G + 0.114B` |
+| Сжатие до 8×8 | Усреднение по площади: ячейка - прямоугольник w/8 × h/8 пикселей, граничный пиксель входит с весом доли своей площади. Устойчиво к сдвигу региона на несколько пикселей |
+| Метрика сходства | Корреляция Пирсона = скалярное произведение нормализованных векторов, делённое на N |
+| Поиск | Линейный перебор всех эталонов, argmax |
+| Тот же герой | 0.98 - 1.0 |
+| Ближайший чужой герой или `null` | обычно 0.5 - 0.75 |
+| Порог `confident()` | ≥ 0.80 (используется только для пометки в консоли `dota2_portraits.exe`) |
 
-Перевод в оттенки серого — веса BT.601, ресайз — билинейный.
+---
+
+## Расхождения с копиями в finalapp
+
+`dhash.h` и `dota2_capture.h` здесь - отдельные копии, не синхронизированные с `finalapp/`:
+
+- `dhash.h`: `pearson` = `dot / 63`, в `finalapp` - `dot / 64`. Здесь самокорреляция даёт ~1.016 вместо 1.0, поэтому score, напечатанные `dota2_portraits.exe`, примерно на 1.6% выше, чем в приложении. На `hero_hashes.dat` это не влияет: `build_hero_db` сохраняет только матрицы, а `computeMatrix` в обеих копиях одинакова и обязана такой оставаться
+- `dota2_capture.h`: координаты портретов совпадают с `finalapp/dota2_capture.h` только для `STRATEGY_LAYOUT_16_10`. В `16_9` здесь более старые значения (`radiant_x_start`, `portrait_w`, `portrait_gap`, `dire_x_start` - для Dire на 1920×1080 сдвиг на несколько пикселей при портрете ~34×32 px), в `4_3` и `21_9` - совсем другие. Вырезки, сделанные `dota2_portraits.exe`, не совпадают с регионами рантайма, поэтому эталоны для finalapp нужно брать из кнопки [screenshot]
 
 ---
 
 ## HUD-координаты
 
-`dota2_capture.h` содержит таблицы дробных координат для четырёх соотношений сторон, выбор происходит автоматически по физическому размеру окна:
+`dota2_capture.h` содержит таблицы дробных координат для четырёх соотношений сторон, выбор - автоматически по физическому размеру окна:
 
 | Соотношение | Константа |
 |---|---|
@@ -112,5 +127,5 @@ portraits\dire_5.png    ... dire_9.png
 ## Зависимости
 
 - Windows 10 / 11 (x64)
-- MSVC — Visual Studio 2019 или 2022 (Community / Professional / Enterprise / BuildTools)
-- vcpkg не требуется — линкуется только с `gdiplus.lib`, `gdi32.lib`, `user32.lib`
+- MSVC - Visual Studio 2019 или 2022 (Community / Professional / Enterprise / BuildTools)
+- vcpkg не требуется - линкуется только с `gdiplus.lib`, `gdi32.lib`, `user32.lib`

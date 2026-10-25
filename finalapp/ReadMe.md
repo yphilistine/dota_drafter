@@ -10,14 +10,14 @@
 
 **Источники данных:**
 - Статистика конкретного игрока (OpenDota / STRATZ)
-- Matchup-данные (global WR, vs/with пайрвайзные, hero×position WR)
+- Matchup-данные модели (global WR, vs/with пайрвайзные, hero×position WR, pick rate)
 - Живая Immortal-статистика (STRATZ `heroStats`, последняя неделя) для фильтрации пула кандидатов и панели Meta Heroes
 
-**Распознавание героев** - захват HUD и сравнение по Pearson-корреляции 8×8 матриц. **Распознавание позиций** - Windows OCR (текст плашки "Safe Lane" / "Лёгкая линия" и т.п.).
+**Распознавание героев** - захват HUD (`PrintWindow`), серая нормализованная матрица 8×8 каждого портрета и поиск ближайшего эталона из `hero_hashes.dat` по корреляции Пирсона (см. раздел [Распознавание героев](#распознавание-героев)). **Распознавание позиций** - Windows OCR (текст плашки "Safe Lane" / "Лёгкая линия" и т.п.).
 
-**ML-предсказания** - CatBoost модель предсказывает P(radiant_win) для каждого возможного пика (10 cat + 42 float признаков).
+**ML-предсказания** - CatBoost модель предсказывает P(radiant_win) для каждого возможного пика (10 cat + 117 float признаков, только драфт). Персональная поправка по статистике игрока применяется после модели и сейчас выключена (`PERSONAL_BETA = 0`).
 
-**GUI** - ImGui/D3D11 окно с двумя панелями: состояние драфта (Radiant/Dire) и рекомендации top-10.
+**GUI** - ImGui/D3D11 окно с тремя панелями: состояние драфта (Radiant/Dire), рекомендации top-10 и Meta Heroes.
 
 **Автообновление** - при запуске проверяет manifest.json на GitHub, скачивает и устанавливает обновления приложения и данных.
 
@@ -43,7 +43,7 @@
 - **Подсказки при наведении** - все кликабельные элементы интерфейса (позиции, [D]-логотип, Refresh, Set/x карточки игрока, иконки Powered by, [screenshot]) показывают поясняющий тултип
 - **Кнопка [screenshot]** - рядом с заголовком панели драфта; сохраняет 10 регионов героев + 10 регионов позиций текущего кадра HUD, полноэкранный `fullscreen_regions.png` (весь кадр HUD с наложенными рамками всех 20 регионов героев/позиций) и `report.txt` (распознанное имя/score героя на слот, сырой OCR-текст/позиция/score на позиционный слот) в папку `screenshots\` - для диагностики, если распознавание драфта ошибается
 - **Многопоточность** - GUI, оркестратор, GSI-сервер, портреты, пикер работают параллельно
-- **DPI-масштабирование** - 125%, 150%, 200% автоматически
+- **DPI-aware захват** - процесс объявлен Per-Monitor-V2 DPI aware, поэтому регионы HUD считаются в физических пикселях окна Dota 2 при любом масштабе Windows и на любом мониторе. Сам интерфейс от DPI не масштабируется: шрифт 24px и масштаб стилей ImGui 1.25 фиксированы
 - **GSI-таймаут** - автоматический сброс статуса при закрытии Dota 2 (60с без обновлений); GSI-конфиг шлёт heartbeat раз в 5с, чтобы это не срабатывало ложно во время затишья в игре
 
 ---
@@ -57,12 +57,17 @@ catboostmodel.dll                   CatBoost runtime
 draft_helper_abstract.cbm           ML-модель (одна, все фазы драфта)
 draft_helper_abstract_data.db       Matchup-данные модели (SQLite, содержит meta-таблицу)
 
-hero_hashes.dat                     База хешей портретов героев (бинарный)
+hero_hashes.dat                     База эталонных матриц портретов героев (бинарный, см. "Распознавание героев")
 assets/*.png                        PNG-портреты героев для GUI
 playerandlivestats.db               Данные игрока (создаётся автоматически)
 
-gamestate_integration_dota2.cfg     Конфигурация GSI (устанавливается инсталлятором, heartbeat 5.0)
 screenshots/                        Регионы героев/позиций + fullscreen_regions.png + report.txt по кнопке [screenshot] (папка создаётся инсталлятором)
+logs/                               Логи (см. "Логи")
+staging/                            Временные файлы апдейтера (скачанные, ещё не применённые обновления)
+
+<Dota 2>\game\dota\cfg\gamestate_integration\gamestate_integration_dota2.cfg
+                                    Конфигурация GSI (heartbeat 5.0) - лежит в папке Dota 2, а не рядом с exe;
+                                    ставится инсталлятором и поддерживается апдейтером (syncGsiConfig)
 ```
 
 ---
@@ -73,11 +78,16 @@ screenshots/                        Регионы героев/позиций +
 
 При каждом запуске приложение проверяет `manifest.json` на GitHub (main-ветка, raw.githubusercontent.com):
 1. Если нет подключения - показывает окно "Failed to check for updates" с кнопкой "Try again"
-2. Если есть обновление приложения - скачивает инсталлятор, проверяет SHA-256, запускает silent install
-3. Если есть обновление данных - точечно скачивает **только** те файлы из `manifest.data.files`, которые реально отличаются (отсутствуют локально или не совпадают по SHA-256); уже актуальные файлы не трогаются и не перекачиваются
-4. Гейт совместимости - если schema данных не совпадает с поддерживаемой приложением, показывает баннер
+2. Если `app.version` в манифесте новее скомпилированной `kAppVersion` - скачивает инсталлятор, проверяет SHA-256, запускает silent install (`/SILENT /SUPPRESSMSGBOXES`), после установки приложение перезапускается
+3. Иначе сверяет SHA-256 каждого локального файла из `manifest.data.files`. Если хоть один отсутствует или не совпадает - точечно скачивает **только** несовпавшие файлы; актуальные не трогаются и не перекачиваются. `data.version` в решении не участвует (только пишется в лог)
+4. Гейт совместимости при обновлении: если `data.schema` в манифесте больше поддерживаемой приложением (`kSupportedSchema`), данные не скачиваются, показывается уведомление "A newer data version is available but requires an app update."
+5. Отдельно, при любом исходе шагов 2-4, сверяется GSI-конфиг в папке Dota 2 (`syncGsiConfig`): если Dota 2 найдена и файл отличается от манифеста - перекачивается
 
-`manifest.data.files` - не только `.cbm`/`_data.db`, но и `hero_hashes.dat` + каждый `assets/<hero>.png` (~130 записей). Для `.cbm`/`_data.db` `url` указывает на версионированный GitHub Release (`pack_data.bat`); для `hero_hashes.dat`/ассетов - напрямую на `raw.githubusercontent.com/.../main/finalapp/...`, т.е. приложение на каждом старте сверяет свои локальные копии с тем, что прямо сейчас лежит в main-ветке репозитория, без отдельных релизов/версий (см. `scripts/update_assets.ps1`). Несовпадение или отсутствие файла -> перекачка только этого файла; PNG, отсутствующий в манифесте (герой переименован/убран), удаляется (`cleanupObsoleteAssets` в `updater.cpp`).
+Второй гейт совместимости - в пикере: если `schema_version` из meta-таблицы локального `_data.db` не равен `kSupportedSchema`, рекомендации не считаются и показывается баннер "Incompatible data (schema N, app supports M). Update the app."
+
+`manifest.data.files` - не только `.cbm`/`_data.db`, но и `hero_hashes.dat`, `gamestate_integration_dota2.cfg` и каждый `assets/<hero>.png` (131 запись). Для `.cbm`/`_data.db` `url` указывает на версионированный GitHub Release (`pack_data.bat`); для `hero_hashes.dat`/GSI-конфига/ассетов - напрямую на `raw.githubusercontent.com/.../main/...`, т.е. приложение на каждом старте сверяет свои локальные копии с тем, что прямо сейчас лежит в main-ветке репозитория, без отдельных релизов/версий (см. `scripts/update_assets.ps1`). Несовпадение или отсутствие файла -> перекачка только этого файла. После применения data-обновления PNG, отсутствующие в манифесте (герой переименован/убран), удаляются (`cleanupObsoleteAssets` в `updater.cpp`).
+
+Применение data-обновления: скачанные файлы лежат в `staging/`, затем заменяют рабочие через `MoveFileEx` с бэкапом `*.bak` и `swap.lock`; при сбое - откат из бэкапов, прерванный swap восстанавливается на следующем старте.
 
 Прогресс-бар при обновлении данных считается по всей пачке файлов, которые реально нужно скачать, а не по одному файлу за раз: каждая запись в манифесте содержит `size` (байты), из них складывается общий объём докачки, и проценты идут от него - бар не сбрасывается на 0% при переходе к следующему файлу.
 
@@ -96,12 +106,14 @@ screenshots/                        Регионы героев/позиций +
 - **schema++**: изменена раскладка фич/таблиц или buildVector (Release Data + Release App)
 - Только **data_version++**: чистый ретрейн на тех же фичах
 - Только **app_version++**: изменения в UI/логике без изменения формата данных
+- **Изменена функция признака портрета** (`computeMatrix` в `dhash.h`): Release App + Update Assets подряд. `hero_hashes.dat` не проходит через schema-гейт, поэтому окно несовпадения (старое приложение с новой базой или наоборот) ничем не блокируется; для перехода на усреднение по площади оно не критично (на точном регионе 0 ошибок, score ~0.93 вместо ~0.97), но его стоит держать коротким
 
 ### Релиз через VS Code
 
 - **Release App**: Tasks -> "Release App" -> ввести версию (напр. `1.0.1`)
 - **Release Data**: Tasks -> "Release Data" -> ввести версию данных и схему (только `.cbm`/`_data.db`)
-- **Update Assets**: Tasks -> "Update Assets" - пересчитать sha256 и обновить манифест после изменений в `assets/` или `hero_hashes.dat` (без версии/релиза, `scripts/update_assets.ps1`)
+- **Update Assets**: Tasks -> "Update Assets" - пересобрать `hero_hashes.dat` из `Desktop\heropngs`, пересчитать sha256 `hero_hashes.dat`, `assets/*.png` и GSI-конфига в манифесте, закоммитить и запушить (без версии/релиза, `scripts/update_assets.bat` + `update_assets.ps1`)
+- Также есть задачи **Build**, **Installer**, **Run Installer**, **Build + Installer** (`finalapp/.vscode/tasks.json`)
 
 ---
 
@@ -113,7 +125,7 @@ screenshots/                        Регионы героев/позиций +
 | vcpkg | libcurl, sqlite3, openssl, lz4, zlib, nlohmann-json, libpq (static) |
 | ImGui | Встроена как `imgui.lib` (D3D11 backend) |
 | Windows SDK | d3d11, dxgi, d3dcompiler, dwmapi, gdiplus, bcrypt |
-| Windows OCR (WinRT/cppwinrt) | `pos_ocr.h` - распознавание позиций (`Windows.Media.Ocr`) |
+| Windows OCR (WinRT/cppwinrt) | `pos_ocr.h` - распознавание позиций (`Windows.Media.Ocr`), `WindowsApp.lib` |
 
 ---
 
@@ -121,13 +133,14 @@ screenshots/                        Регионы героев/позиций +
 
 Скачать `dota_drafter_setup.exe` из [GitHub Releases](https://github.com/yphilistine/dota_drafter/releases) и запустить. Инсталлятор:
 - Устанавливает в `%LOCALAPPDATA%\Dota_Drafter` (без прав админа)
-- Копирует GSI-конфигурацию в папку Dota 2
+- Копирует GSI-конфигурацию в `<Dota 2>\game\dota\cfg\gamestate_integration\` (Dota 2 ищется во всех библиотеках Steam из `libraryfolders.vdf`; если не найдена - шаг пропускается)
 - Создаёт ярлыки
 
 Переменные окружения (опционально):
 ```
 set STRATZ_API_KEY=eyJ...
 ```
+Без неё используется встроенный в приложение токен STRATZ.
 
 ---
 
@@ -153,7 +166,7 @@ Dota_Drafter.exe
 
 ### Фаза 1a - Инициализация (без ID)
 
-Загружает справочник героев из OpenDota, создаёт таблицы SQLite, тянет живую мета-стату героев из STRATZ (`heroStats`, DIVINE_IMMORTAL, последняя завершённая неделя) -> таблица `stats`.
+Загружает справочник героев из OpenDota (при недоступности - фолбэк на STRATZ `constants.heroes`), создаёт таблицы SQLite, тянет живую мета-стату героев из STRATZ (`heroStats`, DIVINE_IMMORTAL, последняя завершённая неделя) -> таблица `stats`.
 
 ### Фаза 1b - Данные игрока (при вводе Friend ID)
 
@@ -161,11 +174,11 @@ Dota_Drafter.exe
 
 ### Фаза 2 - Ожидание матча
 
-GSI-сервер слушает порт 62326. Статус игры в статус-баре.
+GSI-сервер слушает порт 62326 (localhost). Статус игры в статус-баре.
 
 ### Фаза 3 - HERO_SELECTION
 
-Portrait capture + ML Picker работают параллельно. Schema gate проверяет совместимость данных.
+Portrait capture + ML Picker работают параллельно, пока идёт HERO_SELECTION, и ещё 5с после его окончания (`PHASE3_TAIL_SEC`). Portrait capture от accountId не зависит, Picker запускается только при введённом Friend ID. Schema gate проверяет совместимость данных.
 
 ---
 
@@ -176,8 +189,68 @@ Portrait capture + ML Picker работают параллельно. Schema gat
 | GUI | `WinMain` | ImGui/D3D11 рендер-цикл |
 | Оркестратор | `orchestratorMain` | Управление потоками, portrait->GUI sync |
 | GSI-сервер | `runGsiServer` | HTTP-сервер для GSI-данных Dota 2 |
+| Фаза 1a / 1b | `runDataFetcherInit` / `runDataFetcher` | Справочник героев + мета-стата / данные игрока |
 | Portrait capture | `runPortraitCapture` | Захват и распознавание героев + позиций |
 | Picker | `runPickerGui` | CatBoost инференс + рекомендации |
+| Spectator picker | `runSpectatorPickerGui` | Win probability наблюдаемого матча (без персональной поправки) |
+| Overlay | `startDotaOverlay` | Своё окно и цикл сообщений кнопки [D] |
+
+---
+
+## Распознавание героев
+
+### Захват
+
+Раз в 250мс `Dota2Capture::capturePortraits()` снимает клиентскую область окна Dota 2 через `PrintWindow` и вырезает `BitBlt`-ом 10 регионов портретов (5 Radiant + 5 Dire) и 10 регионов плашек позиций. Регионы заданы долями от размера окна в `HudLayout` (`dota2_capture.h`), раскладка выбирается по соотношению сторон окна (4:3, 16:10, 16:9, 21:9). На 1920x1080 портрет - примерно 34x32 px.
+
+### Признак портрета ("хеш")
+
+"Хеш" в коде - не битовый перцептивный хеш, а нормализованная серая матрица 8×8 (`computeMatrix` в `dhash.h`). Она считается одинаково для эталонов и для живых кадров:
+1. BGRA -> серый по BT.601: `0.299R + 0.587G + 0.114B`
+2. Усреднение по площади до 8×8: ячейка - прямоугольник (w/8 × h/8) пикселей, пиксель на границе ячейки входит в неё с весом доли своей площади
+3. Нормализация: вычитается среднее, результат делится на стандартное отклонение (популяционное, N=64)
+
+Итог - 64 float32 (256 байт). Функция признака одна и та же в `finalapp/dhash.h` и `screencapture/dhash.h` (её использует `build_hero_db`); при её изменении базу нужно пересобрать.
+
+Почему усреднение по площади: все пиксели ячейки участвуют в значении, поэтому сдвиг региона на несколько пикселей (неточная разметка `HudLayout`, округление координат, другое разрешение) меняет признак плавно. На портретах, отрендеренных из текстур игры, сдвиг региона на 4 px даёт 2 ошибки из 127 против 24 у выборки 4 соседних пикселей, сдвиг на 3 px при 1080p - 10 против 35. Цена - чуть меньший отрыв от ближайшего чужого героя при идеально выставленном регионе.
+
+### Как Dota рисует портрет
+
+На экране выбора и стратегии портрет - `#HeroImage` из `dota_hud_hero_picking_player` (Panorama): текстура `panorama/images/heroes/npc_dota_hero_<name>_png.vtex_c` 128×72 (DXT5 в YCoCg, PNG или BGRA, без мипмапов) растягивается в прямоугольник шириной 118 единиц (100 для 4:3) и высотой 56.25% ширины. Единица - пиксель экрана высотой 1080, масштаб UI = высота окна / 1080. Видеокарта сэмплирует текстуру билинейно, без мипмапов: коэффициент текстура -> экран `k = 118·H / (1080·128)`, при H < ~1171 это уменьшение с алиасингом. Поверх картинки лежит внутренняя тень рамки (`#HeroImageBorder`, чёрная, прозрачность 0.3), она затемняет верхние строки региона. При наведении мыши во время стратегии портрет увеличивается в 1.2 раза - пока курсор над портретом, слот распознаётся по искажённой картинке.
+
+Регион распознавания соответствует прямоугольнику текстуры x 46.1-83.4, y 0.7-35.8 текселя (верхняя середина портрета, область лица).
+
+### База эталонов `hero_hashes.dat`
+
+Формат (little-endian): `uint32 count`, затем `count` записей вида `uint16 nameLen` + имя (без завершающего нуля) + 64 float32. Загружается при старте потока захвата (`loadHeroHashes` в `portrait_runner.cpp`); если файла нет, герои не распознаются, остаётся только ручной выбор.
+
+- Ключ записи - внутреннее имя героя (`heroes.name` без префикса `npc_dota_hero_`); сопоставление с id идёт через `canonicalHeroKey`, поэтому регистр и подчёркивания не важны
+- У героя может быть несколько эталонов: цифры из имени файла отбрасываются (`juggernaut.png` и `juggernaut1.png` дают один ключ)
+- Ключ `null` - эталон пустого слота; любое имя файла, содержащее `null` (`NULL.png`, `event_null7.png`), попадает в него
+- Текущая база: 277 записей, 128 уникальных ключей (герои + `null`)
+
+Исходные эталоны лежат в `C:\Users\ANDREY\Desktop\heropngs` (277 файлов; `screencapture/allheroes` - неполная копия в репозитории). Файлы читаются через GDI+, поэтому формат внутри любой: `rubick2.png` и `techies1.png` на самом деле JPEG 1080p.
+
+Как пересобрать базу:
+1. Получить вырезки портретов **по тем же регионам, что и в рантайме**. Актуальная разметка - в `finalapp/dota2_capture.h`; удобный источник вырезок - кнопка [screenshot] (`screenshots\radiant_hero_N.png`, `dire_hero_N.png`). У консольной утилиты `screencapture/dota2_portraits.exe` своя копия `dota2_capture.h`, координаты в ней совпадают с приложением только для 16:10
+2. Переименовать файлы во внутренние имена героев (`antimage.png`, `crystal_maiden.png`, второй эталон - `antimage1.png`, пустой слот - `null.png`) и положить в `Desktop\heropngs`
+3. Если менялась функция признака в `screencapture/dhash.h` - пересобрать `screencapture\build\build_hero_db.exe` (`screencapture\herodb_build.bat`)
+4. Выполнить задачу Update Assets: `scripts/update_assets.bat` сам запускает `build_hero_db --dir Desktop\heropngs`, копирует `hero_hashes.dat` в `finalapp/`, пересчитывает sha256 в манифесте, коммитит и пушит - установленные приложения докачают новую базу при следующем старте
+
+### Сравнение и решение
+
+- Сходство - корреляция Пирсона: `pearson(a, b) = dot(a, b) / 64`, диапазон [-1, 1]. Ориентиры на реальных захватах: тот же герой 0.98-1.0, ближайший чужой герой или `null` обычно 0.5-0.75
+- `HeroRecognizer` линейно перебирает все записи базы и берёт максимум (argmax); при score > 0.999 перебор останавливается досрочно
+- Решение в `runPortraitCapture` - argmax по всей базе, включая `null`: выиграл `null` -> слот пуст; выиграл герой -> его id из таблицы `heroes`
+- Кадр со score < 0.4 считается нечитаемым и пропускается, слот сохраняет прежнее значение. Других порогов нет; `HeroMatch::confident()` (>= 0.80) в приложении не используется
+- Гистерезиса нет: каждый читаемый кадр сразу перезаписывает слот, поэтому случайное перекрытие (чат, шоп) даёт максимум один неверный кадр, и следующий цикл его исправляет
+- Ручной выбор героя в GUI приоритетнее распознавания; результат кадра всё равно запоминается и показывается первой строкой popup'а
+
+В `report.txt` кнопки [screenshot] показывается argmax и score без фильтра 0.4 - кадр, который живой цикл пропустил бы, там всё равно будет с лучшим кандидатом.
+
+### Позиции
+
+Позиции распознаются не по хешам, а через Windows OCR (`pos_ocr.h`): плашка позиции апскейлится в 4 раза, распознанный текст сопоставляется с ключевыми словами на нескольких языках. Только для своей команды; у врагов позиция всегда 0. Ручной выбор позиции приоритетнее OCR.
 
 ---
 
@@ -186,9 +259,16 @@ Portrait capture + ML Picker работают параллельно. Schema gat
 Одна модель: `draft_helper_abstract.cbm`
 Данные: `draft_helper_abstract_data.db` (содержит meta-таблицу с schema_version и data_version)
 
-**Вход:** 10 категориальных (имена героев) + 42 числовых (matchup + mastery + hero_pos_wr)
+**Вход:** 10 категориальных (имена героев) + 117 числовых признаков, только про драфт, без привязки к аккаунту:
+- по 10 на слот: global_wr, vs_adv, with_adv, hero_pos_wr, best_vs, worst_vs, pick_rate, best_with, worst_with (90)
+- агрегаты команд (17)
+- composition/role-shape (10)
+
+Позиция героя, не заданная в драфте, берётся из `modal_pos`.
 
 **Выход:** logit -> sigmoid -> P(radiant_win)
+
+**Персональная поправка (Component B):** применяется после модели - `sigmoid(logit(p_ours) + beta * adj)`, где `adj` считается по статистике игрока (`playerheroes`, `playerheroesranked`, `relevantplayerherobyposstats`). Сейчас `PERSONAL_BETA = 0.0`, т.е. поправка посчитана, но на результат не влияет.
 
 ---
 
@@ -202,6 +282,9 @@ Portrait capture + ML Picker работают параллельно. Schema gat
 | `playerheroes` | Статистика героев игрока (все режимы) |
 | `playerheroesranked` | Статистика героев (ranked) |
 | `playerrecentmatches` | История матчей |
+| `relevantplayerherobyposstats` | Статистика игрока по герою и позиции (используется персональной поправкой) |
+| `playerherovsherobyposstats` | Статистика игрока: герой/позиция против героя/позиции (заполняется фазой 1b, приложением не читается) |
+| `playerherowithherobyposstats` | Статистика игрока: герой/позиция вместе с героем/позицией (заполняется фазой 1b, приложением не читается) |
 | `livepicks` | Текущий драфт: 10 hero + 10 pos слотов |
 | `player_info` | Сохранённый Friend ID + имя |
 | `stats` | Живая мета-стата героев (STRATZ `heroStats`, DIVINE_IMMORTAL, последняя неделя). Перезаписывается фазой 1a при каждом старте |
@@ -215,17 +298,20 @@ Portrait capture + ML Picker работают параллельно. Schema gat
 | `vs_wr` | Пайрвайзный winrate hero vs hero |
 | `with_wr` | Пайрвайзный winrate hero with hero |
 | `modal_pos` | Модальная позиция героя |
-| `hero_pos_wr` | Winrate героя на позиции |
+| `hero_pos_wr` | Winrate героя на позиции (+ число игр `games`, нужно для composition-признаков) |
+| `pick_rates` | Pick rate героя |
 
 ---
 
 ## Сборка из исходников
 
 **Требования:**
-- Visual Studio 2019/2022 или BuildTools (MSVC x64)
-- vcpkg: `libcurl sqlite3 openssl lz4 zlib nlohmann-json` (x64-windows-static)
+- Visual Studio 2019/2022 или BuildTools (MSVC x64, C++17)
+- vcpkg в `C:\vcpkg`: `libcurl sqlite3 openssl lz4 zlib nlohmann-json libpq` (x64-windows-static)
 - CatBoost C API: `catboostmodel.dll` + `catboostmodel.lib` в `C:\catboost`
 - ImGui: собранная `imgui.lib` (D3D11 + Win32 backend)
+- Windows SDK 10.0.26100.0 (путь к заголовкам cppwinrt прописан в `build_unified.bat`)
+- На MSVC 14.51+ (VS 18) cppwinrt под `/std:c++17` собирается только с `/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS` (уже стоит в `build_unified.bat`); Microsoft обещает убрать `<experimental/coroutine>` совсем, долгосрочное решение - переход на `/std:c++20`
 
 **Сборка:**
 ```bat
@@ -243,21 +329,23 @@ build_unified.bat debug     :: debug (/Od /Zi)
 | `orchestrator.cpp / .h` | Фоновый оркестратор: GSI/portrait/picker потоки, livepicks, запуск фазы 1b |
 | `gui_draw.cpp / .h` | Панели ImGui (Header/StatusBar/Draft/Picks/Meta Heroes), кэш портретов/меты |
 | `shared_types.h` | Общие типы (GameInfo, SharedPortraitState, GuiPickerState) |
-| `common.cpp / .h` | Логирование, HTTP (curl), SQLite RAII (`SqliteDB`/`SqliteStmt`, `busy_timeout`), `safeStoi`/`safeStoll`, `installCrashHandlers()` |
+| `common.cpp / .h` | Логирование, HTTP (curl), SQLite RAII (`SqliteDB`/`SqliteStmt`, `busy_timeout`), `safeStoi`/`safeStoll`, `canonicalHeroKey`, `installCrashHandlers()` |
 | `version.h` | Константы версии: kAppVersion, kSupportedSchema, kManifestUrl |
 | `version_utils.cpp / .h` | Чтение meta (schema_version/data_version) из _data.db |
-| `updater.cpp / .h` | Система обновлений: manifest, точечная докачка только несовпавших файлов, sha256, swap, rollback, агрегированный прогресс |
+| `updater.cpp / .h` | Система обновлений: manifest, точечная докачка только несовпавших файлов, sha256, swap, rollback, агрегированный прогресс, синхронизация GSI-конфига |
 | `datafetcher.cpp` | Фаза 1a (init) + 1b (player data) |
 | `clouddatafetcher.cpp / .h` | PostgreSQL -> SQLite sync (proherostats/immortalherostats); dev-инструмент, не вызывается в рантайме приложения |
 | `livestatsfetcher.cpp` | GSI HTTP-сервер |
-| `portrait_runner.cpp / .h` | Захват портретов + позиций (250мс цикл) + диагностический снимок для кнопки [screenshot] (`captureDebugScreenshotWithReport`) |
+| `portrait_runner.cpp / .h` | Захват портретов + позиций (250мс цикл), загрузка `hero_hashes.dat` + диагностический снимок для кнопки [screenshot] (`captureDebugScreenshotWithReport`) |
 | `overlay_button.cpp / .h` | Прозрачная кнопка [D] поверх Dota 2 (своё окно/WndProc/поток) |
 | `dota_picker.cpp` | ML-пикер CatBoost + schema gate |
-| `dota2_capture.cpp / .h` | Захват окна Dota 2 (PrintWindow + GDI) |
-| `dhash.h` | Pearson-корреляция 8x8 для распознавания **героев** (база - `hero_hashes.dat`, грузится в рантайме) |
-| `pos_ocr.h` | Распознавание **позиций** через Windows OCR (заменяет старый Pearson-подход) |
+| `dota2_capture.cpp / .h` | Захват окна Dota 2 (PrintWindow + GDI), таблицы `HudLayout` |
+| `dhash.h` | Признак портрета (серая нормализованная 8x8) и поиск ближайшего эталона по Пирсону для распознавания **героев** |
+| `pos_ocr.h` | Распознавание **позиций** через Windows OCR |
 | `playerdatafetcher.cpp / .h` | OpenDota / STRATZ запросы (история матчей игрока) |
 | `hero_meta_stats.cpp / .h` | Живая мета-статистика героев (STRATZ heroStats, фаза 1a) |
+
+Утилиты для базы эталонов портретов (`build_hero_db`, `dota2_portraits`) живут вне `finalapp/`, в `screencapture/` (см. `screencapture/ReadMe`).
 
 ---
 
@@ -267,8 +355,8 @@ build_unified.bat debug     :: debug (/Od /Zi)
 
 | Операция | Время | Когда |
 |----------|-------|-------|
-| Fetch manifest.json (~30KB, ~130 записей файлов) | 0.5-2с | Каждый запуск |
-| SHA-256 проверка ~130 локальных файлов (cbm/db/hero_hashes.dat/assets) | <100мс | Каждый запуск (checkForUpdates хэширует все файлы манифеста, чтобы найти расхождения) |
+| Fetch manifest.json (~66KB, 131 запись файлов) | 0.5-2с | Каждый запуск |
+| SHA-256 проверка локальных файлов манифеста (cbm/db/hero_hashes.dat/assets) | <100мс | Каждый запуск (checkForUpdates хэширует файлы манифеста до первого расхождения) |
 | Скачивание app (~10MB) | 2-10с | Только при обновлении |
 | Скачивание data | пропорционально объёму изменившихся файлов | Только при обновлении, и только для файлов, реально не совпавших с манифестом (`size` из манифеста -> единый прогресс-бар на всю пачку) |
 | File swap (MoveFileEx) | <5мс/файл | Только для реально скачанных файлов при обновлении data |
@@ -282,7 +370,7 @@ build_unified.bat debug     :: debug (/Od /Zi)
 |-----------|-----|-----|------|
 | GUI (ImGui/D3D11, 60fps) | ~2-5% | ~30MB | - |
 | Portrait capture (250мс) | ~2-6% (кратковременно) | ~5MB | - |
-| CatBoost инференс (500мс) | ~5-10% (кратковременно) | ~40MB (модель) | - |
+| CatBoost инференс (опрос livepicks раз в 500мс) | ~5-10% (кратковременно) | ~40MB (модель) | - |
 | GSI HTTP-сервер | <0.1% | <1MB | - |
 | SQLite (WAL mode) | <0.5% | ~2MB cache | ~1MB DB |
 | HTTP запросы (фаза 1b) | ~1% | ~5MB | ~100KB логи |
@@ -296,4 +384,5 @@ build_unified.bat debug     :: debug (/Od /Zi)
 ```
 logs\console.log        Весь вывод программы
 logs\curl_debug.txt     HTTP заголовки и трафик (для диагностики)
+logs\gsi.log            Каждое принятое GSI-состояние с интервалом от предыдущего (разрывы потока GSI)
 ```
