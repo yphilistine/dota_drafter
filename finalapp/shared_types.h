@@ -25,8 +25,15 @@ inline const char* phaseName(GamePhase p) {
 
 // --- Состояние матча (от GSI-сервера) -----------------------------------------
 
+// Порт GSI-сервера (localhost). Лежит ниже динамического диапазона Windows
+// (49152-65535): внутри него Hyper-V/WinNAT резервирует случайные блоки портов,
+// и bind в такой блок отклоняется с WSA 10013. Тот же порт прописан в
+// installer/gamestate_integration_dota2.cfg ("uri").
+inline constexpr int GSI_PORT = 41326;
+
 struct GameInfo {
     std::mutex  mtx;
+    int         gsiListenError  = 0;   // WSA-код последней неудачной попытки bind/listen GSI-сервера, 0 = сервер слушает
     GamePhase   phase           = GamePhase::IDLE;
     std::string matchId;
     int         ourSide         = 1;   // 1 = Radiant, 0 = Dire
@@ -181,7 +188,7 @@ int  runDataFetcherInit(const std::string& stratzToken);
 // Фаза 1b: загрузка данных игрока. Возвращает 0 при успехе.
 int  runDataFetcher(long long accountId, const std::string& stratzToken);
 
-// Фаза 2: GSI HTTP-сервер на порту 62326 (localhost), обновляет gameInfo.
+// Фаза 2: GSI HTTP-сервер на порту GSI_PORT (localhost), обновляет gameInfo.
 void runGsiServer(GameInfo& gameInfo);
 
 // Захват портретов + позиций HUD каждые 250мс, запись в livepicks. Без accountId.

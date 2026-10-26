@@ -1,5 +1,5 @@
 /*
- * livestatsfetcher.cpp - GSI HTTP-сервер (порт 62326, localhost).
+ * livestatsfetcher.cpp - GSI HTTP-сервер (порт GSI_PORT из shared_types.h, localhost).
  *
  * POST / - приём GSI-данных от Dota 2 -> обновление GameInfo (phase, matchId, slot, lastUpdate).
  * GET /phase - JSON статус текущей фазы.
@@ -19,12 +19,13 @@
 #include "app_state.h"
 #include "common.h"
 
+#include <chrono>
 #include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
 
-static const int PORT = 62326;
+static const int PORT = GSI_PORT;
 static GameInfo* g_gsiInfo = nullptr;
 static std::string g_lastLoggedState;  // для дедупликации записей в лог (только смена состояния)
 
@@ -370,24 +371,49 @@ void runGsiServer(GameInfo& gameInfo) {
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
         LOG_ERR("[GSI] WSAStartup failed"); return;
     }
-    SOCKET server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (server == INVALID_SOCKET) {
-        LOG_ERR("[GSI] socket() failed, WSA error " << WSAGetLastError()); return;
-    }
-    int opt = 1;
-    setsockopt(server, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(PORT);
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-        LOG_ERR("[GSI] bind() на порту " << PORT << " не удался, WSA error "
-            << WSAGetLastError() << " - порт уже занят другим процессом?");
-        closesocket(server); return;
-    }
-    if (listen(server, SOMAXCONN) == SOCKET_ERROR) {
-        LOG_ERR("[GSI] listen() не удался, WSA error " << WSAGetLastError());
-        closesocket(server); return;
+
+    // Порт бывает недоступен: занят другим процессом (WSA 10048) или попал в
+    // диапазон, зарезервированный Windows (WSA 10013, см. GSI_PORT). Попытка
+    // bind/listen повторяется раз в 5с, пока порт не освободится; код ошибки
+    // лежит в gameInfo.gsiListenError для строки статуса в GUI.
+    SOCKET server = INVALID_SOCKET;
+    int lastErr = 0;
+    while (true) {
+        server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (server == INVALID_SOCKET) {
+            LOG_ERR("[GSI] socket() failed, WSA error " << WSAGetLastError()); return;
+        }
+        int opt = 1;
+        setsockopt(server, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+
+        int err = 0;
+        if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR ||
+            listen(server, SOMAXCONN) == SOCKET_ERROR)
+            err = WSAGetLastError();
+        {
+            std::lock_guard<std::mutex> lk(gameInfo.mtx);
+            gameInfo.gsiListenError = err;
+        }
+        if (err == 0) break;
+
+        closesocket(server);
+        if (err != lastErr) {
+            if (err == WSAEACCES)
+                LOG_ERR("[GSI] порт " << PORT << " недоступен (WSA 10013): он в диапазоне, "
+                        "зарезервированном Windows (netsh interface ipv4 show excludedportrange "
+                        "protocol=tcp), или занят с монопольным доступом. Повтор каждые 5с");
+            else if (err == WSAEADDRINUSE)
+                LOG_ERR("[GSI] порт " << PORT << " занят другим процессом (WSA 10048). Повтор каждые 5с");
+            else
+                LOG_ERR("[GSI] bind/listen на порту " << PORT << " не удался, WSA error "
+                        << err << ". Повтор каждые 5с");
+            lastErr = err;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
     }
     LOG_INFO("[GSI] Сервер запущен на порту " << PORT);
     LOG_INFO("[GSI] GET http://localhost:" << PORT << "/phase - статус");

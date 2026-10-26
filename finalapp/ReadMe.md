@@ -103,15 +103,16 @@ staging/                            Временные файлы апдейте
 
 ### Правила релиза
 
-- **schema++**: изменена раскладка фич/таблиц или buildVector (Release Data + Release App)
+- **schema++**: изменена раскладка фич/таблиц или buildVector (Release Data + Release App). `schema` в данных должна совпадать с `kSupportedSchema` приложения (`version.h`): при большей схеме апдейтер не скачивает данные, а пикер отключает рекомендации
 - Только **data_version++**: чистый ретрейн на тех же фичах
 - Только **app_version++**: изменения в UI/логике без изменения формата данных
+- **Изменён порт GSI** (`GSI_PORT` + `installer/gamestate_integration_dota2.cfg`): Release App, сразу за ним Update Assets (GSI-конфиг доставляется через манифест и `syncGsiConfig`). Dota 2 читает GSI-конфиг при запуске, поэтому после обновления её нужно перезапустить
 - **Изменена функция признака портрета** (`computeMatrix` в `dhash.h`): Release App, сразу за ним Update Assets. `hero_hashes.dat` не проходит через schema-гейт, поэтому сочетание приложения и базы с разными функциями признака ничем не блокируется
 
 ### Релиз через VS Code
 
 - **Release App**: Tasks -> "Release App" -> ввести версию (напр. `1.0.1`)
-- **Release Data**: Tasks -> "Release Data" -> ввести версию данных и схему (только `.cbm`/`_data.db`)
+- **Release Data**: Tasks -> "Release Data" -> ввести версию данных и схему (только `.cbm`/`_data.db`). Каждый запуск - с новой `data_version`: скрипт создаёт GitHub Release `data-<версия>`, и если такой тег уже есть, файлы не загружаются, а sha256 в манифесте всё равно обновляются под локальные файлы
 - **Update Assets**: Tasks -> "Update Assets" - пересобрать `hero_hashes.dat` из `Desktop\heropngs`, пересчитать sha256 `hero_hashes.dat`, `assets/*.png` и GSI-конфига в манифесте, закоммитить и запушить (без версии/релиза, `scripts/update_assets.bat` + `update_assets.ps1`)
 - Также есть задачи **Build**, **Installer**, **Run Installer**, **Build + Installer** (`finalapp/.vscode/tasks.json`)
 
@@ -174,7 +175,7 @@ Dota_Drafter.exe
 
 ### Фаза 2 - Ожидание матча
 
-GSI-сервер слушает порт 62326 (localhost). Статус игры в статус-баре.
+GSI-сервер слушает порт 41326 (localhost; константа `GSI_PORT` в `shared_types.h`, тот же порт в `uri` GSI-конфига). Порт лежит ниже динамического диапазона Windows (49152-65535), в котором Hyper-V/WinNAT резервирует блоки портов. Если порт всё же недоступен (занят - WSA 10048, зарезервирован - WSA 10013), сервер повторяет попытку каждые 5с, а панель драфта показывает `GSI server: port 41326 unavailable (WSA N), retrying`. Проверить резервирования: `netsh interface ipv4 show excludedportrange protocol=tcp`. Статус игры в статус-баре.
 
 ### Фаза 3 - HERO_SELECTION
 

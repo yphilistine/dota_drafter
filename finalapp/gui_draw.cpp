@@ -1280,6 +1280,7 @@ void DrawDraftPanel(float panelW) {
     bool         ourHeroPicked;
     GamePhase    phase;
     bool         isWaitingForPlayers;
+    int          gsiListenError;
     {
         std::lock_guard<std::mutex> lk(g_pickerState.mtx);
         gameStarted   = g_pickerState.gameStarted;
@@ -1293,6 +1294,7 @@ void DrawDraftPanel(float panelW) {
         std::lock_guard<std::mutex> lk(g_gameInfo.mtx);
         phase               = g_gameInfo.phase;
         isWaitingForPlayers = g_gameInfo.isWaitingForPlayers;
+        gsiListenError      = g_gameInfo.gsiListenError;
     }
 
     // Наблюдаемая игра (спектейт) имеет приоритет только когда своего активного
@@ -1373,7 +1375,13 @@ void DrawDraftPanel(float panelW) {
         dl->AddRect      (cp, {cp.x+aW, cp.y+aH}, C(kBorder));
 
         const char* line1 = "Waiting for a game...";
-        const char* line2 = (phase == GamePhase::IDLE) ? "GSI server: listening on :62326" : phaseName(phase);
+        char gsiStatus[96];
+        if (gsiListenError != 0)
+            std::snprintf(gsiStatus, sizeof(gsiStatus),
+                          "GSI server: port %d unavailable (WSA %d), retrying", GSI_PORT, gsiListenError);
+        else
+            std::snprintf(gsiStatus, sizeof(gsiStatus), "GSI server: listening on :%d", GSI_PORT);
+        const char* line2 = (phase == GamePhase::IDLE) ? gsiStatus : phaseName(phase);
 
         ImVec2 ts1 = ImGui::CalcTextSize(line1);
         ImVec2 ts2 = ImGui::CalcTextSize(line2);
