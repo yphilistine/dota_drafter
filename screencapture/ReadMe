@@ -76,7 +76,7 @@ build_hero_db.exe --dir <папка с PNG> [--out hero_hashes.dat] [--crop x0 y
 
 ### Обновление базы для finalapp
 
-Исходные эталоны лежат в `C:\Users\ANDREY\Desktop\heropngs` (277 файлов); `allheroes\` в репозитории - неполная копия (272). Файлы читаются через GDI+, поэтому формат внутри любой: `rubick2.png` и `techies1.png` на самом деле JPEG 1080p.
+Исходные эталоны лежат в `C:\Users\ANDREY\Desktop\heropngs` (277 файлов); `allheroes\` в репозитории - неполная копия (272). Файлы читаются через GDI+, поэтому формат внутри может быть любым (`rubick2.png` и `techies1.png` - JPEG).
 
 1. Собрать вырезки портретов **по тем же регионам, что использует finalapp**. Рекомендуемый источник - кнопка [screenshot] в приложении: `screenshots\radiant_hero_N.png` / `dire_hero_N.png` - это ровно те bitmap'ы, которые распознаются в рантайме
 2. Переименовать каждый файл во внутреннее имя героя (см. выше) и положить в `Desktop\heropngs`
@@ -106,8 +106,8 @@ build_hero_db.exe --dir <папка с PNG> [--out hero_hashes.dat] [--crop x0 y
 
 `dhash.h` и `dota2_capture.h` здесь - отдельные копии, не синхронизированные с `finalapp/`:
 
-- `dhash.h`: `pearson` = `dot / 63`, в `finalapp` - `dot / 64`. Здесь самокорреляция даёт ~1.016 вместо 1.0, поэтому score, напечатанные `dota2_portraits.exe`, примерно на 1.6% выше, чем в приложении. На `hero_hashes.dat` это не влияет: `build_hero_db` сохраняет только матрицы, а `computeMatrix` в обеих копиях одинакова и обязана такой оставаться
-- `dota2_capture.h`: координаты портретов совпадают с `finalapp/dota2_capture.h` только для `STRATEGY_LAYOUT_16_10`. В `16_9` здесь более старые значения (`radiant_x_start`, `portrait_w`, `portrait_gap`, `dire_x_start` - для Dire на 1920×1080 сдвиг на несколько пикселей при портрете ~34×32 px), в `4_3` и `21_9` - совсем другие. Вырезки, сделанные `dota2_portraits.exe`, не совпадают с регионами рантайма, поэтому эталоны для finalapp нужно брать из кнопки [screenshot]
+- `dhash.h`: `pearson` = `dot / 63`, в `finalapp` - `dot / 64`. Здесь самокорреляция даёт ~1.016 вместо 1.0, поэтому score, напечатанные `dota2_portraits.exe`, примерно на 1.6% выше, чем в приложении. На `hero_hashes.dat` это не влияет: `build_hero_db` сохраняет только матрицы, а `computeMatrix` в обеих копиях одинакова и должна такой оставаться
+- `dota2_capture.h`: координаты портретов совпадают с `finalapp/dota2_capture.h` только для `STRATEGY_LAYOUT_16_10`. В `16_9` отличаются `radiant_x_start`, `portrait_w`, `portrait_gap`, `dire_x_start` (для Dire на 1920×1080 регион сдвинут на несколько пикселей при портрете ~34×32 px), в `4_3` и `21_9` координаты другие целиком. Вырезки, сделанные `dota2_portraits.exe`, не совпадают с регионами рантайма, поэтому эталоны для finalapp нужно брать из кнопки [screenshot]
 
 ---
 
