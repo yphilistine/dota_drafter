@@ -6,7 +6,7 @@
             },
     "data":  {
                  "version":  "2026.07.10",
-                 "schema":  2,
+                 "schema":  3,
                  "files":  {
                                "draft_helper_abstract.cbm":  {
                                                                  "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2026.07.10/draft_helper_abstract.cbm",
@@ -15,7 +15,7 @@
                                                              },
                                "draft_helper_abstract_data.db":  {
                                                                      "url":  "https://github.com/yphilistine/dota_drafter/releases/download/data-2026.07.10/draft_helper_abstract_data.db",
-                                                                     "sha256":  "ce25484c90ad18f0f67cb3d42857013ddb63cd55d60628b733bcfcc8dd5f7d9e",
+                                                                     "sha256":  "6b6f70198720975ec02b01f537eceacabb591b720af1632cbac3309bfc10000e",
                                                                      "size":  1089536
                                                                  },
                                "hero_hashes.dat":  {
